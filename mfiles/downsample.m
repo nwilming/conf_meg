@@ -1,7 +1,7 @@
 function [data] = downsample(data, samplerows, varargin)
-fs = default_arguments('fs', 1200);
-rfs = default_arguments('rfs', 500);
-detrend = default_arguments('detrend', 'yes');
+fs = default_arguments(varargin, 'fs', 1200);
+rfs = default_arguments(varargin, 'rfs', 500);
+detrend = default_arguments(varargin, 'detrend', 'yes');
 
 cfg             = [];
 cfg.resamplefs  = rfs;

@@ -1,5 +1,5 @@
 
-function [data, artifact_muscle] = reject_muscle(dataset, data, crittoilim)
+function artifact_muscle = reject_muscle(dataset, data)
 %% 3. MUSCLE BURST
 cfg                                     = [];
 cfg.datafile                            = dataset;
@@ -27,9 +27,9 @@ cfg.artfctdef.zvalue.interactive = 'no';
 
 [~, artifact_muscle] = ft_artifact_zvalue(cfg);
 
-cfg                             = [];
-cfg.artfctdef.reject            = 'complete';
-cfg.artfctdef.muscle.artifact   = artifact_muscle;
+% cfg                             = [];
+% cfg.artfctdef.reject            = 'partial';
+% cfg.artfctdef.muscle.artifact   = artifact_muscle;
 
 % only remove muscle bursts before the response
 % The trial looks like this:
@@ -40,6 +40,6 @@ cfg.artfctdef.muscle.artifact   = artifact_muscle;
 %feedback = data.trialinfo(:, 21);
 %crittoilim = [ (ref_onset - 300) feedback]  ./ data.fsample;
 
-cfg.artfctdef.crittoilim        = crittoilim;
-data                            = ft_rejectartifact(cfg, data);
+%cfg.artfctdef.crittoilim        = crittoilim;
+%data                            = ft_rejectartifact(cfg, data);
 
