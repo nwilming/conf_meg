@@ -4,29 +4,40 @@ import pandas as pd
 
 def listfiles(dir):
     import glob, os, time
-    files = glob.glob(os.path.join(dir, '*.edf'))
-    data = {}
+    edffiles = glob.glob(os.path.join(dir, '*.edf'))
+    matfiles = glob.glob(os.path.join(dir, '*.mat'))
+    edfdata = {}
+    matdata = {}
     subs = []
-    for f in files:
+    for f in edffiles:
         if 'localizer' in f:
             continue
         sub, d = f.replace('.edf', '').split('/')[-1].split('_')
-        data[time.strptime(d, '%Y%m%dT%H%M%S')] = f
+        edfdata[time.strptime(d, '%Y%m%dT%H%M%S')] = f
+        subs.append(sub)
+    for f in matfiles:
+        if 'localizer' in f or 'quest' in f:
+            continue
+        sub, d, ll = f.replace('.mat', '').split('/')[-1].split('_')
+        print sub, d
+        matdata[time.strptime(d.replace('Dec', 'Dez'), '%d-%b-%Y %H:%M:%S')] = f
         subs.append(sub)
     assert(len(np.unique(subs))==1)
-    return data, sub
+    return edfdata, matdata, sub
 
 
-def save_as_df(files, sub):
+def save_as_df(sub, edffiles, matfiles):
     es = []
     msgs = []
     keys = []
-    for i, f in enumerate(files):
+    for i, (f, m) in enumerate(zip(edffiles, matfiles)):
+
         session = (i/5) +1
         block = np.mod(i, 5) +1
         print '\nProcessing S%i, B%i: '%(session, block), f
         events, messages = pupil.load_edf(f)
-        events, messages = pupil.preprocess(events, messages)
+        behavior = pupil.load_behavior(m)
+        events, messages = pupil.preprocess(events, messages, behavior)
         events['block'] = block
         events['session'] = session
         events['subject'] = sub
