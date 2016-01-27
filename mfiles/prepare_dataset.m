@@ -1,4 +1,4 @@
-function [data, cfg] = prepare_dataset(dataset, subject, session, trialfun)
+function [data, cfg] = prepare_dataset(dataset, subject, session, block_start, block_end)
 % read in the dataset as a continuous segment
 cfg                         = [];
 cfg.dataset                 =  dataset;
@@ -8,10 +8,7 @@ cfg.channel                 = channel_names(dataset);
 cfg.sj                      = subject;
 cfg.session                 = session;
 cfg.fs = 1200;
-
-cfg.trl =  [204276      863968      204276];
-
-
+cfg.trl =  [block_start    block_end   block_start];
 % add a highpass filter to get rid of cars
 % 0.1 Hz, see Acunzo et al
 % if filtering higher than that, can't look at onset of ERPs!
@@ -19,16 +16,4 @@ cfg.hpfilttype              = 'fir';
 cfg.hpfiltord               = 6;
 cfg.hpfilter                = 'yes';
 cfg.hpfreq                  = 0.1;
-
 data = ft_preprocessing(cfg);
-cfg = rmfield(cfg, 'trl');
-
-fprintf('\nNow epoching\n')
-
-
-cfg.trialfun            = trialfun;
-
-cfg.trialdef.pre        = 0; % before the fixation trigger, to have enough length for padding (and avoid edge artefacts)
-cfg.trialdef.post       = 1; % after feedback
-cfg 					= ft_definetrial(cfg); % define all trials
-%data 					= ft_preprocessing(cfg, data);
