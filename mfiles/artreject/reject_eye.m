@@ -1,7 +1,7 @@
-function [data, artifact_eog] = reject_eye(dataset, data, varargin)
+function artifact_eog = reject_eye(dataset, data, varargin)
 %%
-crittoilim = default_arguments('crittoilim', []);
-channels = default_arguments('channels', {'EEG057'; 'EEG058'});
+crittoilim = default_arguments(varargin, 'crittoilim', []);
+channels = default_arguments(varargin, 'channels', {'EEG057'; 'EEG058'});
 
 % 4. EYEBLINKS (only during beginning of trial)
 cfg                                     = [];
@@ -14,7 +14,7 @@ cfg.continuous                          = 'yes'; % data has been epoched
 cfg.artfctdef.zvalue.trlpadding  = 0; % padding doesnt work for data thats already on disk
 cfg.artfctdef.zvalue.fltpadding  = 0.2;
 cfg.artfctdef.zvalue.artpadding  = 0.1; % go a bit to the sides of blinks
-
+cfg.artfctdef.zvalue.channel = channels;
 % algorithmic parameters
 cfg.artfctdef.zvalue.bpfilter   = 'yes';
 cfg.artfctdef.zvalue.bpfilttype = 'but';
@@ -29,12 +29,12 @@ cfg.artfctdef.zvalue.interactive = 'no';
 
 [~, artifact_eog]          = ft_artifact_zvalue(cfg);
 
-cfg                             = [];
-cfg.artfctdef.reject            = 'complete';
-cfg.artfctdef.eog.artifact      = artifact_eog;
+% cfg                             = [];
+% cfg.artfctdef.reject            = 'complete';
+% cfg.artfctdef.eog.artifact      = artifact_eog;
 
 % and during the second up until response
 %crittoilim = [ data.trialinfo(:,5) - data.trialinfo(:,1) ...
 %    data.trialinfo(:,9) - data.trialinfo(:,1)]  / data.fsample;
-cfg.artfctdef.crittoilim        = crittoilim;
-data                            = ft_rejectartifact(cfg, data);
+% cfg.artfctdef.crittoilim        = crittoilim;
+% data                            = ft_rejectartifact(cfg, data);

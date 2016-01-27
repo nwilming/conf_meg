@@ -127,7 +127,7 @@ event_fields = {'start', 'correct', 'correct_v', 'noise_sigma', 'noise_sigma_v',
     'cc4', 'cc5', 'cc6', 'cc7', 'cc8', 'cc9', 'cc10', 'stim_offset', 'response',...
     'response_v', 'feedback', 'feedback_v', 'end'};
 
-trial_mat = filter_trials(trials, 'start', 0, 'end', 0, 'response');
+trial_mat = filter_trials(trials, 'start', 0, 'end', 0, 'start');
 trialinfo = nan(length(trials), length(event_fields) + 1);
 
 for field = 1:length(event_fields)

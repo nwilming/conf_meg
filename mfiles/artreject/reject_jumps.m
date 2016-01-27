@@ -1,4 +1,4 @@
-function [data, artifact_jump] = reject_jumps(dataset, data)
+function artifact_jump = reject_jumps(dataset, data)
 % 2. JUMPS
 cfg                                     = [];
 cfg.datafile                            = dataset;
@@ -23,7 +23,7 @@ cfg.artfctdef.zvalue.cutoff         = 100;
 cfg.artfctdef.zvalue.interactive    = 'no';
 [~, artifact_jump]       = ft_artifact_zvalue(cfg);
 
-cfg                             = [];
-cfg.artfctdef.reject            = 'complete';
-cfg.artfctdef.jump.artifact     = artifact_jump;
-data                            = ft_rejectartifact(cfg, data);
+% cfg                             = [];
+% cfg.artfctdef.reject            = 'complete';
+% cfg.artfctdef.jump.artifact     = artifact_jump;
+% data                            = ft_rejectartifact(cfg, data);
