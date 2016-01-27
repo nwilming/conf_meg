@@ -12,7 +12,7 @@ cfg.continuous                          = 'yes'; % data has been epoched
 
 
 cfg.artfctdef.zvalue.trlpadding  = 0; % padding doesnt work for data thats already on disk
-cfg.artfctdef.zvalue.fltpadding  = 0.2;
+cfg.artfctdef.zvalue.fltpadding  = 0;
 cfg.artfctdef.zvalue.artpadding  = 0.1; % go a bit to the sides of blinks
 cfg.artfctdef.zvalue.channel = channels;
 % algorithmic parameters
@@ -27,7 +27,7 @@ cfg.artfctdef.zvalue.hilbert    = 'yes';
 cfg.artfctdef.zvalue.cutoff      = 5;
 cfg.artfctdef.zvalue.interactive = 'no';
 
-[~, artifact_eog]          = ft_artifact_zvalue(cfg);
+[~, artifact_eog]          = ft_artifact_zvalue(cfg, data);
 
 % cfg                             = [];
 % cfg.artfctdef.reject            = 'complete';

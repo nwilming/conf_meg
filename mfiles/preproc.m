@@ -17,12 +17,11 @@ response = cfg.trl(:, find(strcmp('response', event_fields)) + 3);
 cfg.artfctdef.crittoilim = [ref_onset, response]/1200;
 cfg.artfctdef.reject = 'complete';
 
-datat = ft_redefinetrial(cfg, data);
-clean = ft_rejectartifact(cfg, datat);
+data = ft_redefinetrial(cfg, data);
+data = ft_rejectartifact(cfg, data);
 
-samplerows = find(clean.trialinfo(1,:)>255);
-clean = downsample(clean, samplerows);
+samplerows = find(data.trialinfo(1,:)>255);
+data = downsample(data, samplerows);
 savepath = get_filenames(subject, session, 'confidence');
-clear data datat
-save(savepath)
+save(savepath, '-v7.3')
 end
