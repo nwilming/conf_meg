@@ -6,10 +6,11 @@ cfg = get_trials(dataset, 'trialdef');
 blocks = get_blocks(cfg.trl(:, end));
 block_nums = unique(blocks);
 for block = 1:length(block_nums)
-    id_block = cfg.trl(:,end) == block;
+    id_block = blocks == block;
+    
     trls = cfg.trl(id_block, 1:2);
-    block_start = min(trls(:)) - 2500;
-    block_end = max(trls(:)) + 2500;
+    block_start = min(trls(:)) - 2500
+    block_end = max(trls(:)) + 2500
     
     [data, cfg_block] = prepare_dataset(dataset, subject, session, block_start, block_end);
     cfg_block.trl = cfg.trl(id_block, :);
@@ -29,14 +30,13 @@ for block = 1:length(block_nums)
     cfg_block.artfctdef.crittoilim = [ref_onset, response]/1200;
     cfg_block.artfctdef.reject = 'complete';
     
-    datat = ft_redefinetrial(cfg_block, data);
-    clear data
-    clean = ft_rejectartifact(cfg_block, datat);
+    data = ft_redefinetrial(cfg_block, data);
     
-    samplerows = find(clean.trialinfo(1,:)>255);
-    clean = downsample(clean, samplerows);
-    savepath = get_filenames(subject, session, 'confidence');
-    clear datat
+    cfg_block = ft_rejectartifact(cfg_block);
+    
+    samplerows = find(data.trialinfo(1,:)>255);
+    [cfg_block, data] = downsample(cfg_block, data, samplerows);
+    savepath = get_filenames(subject, session, block, 'confidence');
     save(savepath, '-v7.3')
 end
 end

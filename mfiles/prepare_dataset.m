@@ -16,4 +16,7 @@ cfg.hpfilttype              = 'fir';
 cfg.hpfiltord               = 6;
 cfg.hpfilter                = 'yes';
 cfg.hpfreq                  = 0.1;
+
+fprintf('Reading %2fs of data', (block_end-block_start)/cfg.fs)
+
 data = ft_preprocessing(cfg);
