@@ -19,4 +19,3 @@ cfg.hpfreq                  = 0.1;
 
 fprintf('Reading %2fs of data', (block_end-block_start)/cfg.fs)
 data = ft_preprocessing(cfg);
-

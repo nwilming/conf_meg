@@ -1,6 +1,6 @@
 function dataset = get_raw_filenames(subject, session, varargin)
 
-path = default_arguments(varargin, 'path', '/Volumes/dump/conf_meg');
+path = default_arguments(varargin, 'path', '/home/nwilming/conf_data/conf_meg/');
 
 type = default_arguments(varargin, 'type', 'conf');
 

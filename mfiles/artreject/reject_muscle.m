@@ -6,11 +6,12 @@ cfg.datafile                            = dataset;
 cfg.headerfile                          = dataset;
 cfg.trl                                 = [data.sampleinfo zeros(size(data.sampleinfo, 1))];
 cfg.continuous                          = 'yes'; % data has been epoched
+cfg.memory='low';
 
 % channel selection, cutoff and padding
 cfg.artfctdef.zvalue.channel     = 'MEG';
 cfg.artfctdef.zvalue.trlpadding  = 0;
-cfg.artfctdef.zvalue.fltpadding  = 0.2;
+cfg.artfctdef.zvalue.fltpadding  = 0;
 cfg.artfctdef.zvalue.artpadding  = 0.1;
 
 % algorithmic parameters
@@ -25,7 +26,7 @@ cfg.artfctdef.zvalue.boxcar      = 0.2;
 cfg.artfctdef.zvalue.cutoff      = 20;
 cfg.artfctdef.zvalue.interactive = 'no';
 
-[~, artifact_muscle] = ft_artifact_zvalue(cfg);
+[~, artifact_muscle] = ft_artifact_zvalue(cfg, data);
 
 % cfg                             = [];
 % cfg.artfctdef.reject            = 'partial';
