@@ -13,142 +13,49 @@ import seaborn as sns
 sns.set_style('ticks')
 
 from pyedfread import edf
+import patsy_transforms as pt
+from scipy.interpolate import interp1d
+from scipy import interpolate as ipt
 
 EDF_HZ = 1000.0
 
-def expand(events, messages, field, align_key='trial', align_time='trial_time', default=nan):
+
+def cleanup(events):
     '''
-    --- Missing ---
+    Cleans pupil data from blink artifacts and some other things. After cleaning
+    data is converted to zscore.
     '''
-    assert(len(unique(events[align_key])) == 1)
-    trial = events[align_key].iloc[0]
-    messages = messages[messages[align_key] == trial]
-    try:
-        con = messages[field].iloc[0]
-        con_on = messages[align_time].iloc[0]
-    except IndexError:
-        print trial
-        events[field] =  default + zeros(len(events))
-        return events
-
-    trial_begin = events.index.values[0]
-    events[field] = default + zeros(len(events))
-    for (start, end), value in zip(zip(con_on[:-1], con_on[1:]), con):
-
-        events[field].loc[start:end] = value
-    events[field].loc[end:end+100] = con[-1]
-
+    pnorm = (events.pa - events.pa.mean())/events.pa.std()
+    vpa = np.concatenate([[0], np.diff(pnorm)])
+    errors = (events.blink.values > 0.5) | (abs(vpa) > 0.5)
+    filtered = interp_blinks(events, errors, 5, 5, 2, 'pa')
+    events['pac'] = filtered
+    #events['pac'] = (filtered - events.pa.mean())/events.pa.std()
     return events
 
-
-def load_behavior(behavioral):
-    def unbox_messages(current):
-        for key in current.keys():
-            try:
-                if len(current[key])==1:
-                    current[key] = current[key][0]
-            except TypeError:
-                pass
-        return current
-    # Also load behavioral results file to match with contrast levels shown
-    behavioral = loadmat(behavioral)['session_struct']['results'][0,0]
-    d = []
-    fields = behavioral.dtype.fields.keys()
-    for trial in range(behavioral.shape[1]):
-        d.append({})
-        for field in fields:
-            d[-1][field] = behavioral[0, trial][field].ravel()
-        d[-1]['trial'] = trial+1
-        d[-1] = unbox_messages(d[-1])
-    return pd.DataFrame(d)
-
-
-def load_edf(filename):
-    '''
-    Loads one EDF file and returns a clean DataFrame.
-    '''
-    events, messages = edf.pread(
-        filename,
-        properties_filter=['gx', 'gy', 'pa', 'sttime', 'start'],
-        filter='all')
-
-    #events = edf.trials2events(events, messages)
-    #events['stime'] = pd.to_datetime(events.sample_time, unit='ms')
-    interp_blinks(events, 100, 100, 100, ['left_pa', 'left_gx', 'left_gy'])
-    if all(events.right_pa == -32768):
-        del events['right_pa']
-        events['pa'] = events.left_pa
-        del events['left_pa']
-    elif all(events.left_pa == -32768):
-        del events['left_pa']
-        events['pa'] = events.right_pa
-        del events['right_pa']
-    else:
-        raise RuntimeError('Recorded both eyes? So unusual that I\'ll stop here')
-
-    # In some cases the decision variable still contains ['second', 'conf', 'high'], 21.0 -> Fix this
-    # In these cases the decision_time variable has 2 time stamps as well...
-    if messages.decision.dtype == dtype(object):
-        messages['decision'] = array([x[-1] if isinstance(x, collections.Sequence) else x for x in messages.decision.values])
-        messages['decision_time'] = array([x[-1] if isinstance(x, collections.Sequence) else x for x in messages.decision_time.values])
-
-    return events, messages
-
-
-def join_edf_and_behavior(messages, behavior):
-    return messages.set_index('trial').join(behavior.set_index('trial')).reset_index()
-
-
-def preprocess(events, messages, behavior=None):
-    if behavior is not None:
-        messages = join_edf_and_behavior(messages, behavior)
-    events = events.set_index('sample_time')
-    events = events.groupby('trial').apply(lambda x: expand(x, messages, 'contrast_probe',
-                                                            align_time='con_change_time', default=0))
-    events = decimate(events, 10)
-    events = events[~isnan(events.pa)]
-    #con_on = [c.conrast_time.values[0][0] for name, c in messages.groupby('trial')]
-    #messages['contrast_on'] = con_on
-    join_msg(events, messages)
-    below, filt, above = filter_pupil(events.pa, 100)
-    events['pafilt'] = filt
-    events['palow'] = below
-    events['pahigh'] = above
-    return events, messages
-
-
-def join_msg(events, messages):
-    # Join messages into events. How to do this depends a bit on the semantics of the message
-    paired_fields = ['decision', 'feedback']
-    time_index = events.index.values
-    for field in paired_fields:
-        events[field] = zeros(events.pa.values.shape)
-        for t,v in zip(messages[field + '_time'].values, messages[field].values):
-            idx = argmin(abs(time_index-t))
-            events[field].iloc[idx] = v
-
-
-def interp_blinks(events, pre, post, offset=10, fields=['left_pa']):
+def interp_blinks(events, err_source, pre, post, offset=10, field='left_pa'):
     '''
     Linearly interpolate blinks
     '''
-    d = diff(events.blink)
+    d = diff(err_source)
     blinks = where(d)[0].tolist()
-    if events.blink.values[0] == 1:
+    if err_source[0] == 1:
         #Starts with a blink that is missing in blinks. Add it
         blinks.insert(0, 0)
-    if events.blink.values[-1] == 1:
+    if err_source[-1] == 1:
         #Ends with blink that will not be detected. Add it
         blinks.append(len(events.blink.values))
-    assert(mod(len(blinks), 2)==0)
 
+    if not (mod(len(blinks), 2)==0):
+        raise RuntimeError('Number of errs not even')
+    filtered = events[field].copy()
     for start, end in zip(blinks[0::2], blinks[1::2]):
-        for field in fields:
-            before = nanmean(events[field].values[start-pre:start-offset])
-            after = nanmean(events[field].values[end:end+start+offset])
-            filler = before + arange(end-start)* (after-before)/float(end-start)
-            events[field].values[start:end] = filler
+        filtered.values[start-pre:end+post] = nan
 
+    idx = arange(len(filtered))
+    idnan = isnan(filtered.values)
+    filtered = ipt.splev(idx, ipt.splrep(idx[~idnan], filtered.values[~idnan], k=1) )
+    return filtered
 
 def make_design_matrix(events):
     '''
@@ -171,7 +78,7 @@ def decimate(data, factor, **kwargs):
     return pd.DataFrame(target, index=index)
 
 
-def filter_pupil(pupil, sampling_rate, highcut = 10., lowcut = 0.01):
+def filter_pupil(pupil, sampling_rate, highcut = 10., lowcut = 0.1):
     """
     Band pass filter using a butterworth filter of order 3.
 
@@ -200,19 +107,24 @@ def filter_pupil(pupil, sampling_rate, highcut = 10., lowcut = 0.01):
     above = signal.filtfilt(b, a, pupil)
     return pupil - (filt_pupil+above), filt_pupil, above
 
-def eval_model(model, data):
+def eval_model(model, data, summary=True):
     import patsy_transforms as pt
     from sklearn import linear_model
     import statsmodels.api as sm
+
+    if len(unique(data.left_gx[~isnan(data.left_gx)])) == 1:
+        model = model.replace('left', 'right')
     y,X = patsy.dmatrices(model, data=data.copy(), eval_env=1)
+
     m = linear_model.LinearRegression()
     idnan = isnan(y.ravel())
     mod = sm.OLS(y[~idnan, :], X[~idnan, :])
     res = mod.fit()
-    print res.summary(xname=X.design_info.column_names)
+    #print res.summary(xname=X.design_info.column_names)
     m.fit(X[~idnan,:],y[~idnan,:])
     yh = m.predict(X)
-    print corrcoef(y.ravel(), yh.ravel())[0,1]**2
+    if summary:
+        print 'R**2:', corrcoef(y.ravel(), yh.ravel())[0,1]**2
     return m, yh, y, X, res
 
 
@@ -254,3 +166,48 @@ def IRF_pupil(fs=100, dur=4, s=1.0/(10**26), n=10.1, tmax=.930):
     y_dn = y_dn / np.std(y_dn)
 
     return y, y_dt, y_dn
+
+
+def prepare_glm_regressors(events, messages):
+    events.sortlevel(level='subject', inplace=True, axis=1)
+    messages.sortlevel(level='subject', inplace=True, axis=1)
+    print messages.index.names
+    print events.index.names
+
+    def make_index(field):
+        md = field.reset_index()
+        md = md.rename(columns={field.name:'sample_time'})
+        md.sample_time = md.sample_time.astype(int)
+        md = md.set_index(['session', 'block', 'subject', 'sample_time'])
+        return md
+    # Add reference contrast event
+    md = make_index(messages.decision_start_time)
+    events['ref'] = pt.event_ramp().transform(events.decision, start=md, end=md, pre=1900, post=-1500)
+
+    # Add events for a decision ramp. At the moment it is a boxcar.
+    mde = make_index(messages.decision_time)
+
+    events['decramp'] =  pt.event_ramp().transform(events.decision, start=md, end=mde, pre=0, post=0, ramp='downramp')
+    events['decramp2'] =  pt.event_ramp().transform(events.decision, start=md, end=mde, pre=0, post=0, ramp='boxcar')
+    events['dec_start'] =  pt.event_ramp().transform(events.decision, start=md, end=md, pre=0, post=0, ramp='boxcar')
+
+    # Add events for a individual decision ramps. At the moment it is a boxcar.
+    # Add events for individual decisions
+    for d in [21,22,23,24]:
+        md = make_index(messages[messages.decision==d].decision_start_time)
+        mde = make_index(messages[messages.decision==d].decision_time)
+        events['decramp%i'%d] =  pt.event_ramp().transform(events.decision, start=md, end=mde, pre=0, post=0, ramp='boxcar')
+        events['decstart%i'%d] =  pt.event_ramp().transform(events.decision, start=md, end=md, pre=0, post=0, ramp='boxcar')
+        events['decision%i'%d] =  pt.event_ramp().transform(events.decision, start=mde, end=mde, pre=0, post=0, ramp='boxcar')
+
+    # Add events for feedback
+
+    fde = make_index(messages.feedback_time[(~isnan(messages.feedback_time)) & (messages.feedback.values==-1)])
+    events['feedback_offset_neg'] =  pt.event_ramp().transform(events.feedback, start=fde, end=fde,
+                                                          pre=0, post=0, ramp='boxcar')
+    fde = make_index(messages.feedback_time[(~isnan(messages.feedback_time)) & (messages.feedback.values==1)])
+    events['feedback_offset_pos'] =  pt.event_ramp().transform(events.feedback, start=fde, end=fde,
+                                                          pre=0, post=0, ramp='boxcar')
+    events.feedback_offset_neg.ix[isnan(events['feedback_offset_neg'])] = 0
+    events.feedback_offset_pos.ix[isnan(events['feedback_offset_pos'])] = 0
+    return events, messages

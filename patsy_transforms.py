@@ -68,10 +68,20 @@ class ramp_t(empty_transform):
         return x
 
 class event_ramp(empty_transform):
-        def transform(self, x, start, end, pre=10, post=10, ramp_type='upramp', startval=0., endval=1.):
+        def transform(self, x, start, end, pre=10, post=10, ramp='boxcar'):
+            # This is a bit tricky because start and end can be different things
+            # For now I assume that start and end are indices (maybe multi-indices)
+            # Pre and post are in sample space
             x = x*0
-            for s, e in zip(start, end):
-                x.loc[s:e] = 1
+            for s, e in zip(start.index.values, end.index.values):
+                s = tuple(s[:-1] + ((s[-1]-pre),))
+                e = tuple(e[:-1] + ((e[-1]+post),))
+                v=1
+                if ramp=='upramp':
+                    v = linspace(0,1,len(x.loc[s:e]))
+                elif ramp=='downramp':
+                    v = linspace(1,0,len(x.loc[s:e]))
+                x.loc[s:e] = v
             return x
 
 class convolution(empty_transform):
@@ -149,10 +159,10 @@ class spline_convolution(object):
         knots = [0, 0] + linspace(0,1,df-1).tolist() + [1,1]
         basis = patsy.splines._eval_bspline_basis(linspace(0,1,length), knots, degree)
         basis /= basis.sum(0)
-        if len(x.shape) > 1:
+        if len(x.shape) > 1 and not (x.shape[1] == 1):
             return r_[[self.conv_base(t, basis, length) for t in x]]
         else:
-            return self.conv_base(x, basis, length)
+            return self.conv_base(x.ravel(), basis, length)
 
     def conv_base(self, x, basis, length):
         out = empty((len(x), basis.shape[1]))
@@ -163,7 +173,7 @@ class spline_convolution(object):
 Cc = patsy.stateful_transform(Cc_t)
 box = patsy.stateful_transform(boxcar_t)
 ramp = patsy.stateful_transform(ramp_t)
-bsconv = patsy.stateful_transform(spline_convolution)
+BS = patsy.stateful_transform(spline_convolution)
 F = patsy.stateful_transform(convolution)
 MF = patsy.stateful_transform(multi_convolution)
 Z = patsy.stateful_transform(Zscore)
