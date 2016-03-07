@@ -15,9 +15,9 @@ def load_data():
 
     Some files need special treatment, e.g. because subjects confused response keys.
     '''
-    files = glob.glob('/Users/nwilming/u/conf_data/s*/s*.mat')
-    files += glob.glob('/Users/nwilming/u/conf_data/s*/s*.csv')
-    files += glob.glob('/Users/nwilming/u/conf_data/S*/S*.csv')
+    files = glob.glob('/Users/nwilming/u/conf_data/S*/s*.mat')
+    files += glob.glob('/Users/nwilming/u/conf_data/S*/s*.mat')
+    files += glob.glob('/Users/nwilming/u/conf_data/s*/s*.mat')
     files += glob.glob('/Users/nwilming/u/conf_data/S*/S*.mat')
 
     dfs = []
@@ -33,7 +33,7 @@ def load_data():
         df = pd.DataFrame([dict((k, unbox(i[k].ravel())) for k in m.dtype.fields) for i in m])
         subject = int(f.split('/')[5][1:3])
         df['snum'] = subject
-        dfs.append(df)    
+        dfs.append(df)
     data = pd.concat(dfs).reset_index()
     day = [int(time.strftime('%Y%m%d', time.strptime(k, '%Y%m%dT%H%M%S'))) for k in data.session.values]
     data['day'] = day

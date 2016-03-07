@@ -10,6 +10,7 @@ import pupil
 def listfiles(dir):
     import glob, os, time
     edffiles = glob.glob(os.path.join(dir, '*.edf'))
+    edffiles = [k for k in edffiles if 'localizer' not in k]
     matfiles = glob.glob(os.path.join(dir, '*.mat'))
     edfdata = {}
     matdata = {}
