@@ -275,9 +275,10 @@ def get_sub_df(sub):
 
 def save_sub(sub, path='temp_data'):
     events, messages = get_sub_df(sub)
-    import cPickle, os
-    cPickle.dump({'events':events, 'messages':messages}, open(os.path.join(path, sub+'.pickle'), 'w'), protocol=2)
-
+    import cPickle, os, gzip
+    file = gzip.open(os.path.join(path, sub+'.pickle.gzip'), 'w')
+    cPickle.dump({'events':events, 'messages':messages}, file, protocol=2)
+    file.close()
 
 if __name__ == '__main__':
     import sys
