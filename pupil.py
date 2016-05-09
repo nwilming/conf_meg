@@ -20,6 +20,8 @@ from scipy import interpolate as ipt
 EDF_HZ = 1000.0
 
 
+decision2condition = {21:'1st High', 22:'1st Low', 23:'2nd Low', 24:'2nd High'}
+
 def cleanup(events):
     '''
     Cleans pupil data from blink artifacts and some other things. After cleaning
@@ -78,7 +80,7 @@ def decimate(data, factor, **kwargs):
     return pd.DataFrame(target, index=index)
 
 
-def filter_pupil(pupil, sampling_rate, highcut = 10., lowcut = 0.1):
+def filter_pupil(pupil, sampling_rate, highcut = 10., lowcut = 0.1, order=3):
     """
     Band pass filter using a butterworth filter of order 3.
 
@@ -100,10 +102,10 @@ def filter_pupil(pupil, sampling_rate, highcut = 10., lowcut = 0.1):
        b, a = signal.butter(order, [low, high], btype='band')
        return b, a
 
-    b, a = butter_bandpass(lowcut, highcut, sampling_rate, 3)
+    b, a = butter_bandpass(lowcut, highcut, sampling_rate, order)
     filt_pupil = signal.filtfilt(b, a, pupil)
 
-    b, a = butter_bandpass(highcut, 0.5*sampling_rate-0.5, sampling_rate, 3)
+    b, a = butter_bandpass(highcut, 0.5*sampling_rate-0.5, sampling_rate, order)
     above = signal.filtfilt(b, a, pupil)
     return pupil - (filt_pupil+above), filt_pupil, above
 
@@ -211,3 +213,59 @@ def prepare_glm_regressors(events, messages):
     events.feedback_offset_neg.ix[isnan(events['feedback_offset_neg'])] = 0
     events.feedback_offset_pos.ix[isnan(events['feedback_offset_pos'])] = 0
     return events, messages
+
+
+def fasta2(events, messages, field='decision_time', pre=1., post=1, Hz=100):
+    # Only create the necessary index in a separate dataframe.
+    number = nan*ones((len(events),))
+    time = nan*ones((len(events),))
+    time_t = linspace(-pre, post, pre*Hz + post*Hz)
+    positions = get_locations(events, messages, field)
+    for i, p in enumerate(positions):
+        start = p-pre*Hz
+        end = p+post*Hz
+        number[start:end] = i
+        if end > len(time):
+                time[start:end] = time_t[:len(time[start:end])]
+        else:
+            time[start:end] = time_t
+    return number, time
+
+def expand_field(events, messages, values, start, end):
+    # Expand a field in messages
+    field = nan*ones((len(events),))
+    start_positions = get_locations(events, messages, start)
+    end_positions = get_locations(events, messages, end)
+    assert len(start_positions) == len(end_positions) == len(values)
+    print len(start_positions), len(end_positions), len(values)
+    for i, (s, e, v) in enumerate(zip(start_positions, end_positions, values)):
+        if not s<e:
+            print i, s, e, v
+            return None
+        field[s:e] = v
+    print s, e, v
+    return field
+
+def find_closest_index(sample_times, idx, offset):
+    sample_times = sample_times.values[offset:]
+    pos = argmin(abs(sample_times-idx[-1]))
+    return offset+pos
+
+
+def get_locations(events, messages, field='decision_time'):
+    '''
+    Get the indices in events for time points specified in messages.
+
+    Returns a list with indices
+    '''
+    idx = pd.IndexSlice
+    offset = 0
+    pos = []
+    for (session, block, subject), ev in events.groupby(level=['session', 'block', 'subject']):
+        index = [(session, block, subject, int(time))
+                            for (session, block, subject, _), time in
+                                    messages.loc[idx[session, block, subject, :], field].iteritems()]
+        st = ev.index.get_level_values('sample_time')
+        pos.extend([offset + find_closest_index(st, i, 0) for i in index])
+        offset += len(ev)
+    return pos

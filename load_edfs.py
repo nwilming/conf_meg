@@ -27,7 +27,9 @@ def listfiles(dir):
         sub, d, ll = f.replace('.mat', '').split('/')[-1].split('_')
         matdata[time.strptime(d, '%d-%b-%Y %H:%M:%S')] = f
         subs.append(sub)
-    assert(len(np.unique(subs))==1)
+    if not (len(np.unique(subs))==1):
+        print np.unique(subs)
+        raise RuntimeError('Files from more than one sub in folder')
     return edfdata, matdata, sub
 
 

@@ -33,6 +33,7 @@ def load_data():
         df = pd.DataFrame([dict((k, unbox(i[k].ravel())) for k in m.dtype.fields) for i in m])
         subject = int(f.split('/')[5][1:3])
         df['snum'] = subject
+        df['trial'] = arange(len(df))
         dfs.append(df)
     data = pd.concat(dfs).reset_index()
     day = [int(time.strftime('%Y%m%d', time.strptime(k, '%Y%m%dT%H%M%S'))) for k in data.session.values]
@@ -71,39 +72,64 @@ def plot_kernel(y, response,  **kw):
     #plot(arange(0.5, 9.6, 1), vstack(y[response==r[0]].values).mean(0), **kw)
     #plot(arange(0.5, 9.6, 1), vstack(y[response==r[1]].values).mean(0),   **kw)
 
-def conf_kernels(df, alpha=1):
+
+def bootstrap(v, n, N, func=nanmean, alpha=.05):
+    '''
+    Bootstrap values in func(v[samples]), by drawing n samples N times.
+    Returns CI whose width is specified by alpha.
+    '''
+    r = []
+    for i in range(N):
+        id_rs = np.random.randint(0, len(v), size = (n,))
+        r.append(func(v[id_rs]))
+    return prctile(r, [(alpha*100)/2, 50, 100 - (alpha*100)/2])
+
+def conf_kernels(df, alpha=1, rm_mean=False, label=True, err_band=False):
     legend_labels = {(-1., 2.): 'Yes, the 1st', (-1., 1.): 'Maybe, the 1st',
                      ( 1., 2.): 'Yes, the 2nd', (1., 1.): 'Maybe, the 2nd'}
     colors = dict((k, c) for k,c in zip(((-1., 2.), (-1., 1.), ( 1., 2.), (1., 1.)), sns.color_palette(n_colors=4)))
-    try:
-        for cond, group in df.groupby(['response', 'confidence']):
-                plot(arange(0.5, 9.6, 1), vstack(group['contrast_probe'].values).mean(0), label=legend_labels[cond], color=colors[cond], alpha=alpha)
-    except TypeError:
-        print df.response.head()
-        print df.confidence.head()
-    ylim([0.35, .65])
-    yticks([0.35, 0.5, 0.65])
+
+    for cond, group in df.groupby(['response', 'confidence']):
+        kernel = vstack(group['contrast_probe'].values)
+        # trials x time
+        x = arange(0.5, 9.6, 1)
+        if rm_mean:
+            tmean = kernel.mean(1)
+            kernel = kernel - tmean[:, np.newaxis]
+        if err_band:
+            band = array(
+                        [bootstrap(kernel[:, i], kernel.shape[0], 1000)
+                            for i in range(kernel.shape[1])])
+            fill_between(x, band[:, 0], band[:, 2], color=colors[cond], alpha=alpha)
+        if label:
+            plot(x, kernel.mean(0), label=legend_labels[cond], color=colors[cond], alpha=alpha)
+        else:
+            plot(x, kernel.mean(0), color=colors[cond], alpha=alpha)
+
+    #ylim([0.35, .65])
+    #yticks([0.35, 0.5, 0.65])
     xlabel('time')
     sns.despine()
     #legend()
 
-def contrast_vs_accuracy(df, conf_val=2, conf_sample=slice(0,9)):
-    low, high = prctile(df.mc, [2.5, 97.5])
-    contrast = prctile(df.mc, linspace(1, 99, 6))#linspace(low, high, 6)
+def asfuncof(xval, data, bins=linspace(1, 99, 12), aggregate=np.mean, remove_outlier=True):
+    low, high = prctile(xval, [1, 99])
+    idx = (low<xval) & (xval<high)
+    xval = xval[idx]
+    data = data[idx]
+    edges = prctile(xval, bins)
     cfrac = []
     centers = []
     frac = []
-    contrast_values = vstack(df.contrast_probe.values)[:, conf_sample]
-    if len(contrast_values.shape)>1:
-        contrast_values = contrast_values.mean(1)
-    for low, high in zip(contrast[:-1], contrast[1:]):
-        d = df.confidence.values[(low<contrast_values) & (contrast_values<=high)]
-        cfrac.append(nansum(d==conf_val)/float(len(d)))
+    for low, high in zip(edges[:-1], edges[1:]):
+        d = data[(low<xval) & (xval<=high)]
         if len(d) < 5:
-            cfrac[-1] = np.nan
-        frac.append(len(d)/float(len(df)))
+            frac.append(np.nan)
+        else:
+            frac.append(aggregate(d))
         centers.append(nanmean([low, high]))
-    return cfrac, centers, frac
+    return centers, frac
+
 
 def fit_logistic(df, formula, summary=True):
     y,X = patsy.dmatrices(formula, df, return_type='dataframe')
@@ -125,7 +151,7 @@ def fit_pmetric(df, features=['contrast'], targetname='response'):
     return log_res
 
 
-def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)]):
+def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)], hyperplane_only=False):
     ex, ey = bins
     M,C = meshgrid(*bins)
     resp1 = histogram2d(df[df.response==1].stdc.values, df[df.response==1].mc.values, bins=bins)[0] +1
@@ -137,7 +163,8 @@ def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)]):
     p = p.reshape(M.shape)
 
     decision = lambda x: -(model.params.mc*x+ model.params.Intercept)/model.params.stdc
-    pcolor(bins[1], bins[0], log(resp1/resp2))
+    if not hyperplane_only:
+        pcolor(bins[1], bins[0], log(resp1/resp2))
     plot([0, 1], [decision(0.), decision(1.)], 'r', lw=2)
     plot([0.5, .5], [0, 1], 'r--', lw=2)
     ylim([0, 0.25])
