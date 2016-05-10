@@ -45,6 +45,22 @@ def load_data():
     return data
 
 
+def data_cleanup(data):
+    id_2nd_high = ((data.snum==3) & (data.response == 1) & (data.confidence==2) &
+                  ((data.day == 20151207) | (data.day == 20151208)))
+    id_2nd_low =  ((data.snum==3) & (data.response == 1) & (data.confidence==1) &
+                  ((data.day == 20151207) | (data.day == 20151208)))
+    data.loc[id_2nd_high, 'confidence'] = 1
+    data.loc[id_2nd_low, 'confidence'] = 2
+    id_1st_high = ((data.snum==11) & (data.response == -1) & (data.confidence==2) &
+              ((data.day == 20160222)))
+    id_1st_low =  ((data.snum==11) & (data.response == -1) & (data.confidence==1) &
+              ((data.day == 20160222)))
+    data.loc[id_1st_high, 'confidence'] = 1
+    data.loc[id_1st_low, 'confidence'] = 2
+    return data
+
+    
 def pk(df, gs=matplotlib.gridspec.GridSpec(1,3), row=0):
     subplot(gs[row,0])
     conf_kernels(df)

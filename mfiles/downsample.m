@@ -12,6 +12,6 @@ cfgs.detrend     = detrend;
 data        = ft_resampledata(cfgs, data);
 
 %cfg.trl(:, 1:3) = round(cfg.trl(:,1:3) * (cfgs.resamplefs/cfgs.fsample));
-%cfg.trl(:, samplerows + 3) = round(cfg.trl(:,samplerows+3) * (cfgs.resamplefs/cfgs.fsample));
+%cfg.trl(:, samplerows + 3) = round(cfg.trl(:,samplerows+3) * (cfgs.resamplef/cfgs.fsample));
 
 
