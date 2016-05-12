@@ -6,8 +6,7 @@ import numpy as np
 from scipy.stats import norm, gamma
 from scipy.stats import t
 from scipy.special import gammaln
-from numba import jit
-
+from conf_analysis.behavior import fstnrm as fast
 
 def NG(mu, precision, mu0, kappa0, alpha0, beta0):
     '''
@@ -16,7 +15,6 @@ def NG(mu, precision, mu0, kappa0, alpha0, beta0):
     return norm.pdf(mu, mu0, 1./(precision*kappa0)) * gamma.pdf(precision, alpha0, scale=1./beta0)
 
 
-@jit
 def NGposterior(xbar, sigma, n, prior):
     '''
     Compute the posterior distribution for n normal samples with mean xbar and std sigma.
@@ -32,7 +30,6 @@ def NGposterior(xbar, sigma, n, prior):
     return mun, kn, an, bn
 
 
-@jit
 def Mu_posterior(xbar, sigma, n, prior):
     '''
     Compute the posterior distribution of mu for n normal samples with mean xbar and std sigma.
@@ -59,7 +56,7 @@ def plarger(mean, std, n, prior):
     Calculate the probability that a sample has a mean value larger than 0. This
     works by marginalizing out the standard deviation.
     '''
-    df, loc, scale = Mu_posterior(mean.ravel(), std.ravel(), n, prior)
+    df, loc, scale = fast.Mu_posterior(mean.ravel(), std.ravel(), n, prior)
     return 1.-t(df,loc,scale).cdf(0).reshape(mean.shape)
 
 
@@ -68,7 +65,7 @@ def psmaller(mean, std, n, prior):
     Calculate the probability that a sample has a mean value smaller than 0:
         psmaller(m,s,n, prior) = 1-plarger(mean, std, n, prior)
     '''
-    df, loc, scale = Mu_posterior(mean.ravel(), std.ravel(), n, prior)
+    df, loc, scale = fast.Mu_posterior(mean.ravel(), std.ravel(), n, prior)
     return t(df,loc,scale).cdf(0).reshape(mean.shape)
 
 
@@ -79,9 +76,9 @@ def logLPR(mean, std, prior):
     '''
     mean = np.asarray(mean)
     std = np.asarray(std)
-    pL = plarger(mean, std, 10., prior)
+    pL = plarger(mean, std, 10, prior)
     pL = np.maximum(np.minimum(pL, 1-np.finfo(float).eps), 0+np.finfo(float).eps)
-    #pS = psmaller(mean, std, 10., prior)
+    #pS = psmaller(mean, std, 10, prior)
     #pS = np.maximum(np.minimum(pS, 1-np.finfo(float).eps), 0+np.finfo(float).eps)
     return np.log(pL) - np.log(1-pL)
 
@@ -104,14 +101,10 @@ class IdealObserver(object):
     Represents an ideal observer with a fixed prior.
     '''
 
-    def __init__(self, bias, conf_threshold, prior=None):
+    def __init__(self, bias, conf_threshold, prior=np.array([0., .01, .01, .01])):
         self.bias=float(bias)
         self.conf_threshold = float(conf_threshold)
         self.prior = prior
-
-        if prior is None:
-            print 'Prior is None, Alarm!'
-            self.prior = 0., .01, .01, .01
 
     def __str__(self):
         s = 'Bias: %2.1f, conf_threshold: %2.1f, prior:'%(self.bias, self.conf_threshold)
@@ -143,6 +136,83 @@ class IdealObserver(object):
         for i, idx in enumerate(decision):
             ps[idx, i] = 1
         return ps/ps.sum(0)
+
+
+from scipy import optimize
+
+class NrmModel(IdealObserver):
+
+    def __init__(self, bias=0, conf_threshold=np.nan, mu0=0., kappa0=1., alpha0=1., beta0=1.):
+        prior = np.array([mu0, kappa0, alpha0, beta0])
+        super(self.__class__, self).__init__(bias, conf_threshold, prior=prior)
+
+    def fit(self, X,y, opt_fit=False, **params):
+        if opt_fit:
+            # if params are given, use them as a starting point for fitting with
+            # Nelder-Mead
+            def err_function(params):
+                mdl = NrmModel(bias=params[0], conf_threshold=params[1], mu0=params[2],
+                               kappa0=params[3], alpha0=params[4], beta0=params[5])
+                return -mdl.score(X,y)
+            start = np.array([self.bias, self.conf_threshold] + list(self.prior))
+            x = optimize.fmin(err_function, start)
+            ps = x[1]
+            print x[0]
+            return self.set_params(bias=x[0], conf_threshold=x[1], mu0=x[2], kappa0=x[3], alpha0=x[4], beta0=x[5])
+        return self
+
+    def score(self, X, y):
+        '''
+        Approximates the likelihood of data given a set of parameters.
+        This is actually the formula for a multinomial distribution with all
+        the constants taken out and considering that each trial only has one
+        choice.
+        '''
+        X = X.T
+        p = self(X[0].ravel(), X[1].ravel())
+        idx = ((y==p)/2.)+0.25
+        return sum(np.log(idx))
+
+
+    def predict(self, X):
+        X = X.T
+        return self(X[0], X[1])
+
+    def get_params(self, deep=True):
+        return {'bias': self.bias, 'conf_threshold':self.conf_threshold,
+                'mu0':self.prior[0], 'kappa0':self.prior[1],
+                'alpha0':self.prior[2], 'beta0':self.prior[3]}
+
+    def set_params(self, **ps):
+        self.bias = ps['bias']
+        self.conf_threshold = ps['conf_threshold']
+        self.prior = np.array([ps['mu0'], ps['kappa0'], ps['alpha0'], ps['beta0']])
+        return self
+
+def fit_one_sub(data):
+    import cPickle
+    fitted_obs, bias, cutoff, prior, x, _, _ = fit_single(data)
+    cPickle.dump(
+        {'bias':bias, 'conf_threshold':cutoff, 'prior': prior, 'snum':snum},
+        open('nrm_fit_parameters_s%i.pickle'%snum)
+    )
+
+
+def fit_single(m):
+    answers = m.response*m.confidence
+    rranges = (
+           (-4, 4),  # Bias
+           (1., 10.), # Conf threshold
+           (-15, 15),# mean prior
+           (0, 5),   # kappa
+           (0, 10),  # alpha
+           (0, 10))
+
+    con = vstack(m.contrast_probe)
+    con = (con-mean(con))/abs(con-mean(con)).std()
+    bias, cutoff, prior, x = nrm.fit(answers, con.mean(1), con.std(1), Ns=10)
+    fitted_obs = nrm.IdealObserver(bias=bias, conf_threshold=log(cutoff), prior=prior)
+    return fitted_obs, bias, cutoff, prior, x, con.mean(1), con.std(1)
 
 
 def multinomial(xs, ps):
@@ -195,36 +265,11 @@ def opt_err_fct(parameters, true, data):
     Approximates the likelihood of data given a set of parameters.
     '''
     prior = parameters[2:]
-    prior[1:] = abs(prior[1:]) 
+    prior[1:] = abs(prior[1:])
     obs = IdealObserver(bias=parameters[0], conf_threshold=np.log(parameters[1]), prior=prior)
     p = obs(data[0], data[1])
     idx = ((true==p)/2.)+0.25
     return -sum(np.log(idx))
-
-
-def fit(decisions, mean, sigma, x0=[0, 1., 0., 1., 1., 1.], eval_only=False,
-        Ns=4, rranges=None, **kwargs):
-    from scipy import optimize
-    #decisions = decisions+2
-    #decisions[decisions>1] -= 1
-    #assert all(np.unique(decisions) == np.unique([0,1,2,3]))
-    data = (mean, sigma)
-    err = lambda x: opt_err_fct(x, decisions, data)
-    if eval_only:
-        return err
-    if rranges is None:
-        rranges = ((-3, 3), # Bias
-               (1, 5), # Conf threshold
-               (-5, 5), #mean prior
-               (0, 5), #kappa
-               (0, 10),  #alpha
-               (0, 5))
-    resbrute = optimize.brute(err, rranges, full_output=True, finish=optimize.fmin, Ns=Ns)
-    bias = resbrute[0][0]
-    cutoff = resbrute[0][1]
-    prior = resbrute[0][2:]
-    return bias, cutoff, prior, resbrute
-
 def p2s(precision):
     '''
     Convert precision to standard deviation.

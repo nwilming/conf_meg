@@ -8,6 +8,8 @@ import statsmodels.api as sm
 from sklearn import linear_model
 import patsy
 import time
+from scipy.stats import norm
+
 
 def load_data():
     '''
@@ -60,7 +62,46 @@ def data_cleanup(data):
     data.loc[id_1st_low, 'confidence'] = 2
     return data
 
-    
+
+def phi(x):
+    '''
+    Inverse cumulative normal
+    '''
+    return norm.ppf(x)
+
+def tbl(data, field='response'):
+    '''
+    Compute hit, false alarm, miss and correct rejection rate.
+    '''
+    hit = sum((data[field] == 1) & (data.side==1))
+    fa = sum((data[field] == 1) & (data.side==-1))
+    miss = sum((data[field] == -1) & (data.side==1))
+    cr = sum((data[field] == -1) & (data.side==-1))
+    Na = float(hit + miss)
+    Nb = float(fa + cr)
+    return hit/Na, fa/Nb, miss/Na, cr/Nb
+
+def dp(data, field='response'):
+    '''
+    compute d'
+    '''
+    hit, fa, _, _ = tbl(data)
+    return phi(hit) - phi(fa)
+
+def crit(data, field='response'):
+    '''
+    compute criterion.
+    '''
+    hit, fa, _, _ = tbl(data)
+    return -.5 *(phi(hit) + phi(fa))
+
+def acc(data, field='response'):
+    '''
+    compute accuracy
+    '''
+    return data.correct.mean()
+
+
 def pk(df, gs=matplotlib.gridspec.GridSpec(1,3), row=0):
     subplot(gs[row,0])
     conf_kernels(df)
