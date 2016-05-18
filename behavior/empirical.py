@@ -77,29 +77,29 @@ def tbl(data, field='response'):
     fa = sum((data[field] == 1) & (data.side==-1))
     miss = sum((data[field] == -1) & (data.side==1))
     cr = sum((data[field] == -1) & (data.side==-1))
-    Na = float(hit + miss)
-    Nb = float(fa + cr)
+    Na = float(hit + miss)+1.
+    Nb = float(fa + cr)+1.
     return hit/Na, fa/Nb, miss/Na, cr/Nb
 
 def dp(data, field='response'):
     '''
     compute d'
     '''
-    hit, fa, _, _ = tbl(data)
+    hit, fa, _, _ = tbl(data, field=field)
     return phi(hit) - phi(fa)
 
 def crit(data, field='response'):
     '''
     compute criterion.
     '''
-    hit, fa, _, _ = tbl(data)
+    hit, fa, _, _ = tbl(data, field=field)
     return -.5 *(phi(hit) + phi(fa))
 
-def acc(data, field='response'):
+def acc(data, field='correct'):
     '''
     compute accuracy
     '''
-    return data.correct.mean()
+    return data[field].mean()
 
 
 def pk(df, gs=matplotlib.gridspec.GridSpec(1,3), row=0):

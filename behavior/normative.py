@@ -143,21 +143,37 @@ from scipy import optimize
 class NrmModel(IdealObserver):
 
     def __init__(self, bias=0, conf_threshold=np.nan, mu0=0., kappa0=1., alpha0=1., beta0=1.):
-        prior = np.array([mu0, kappa0, alpha0, beta0])
+        prior = np.array([mu0, kappa0, alpha0, abs(beta0)])
         super(self.__class__, self).__init__(bias, conf_threshold, prior=prior)
 
-    def fit(self, X,y, opt_fit=False, **params):
+    def fit(self, X,y, opt_fit=False, libcma=False, **params):
         if opt_fit:
-            # if params are given, use them as a starting point for fitting with
-            # Nelder-Mead
             def err_function(params):
                 mdl = NrmModel(bias=params[0], conf_threshold=params[1], mu0=params[2],
                                kappa0=params[3], alpha0=params[4], beta0=params[5])
                 return -mdl.score(X,y)
             start = np.array([self.bias, self.conf_threshold] + list(self.prior))
-            x = optimize.fmin(err_function, start)
-            ps = x[1]
-            print x[0]
+            if not libcma:
+                import cma
+                x = cma.fmin(err_function, start, 1.5, restarts=5, options={
+                                'verbose':-9})[0]
+            else:
+                import lcmaes
+                import lcmaes_interface as lci
+                print 'Start:', err_function(start)
+                ffunc = lci.to_fitfunc(err_function)
+                lbounds = [-np.inf, 0, -np.inf] + 3*[0]
+
+                fopt = lci.to_params(list(start), 1.5,
+                    str_algo=b'aipop',
+                    lbounds=lbounds,
+                    restarts=5,
+                    )
+
+                res = lci.pcmaes(ffunc, fopt)
+                bcand = res.best_candidate()
+                print 'End:', bcand.get_fvalue()
+                x = lcmaes.get_candidate_x(bcand)
             return self.set_params(bias=x[0], conf_threshold=x[1], mu0=x[2], kappa0=x[3], alpha0=x[4], beta0=x[5])
         return self
 
@@ -196,23 +212,6 @@ def fit_one_sub(data):
         {'bias':bias, 'conf_threshold':cutoff, 'prior': prior, 'snum':snum},
         open('nrm_fit_parameters_s%i.pickle'%snum)
     )
-
-
-def fit_single(m):
-    answers = m.response*m.confidence
-    rranges = (
-           (-4, 4),  # Bias
-           (1., 10.), # Conf threshold
-           (-15, 15),# mean prior
-           (0, 5),   # kappa
-           (0, 10),  # alpha
-           (0, 10))
-
-    con = vstack(m.contrast_probe)
-    con = (con-mean(con))/abs(con-mean(con)).std()
-    bias, cutoff, prior, x = nrm.fit(answers, con.mean(1), con.std(1), Ns=10)
-    fitted_obs = nrm.IdealObserver(bias=bias, conf_threshold=log(cutoff), prior=prior)
-    return fitted_obs, bias, cutoff, prior, x, con.mean(1), con.std(1)
 
 
 def multinomial(xs, ps):
@@ -270,6 +269,7 @@ def opt_err_fct(parameters, true, data):
     p = obs(data[0], data[1])
     idx = ((true==p)/2.)+0.25
     return -sum(np.log(idx))
+
 def p2s(precision):
     '''
     Convert precision to standard deviation.
