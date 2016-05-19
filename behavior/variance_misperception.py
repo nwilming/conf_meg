@@ -75,11 +75,17 @@ def predicted_conf_vs_noise(data, w, c):
 
 
 def grid2D(data):
+    '''
+    Fit variance misperception model with a 2D grid search.
+    '''
+
     w, s = meshgrid(linspace(0., 1., 51), linspace(0., 5, 51))
+
     p_e = fit_internal_sigma(data)
     sigma_int = dict((k, v) for k, v in zip(p_e.index.values, p_e.values))
     sigmas = array([sigma_int[n] for n in data.noise_sigma]).ravel()
     target = conf_vs_noise(data).values.ravel()
+
     def object_func(w, c):
         confidence = predict_confidence(w, c, data.mc-.5, sigmas, mean(data.contrast), sigma_int.values())
         predicted = array([mean(confidence[data.noise_sigma.values==ns]) for ns in p_e.index.values])

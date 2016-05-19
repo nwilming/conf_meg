@@ -209,8 +209,7 @@ def fit_pmetric(df, features=['contrast'], targetname='response'):
 
 
 def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)], hyperplane_only=False):
-    ex, ey = bins
-    M,C = meshgrid(*bins)
+    C, M = meshgrid(*bins)
     resp1 = histogram2d(df[df.response==1].stdc.values, df[df.response==1].mc.values, bins=bins)[0] +1
     resp2 = histogram2d(df[df.response==-1].stdc.values, df[df.response==-1].mc.values, bins=bins)[0] +1
     resp1 = resp1.astype(float)/sum(resp1)
@@ -222,9 +221,12 @@ def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)], hyperpl
     decision = lambda x: -(model.params.mc*x+ model.params.Intercept)/model.params.stdc
     if not hyperplane_only:
         pcolor(bins[1], bins[0], log(resp1/resp2))
-    plot([0, 1], [decision(0.), decision(1.)], 'r', lw=2)
-    plot([0.5, .5], [0, 1], 'r--', lw=2)
-    ylim([0, 0.25])
-    xlim([0, 1])
+    mind, maxd = xlim()
+    ylim(bins[0][0], bins[0][-1])
+    xlim(bins[1][0], bins[1][-1])
+    plot([mind, maxd], [decision(mind), decision(maxd)], 'r', lw=2)
+    plot([0, 0], [bins[0][0], bins[0][-1]], 'r--', lw=2)
+    #ylim([0, 0.25])
+    #xlim([0, 1])
     #contour(bins[1], bins[0], p.T, [0.5])
     return bins, p
