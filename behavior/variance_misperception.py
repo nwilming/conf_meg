@@ -1,10 +1,17 @@
 '''
 Implement variance misperception model from Zylberberg et al. 2014
+
+This module works with a pandas data frame that has the following fields:
+    - conf_0index: 0 for low confidence, 1 for high confidence
+    - mu: mean contrast in a trial
+    - correct: 0 if error, 1 if correct choice
+
 '''
 from pylab import *
 from scipy.stats import norm
 from scipy.optimize import minimize_scalar, minimize
 import numpy as np
+import pandas as pd
 
 
 # Fit mean variance level:
@@ -26,12 +33,14 @@ def fit_sigma(correct, mu):
     Input:
         correct : Vector where each index encodes a trial and each entry encodes
             whether decision was correct.
-        mu : Mean contrast (or generative mean) of a trial
+        mu : Mean contrast (or generative mean) of a trial, 0 should be the optimal
+            decsion boundary.
     Output:
         std of 'internal distribution'
     '''
-    prediction = lambda x: norm.cdf(0, abs(mu), x)
-    errf = lambda x: sum((~correct-prediction(x))**2)
+    errors = ~correct
+    prediction = lambda x: norm.cdf(0, mean(mu), x)
+    errf = lambda x: sum((errors-prediction(x))**2)
     return minimize_scalar(errf, method='Bounded', bounds=[0, 100000])
 
 
@@ -53,25 +62,57 @@ def conf_vs_noise(data):
          .conf_0index.mean().reset_index()
          .pivot_table(index='noise_sigma'))
 
-def fit_internal_sigma(data):
-    return (data.groupby('noise_sigma')
-        .apply(lambda x: fit_sigma(x.correct.astype(bool), x.mc-0.5).x)
-        .reset_index().pivot_table(index='noise_sigma'))
-
 
 def predict_conf_vs_noise(data, w, c):
     p_high_conf = fit_internal_sigma(data)
     sigma_int = dict((k, v) for k, v in zip(p_high_conf.index.values, p_high_conf.values))
     sigmas = array([sigma_int[n] for n in data.noise_sigma]).ravel()
-    return predict_confidence(w, c, data.mc-.5, sigmas, mean(data.contrast), sigma_int.values())
+    return predict_confidence(w, c, data.mc, sigmas, mean(data.contrast), sigma_int.values())
+
 
 def predicted_conf_vs_noise(data, w, c):
     p_high_conf = fit_internal_sigma(data)
     sigma_int = dict((k, v) for k, v in zip(p_high_conf.index.values, p_high_conf.values))
     sigmas = array([sigma_int[n] for n in data.noise_sigma]).ravel()
-    confidence = predict_confidence(w, c, data.mc-.5, sigmas, mean(data.contrast), sigma_int.values())
+    confidence = predict_confidence(w, c, data.mc, sigmas, mean(data.contrast), sigma_int.values())
     predicted = array([mean(confidence[data.noise_sigma.values==ns]) for ns in sort(sigma_int.keys())])
     return predicted
+
+
+def fit_internal_sigma(data):
+    return (data.groupby('noise_sigma')
+        .apply(lambda x: fit_sigma(x.correct.astype(bool), x.mc).x)
+        .reset_index().pivot_table(index='noise_sigma'))
+
+
+def explicit(confidence, choice, trial_contrast, threshold, trial_sigma, side):
+    w, s = meshgrid(linspace(0., 1., 101), linspace(0., 2.5, 101))
+    mcadjusted = trial_contrast.values.copy()
+    mcadjusted[~side.values.astype(bool)] *= -1
+    p_e = fit_internal_sigma(pd.DataFrame({'correct':choice,
+        'mc':mcadjusted,
+        'noise_sigma':trial_sigma}))
+    sigma_int = dict((k, v) for k, v in zip(p_e.index.values, p_e.values))
+    sigmas = array([sigma_int[n] for n in trial_sigma]).ravel()
+    target = conf_vs_noise(
+                    pd.DataFrame({'conf_0index':confidence,
+                                  'noise_sigma':trial_sigma})).values.ravel()
+
+    def object_func(w, c):
+        confidence = predict_confidence(w, c, trial_contrast, sigmas,
+                                        threshold, sigma_int.values())
+        predicted = array([mean(confidence[trial_sigma.values==ns]) for ns in p_e.index.values])
+        return sum((target-predicted)**2)
+
+    res = []
+    for wb, sb in zip(w.ravel(), s.ravel()):
+        res.append(object_func(wb, sb))
+    res = array(res).reshape(w.shape)
+    m = argmin(res)
+    conf = predict_confidence(w.ravel()[m], s.ravel()[m], trial_contrast, sigmas,
+                                    threshold, sigma_int.values())
+    predicted = array([mean(conf[trial_sigma.values==ns]) for ns in p_e.index.values])
+    return w, s, res, target, predicted
 
 
 def grid2D(data):
@@ -95,22 +136,5 @@ def grid2D(data):
         res.append(object_func(wb, sb))
     res = array(res).reshape(w.shape)
     m = argmin(res)
-    return w.ravel()[m], s.ravel()[m]
-
-def fit_w(data):
-    p_e = sigma_vs_noise(data)
-    sigma_int = dict((k, v) for k, v in zip(p_e.index.values, p_e.values))
-    sigmas = array([sigma_int[n] for n in data.noise_sigma]).ravel()
-    target = conf_vs_noise(data)
-
-
-    w,c = minimize(err_model, [0.20, 0.9],
-             args=[data.conf_0index.values,
-                   data.mc.values-0.5,
-                   data.contrast.values,
-                   sigmas,
-                   data.noise_sigma,
-                   target],
-             method='CG',
-             options={'disp':False}).x
-    return w, c
+    #return w.ravel()[m], s.ravel()[m]
+    return w, s,

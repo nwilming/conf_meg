@@ -21,7 +21,8 @@ def load_data():
     files += glob.glob('/Users/nwilming/u/conf_data/S*/s*.mat')
     files += glob.glob('/Users/nwilming/u/conf_data/s*/s*.mat')
     files += glob.glob('/Users/nwilming/u/conf_data/S*/S*.mat')
-
+    files = unique(files)
+    
     dfs = []
     def unbox(l):
         if len(l)==1:
@@ -44,6 +45,23 @@ def load_data():
     data['stdc'] = array([std(k) for k in data.contrast_probe.values])
     data['R'] = data.response.copy()
     data.loc[data.response==-1, 'R'] = 0
+
+    def session_num(data):
+        lt = dict((k, i) for i,k in enumerate(sort(unique(data.day))))
+        data.loc[:, 'session_num'] = data.day
+        data.session_num = data.session_num.replace(lt)
+        return data
+
+    def block_num(data):
+        lt = dict((k, i) for i,k in enumerate(sort(unique(data.session.astype('str')))))
+        data.loc[:, 'block_num'] = data.session.astype('str')
+        data.block_num = data.block_num.replace(lt)
+        return data
+    print data.shape
+    data = data.groupby('snum').apply(session_num)
+    print data.shape
+    data = data.groupby(['snum', 'session_num']).apply(block_num)
+    print data.shape
     return data
 
 

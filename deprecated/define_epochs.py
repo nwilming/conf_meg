@@ -42,6 +42,8 @@ class Trial(object):
 
     def _field2val(self, value):
         pass
+
+
     def next(self, sample, value):
         expected = self.trial_stack.pop(0)
         field_name = self.field_names.pop(0)
@@ -66,6 +68,8 @@ class Trial(object):
             raise StopIteration('Done')
 
 
+def get_simpler(events):
+    pass
 
 def get_trials(events):
     '''
