@@ -23,9 +23,8 @@ cfg.artfctdef.zvalue.bpfiltord  = 4;
 cfg.artfctdef.zvalue.hilbert    = 'yes';
 
 % make the process interactive
-cfg.artfctdef.zvalue.interactive = 'yes';
 cfg.artfctdef.zvalue.cutoff      = 1;
-%cfg.artfctdef.zvalue.interactive = 'no';
+cfg.artfctdef.zvalue.interactive = 'no';
 
 [~, artifact_eog]          = ft_artifact_zvalue(cfg, data);
 
