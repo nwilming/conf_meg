@@ -1,6 +1,6 @@
 function dataset = get_filenames(subject, session, block, varargin)
 
-path = default_arguments(varargin, 'path', '/home/nwilming/conf_data/conf_meg/');
+path = default_arguments(varargin, 'path', '/Volumes/dump/conf_meg/');
 
 path = fullfile(path, sprintf('S%i', subject));
 mkdir(path);
