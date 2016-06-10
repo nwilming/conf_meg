@@ -7,15 +7,19 @@ import pandas as pd
 
 
 if socket.gethostname().startswith('node'):
-    raw_path = '/home/nwilming/conf_data/raw/'
+    raw_path = '/home/nwilming/conf_meg/raw/'
     downsampled = '/home/nwilming/conf_data/'
     convert_path = '/home/nwilming/MNE-2.7.0-3106-Linux-x86_64/bin/mne_ctf2fiff'
     cachedir = '/home/nwilming/conf_data/cache/'
+    behavioral_path = '/home/nwilming/conf_data/'
+
 else:
     raw_path = '/Volumes/dump/conf_data/raw/'
     downsampled = '/Volumes/dump/conf_data/'
     convert_path = '/Applications/MNE-2.7.4-3378-MacOSX-x86_64/bin/mne_ctf2fiff'
     cachedir = '/Users/nwilming/u/conf_analysis/cache/'
+    behavioral_path = '/Users/nwilming/u/conf_data/'
+
 
 data_files = {'S01': ['s01-01_Confidence_20151208_02.ds',
                       's01-02_Confidence_20151210_02.ds',
@@ -76,6 +80,7 @@ def define_blocks(events):
         end = where(events[:, 2] == 151)[0]
         if dif == (len(start)-len(end)):
             raise RuntimeError('Something is wrong in the trial def. Fix this!')
+
     trials = []
     blocks = []
     block = 0

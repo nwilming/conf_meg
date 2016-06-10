@@ -7,7 +7,7 @@ locale.setlocale(locale.LC_ALL, 'en_US')
 
 print 'sb2fname = {'
 for subject in ['S%02i'%i for i in range(1, 15)]:
-    edf, mf, s = le.listfiles('/Users/nwilming/u/conf_data/%s'%subject)
+    edf, mf, s = le.listfiles('/home/nwilming/conf_data/%s'%subject)
 
     edf = dict((edf.keys()[k], edf[edf.keys()[k]]) for k in argsort([time.mktime(k) for k in edf.keys()]))
     mf = dict((mf.keys()[k], mf[mf.keys()[k]]) for k in argsort([time.mktime(k) for k in mf.keys()]))

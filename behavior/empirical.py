@@ -9,20 +9,27 @@ from sklearn import linear_model
 import patsy
 import time
 from scipy.stats import norm
+from os.path import join
+import metadata
 
+from joblib import Memory
+from os.path import basename, join
 
+memory = Memory(cachedir=metadata.cachedir, verbose=0)
+
+@memory.cache
 def load_data():
     '''
     Load behavioral matlab data files.
 
     Some files need special treatment, e.g. because subjects confused response keys.
     '''
-    files = glob.glob('/Users/nwilming/u/conf_data/S*/s*.mat')
-    files += glob.glob('/Users/nwilming/u/conf_data/S*/s*.mat')
-    files += glob.glob('/Users/nwilming/u/conf_data/s*/s*.mat')
-    files += glob.glob('/Users/nwilming/u/conf_data/S*/S*.mat')
+    files = glob.glob(join(metadata.behavioral_path, 'S*/s*.mat'))
+    files += glob.glob(join(metadata.behavioral_path, 's*/s*.mat'))
+    files += glob.glob(join(metadata.behavioral_path, 's*/S*.mat'))
+    files += glob.glob(join(metadata.behavioral_path, 'S*/S*.mat'))
     files = unique(files)
-    
+
     dfs = []
     def unbox(l):
         if len(l)==1:
