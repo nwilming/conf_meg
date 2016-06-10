@@ -8,9 +8,25 @@ import glob
 from itertools import product
 from conf_analysis.behavior import metadata
 from joblib import Memory
-from os.path import basename, join
+from os.path import basename, join, isfile
 
 memory = Memory(cachedir=metadata.cachedir, verbose=0)
+
+
+def get_epochs(raw, epochs, baseline, tmin=-1, tmax=0, downsample=300, reject=dict(mag=5e-12), picks='meg'):
+    if picks is 'meg':
+        picks = mne.pick_types(raw.info, meg=True, eeg=False, stim=False, eog=False, exclude='bads')
+
+    epochs = mne.Epochs(raw, epochs, tmin=tmin, tmax=tmax,
+        baseline=None, picks=picks, reject_by_annotation=True, reject=reject)
+    baseline = mne.Epochs(raw, baseline, tmin=tmin, tmax=tmax,
+        baseline=None, picks=picks, reject_by_annotation=True, reject=reject)
+    epochs.load_data()
+    baseline.load_data()
+
+    epochs = apply_baseline(epochs, baseline)
+    return epchs.resample(downsample)
+    
 
 
 def get_datasets(data, subject, sessions):
@@ -22,33 +38,31 @@ def get_datasets(data, subject, sessions):
     return raws, metas, timings
 
 def from_cache(cachdir):
-    if os.path.isfile(cachedir):
+    if isfile(cachedir):
         # Load from disk
         raw = mne.io.Raw(cachedir)
-        meta = pd.read_hdf(cachedir + 'meta.hdf')
-        timing = pd.read_hdf(cachedir + 'timing.hdf')
+        meta = pd.read_hdf(cachedir + 'meta.hdf', 'meta')
+        timing = pd.read_hdf(cachedir + 'timing.hdf', 'timing')
         return raw, meta, timing
     else:
         raise RuntimeError('Not present in cache: %s'%cachedir)
 
-def to_cache(cachdir, raw, meta, timing):
-    raw.save(cachedir)
-    meta.to_hdf(cachedir + 'meta.hdf')
-    timing.to_hdf(cachedir + 'timing.hdf')
+def to_cache(raw, meta, timing):
+    fname = basename(raw.info['filename'])
+    cachedir = join(metadata.cachedir, fname)
+    raw.save(cachedir + '.raw.fif.gz', overwrite=True)
+    meta.to_hdf(cachedir + 'meta.hdf', 'meta')
+    timing.to_hdf(cachedir + 'timing.hdf', 'meta')
 
-def pre_filter(raw):
-    raw.notch_filter(np.arange(50, 251, 50))
-    raw.resample(300, npad="auto")  # set sampling frequency to 100Hz
-    return raw
-    
-def get_dataset(data, filename, snum):
+
+def get_dataset(data, filename, snum, notch=True):
     '''
     Preprocess a data set and return raw and meta struct. Caches results in an
     intermediate directory (metadata.cachedir).
     '''
 
     cachedir = join(metadata.cachedir, basename(filename)+'.raw.fif.gz')
-    if os.path.isfile(cachedir):
+    if isfile(cachedir):
         return from_cache(cachedir)
 
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
@@ -72,6 +86,9 @@ def get_dataset(data, filename, snum):
     dropchans = [x for x in array(raw.ch_names)[picks] if not x.startswith('M')]
     dropchans = dict((k, 'syst') for k in dropchans)
     raw.set_channel_types(dropchans)
+    if notch:
+        raw.load_data()
+        raw.notch_filter(np.arange(50, 251, 50))
     return raw, meta.drop(cols, axis=1), timing
 
 
