@@ -8,7 +8,7 @@ import glob
 from itertools import product
 from conf_analysis.behavior import metadata
 from joblib import Memory
-from os.path import basename, join
+from os.path import basename, join, isfile
 
 memory = Memory(cachedir=metadata.cachedir, verbose=0)
 
@@ -22,7 +22,7 @@ def get_datasets(data, subject, sessions):
     return raws, metas, timings
 
 def from_cache(cachdir):
-    if os.path.isfile(cachedir):
+    if isfile(cachedir):
         # Load from disk
         raw = mne.io.Raw(cachedir)
         meta = pd.read_hdf(cachedir + 'meta.hdf')
@@ -40,7 +40,7 @@ def pre_filter(raw):
     raw.notch_filter(np.arange(50, 251, 50))
     raw.resample(300, npad="auto")  # set sampling frequency to 100Hz
     return raw
-    
+
 def get_dataset(data, filename, snum):
     '''
     Preprocess a data set and return raw and meta struct. Caches results in an
@@ -48,7 +48,7 @@ def get_dataset(data, filename, snum):
     '''
 
     cachedir = join(metadata.cachedir, basename(filename)+'.raw.fif.gz')
-    if os.path.isfile(cachedir):
+    if isfile(cachedir):
         return from_cache(cachedir)
 
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
