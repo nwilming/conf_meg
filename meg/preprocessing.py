@@ -1,117 +1,202 @@
 '''
 Preprocess an MEG data set.
+
+The idea for preprocessing MEG data is modelled around a few aspects of the
+confidence data set:
+    1. Each MEG dataset is accompanied by a DataFrame that contains metadata for
+       each trial.
+    2. Trial meta data can be matched to the MEG data by appropriate triggers.
+    3. Each MEG datafile contains several blocks of data that can be processed
+       independently.
+
+This leads to the following design:
+    1. MEG is cut into recording blocks and artifact detection is carried out
+    2. Each processed block is matched to meta data and timing (event on- and offsets)
+       data is extracted from the MEG and aligned with the behavioral data.
+    3. Data is epoched. Sync with meta data is guaranteed by a unique key for
+       each trial that is stored along with the epoched data.
 '''
+
 import mne
 from pylab import *
 import pandas as pd
 import glob
 from itertools import product
 from conf_analysis.behavior import metadata
-from joblib import Memory
 from os.path import basename, join, isfile
-
-memory = Memory(cachedir=metadata.cachedir, verbose=0)
-
-
-def get_epochs(raw, epochs, baseline, tmin=-1, tmax=0, downsample=300, reject=dict(mag=5e-12), picks='meg'):
-    if picks is 'meg':
-        picks = mne.pick_types(raw.info, meg=True, eeg=False, stim=False, eog=False, exclude='bads')
-
-    epochs = mne.Epochs(raw, epochs, tmin=tmin, tmax=tmax,
-        baseline=None, picks=picks, reject_by_annotation=True, reject=reject)
-    baseline = mne.Epochs(raw, baseline, tmin=tmin, tmax=tmax,
-        baseline=None, picks=picks, reject_by_annotation=True, reject=reject)
-    epochs.load_data()
-    baseline.load_data()
-
-    epochs = apply_baseline(epochs, baseline)
-    return epchs.resample(downsample)
+from conf_analysis.meg.tools import hilbert
+from conf_analysis.meg import artifacts
+import logging
 
 
-
-def get_datasets(data, subject, sessions):
-    filenames = [metadata.get_sub_session_rawname('S%02i'%subject, sess) for sess in sessions]
-    d  =  [get_dataset(data, filename, subject) for filename in filenames]
-    raws = [d[k][0].copy() for k in range(len(d))]
-    metas = [d[k][1] for k in range(len(d))]
-    timings = [d[k][2] for k in range(len(d))]
-    return raws, metas, timings
-
-def from_cache(cachdir):
-    if isfile(cachedir):
-        # Load from disk
-        raw = mne.io.Raw(cachedir)
-        meta = pd.read_hdf(cachedir + 'meta.hdf', 'meta')
-        timing = pd.read_hdf(cachedir + 'timing.hdf', 'timing')
-        return raw, meta, timing
-    else:
-        raise RuntimeError('Not present in cache: %s'%cachedir)
-
-def to_cache(raw, meta, timing):
-    fname = basename(raw.info['filename'])
-    cachedir = join(metadata.cachedir, fname)
-    raw.save(cachedir + '.raw.fif.gz', overwrite=True)
-    meta.to_hdf(cachedir + 'meta.hdf', 'meta')
-    timing.to_hdf(cachedir + 'timing.hdf', 'meta')
-
-
-def pre_filter(raw):
-    raw.notch_filter(np.arange(50, 251, 50))
-    raw.resample(300, npad="auto")  # set sampling frequency to 100Hz
-    return raw
-
-
-def get_dataset(data, filename, snum, notch=True):
+def combine_annotations(annotations, first_samples, last_samples, sfreq):
     '''
-    Preprocess a data set and return raw and meta struct. Caches results in an
-    intermediate directory (metadata.cachedir).
+    Concatenate a list of annotations objects such that annotations
+    stay in sync with the output of mne.concatenate_raws.
+
+    This function assumes that annotations objects come from different raw objects
+    that are to be concatenated. In this case the concatenated raw object retains
+    the first sample of the first raw object and then treats the data as
+    continuous. In contrast, the annotation onsets already shifted by each individual
+    raw object's first sample to be in sync. When concatenting annotations this
+    needs to be taken into account.
+
+    Parameters
+    ----------
+    annotations : list of annotations objects, shape (n_objects,)
+    first_samples : list of ints, shape (n_objects,)
+        First sample of each annotations' raw object.
+    last_samples : list of ints, shape (n_objects,)
+        Last sample of each annotations' raw object.
+    sfreq : int
+        Sampling frequency of data in raw objects.
     '''
+    if all([ann is None for ann in annotations]):
+        return None
+    durations = [(1+l-f)/sfreq for f, l in zip(first_samples, last_samples)]
+    offsets = np.cumsum([0] + durations[:-1])
 
-    cachedir = join(metadata.cachedir, basename(filename)+'.raw.fif.gz')
-    if isfile(cachedir):
-        return from_cache(cachedir)
+    onsets = [(ann.onset-(fs/sfreq))+offset
+                        for ann, fs, offset in zip(annotations, first_samples, offsets) if ann is not None]
 
-    raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
-    raw = annotate_blinks(raw)
+    if len(onsets) == 0:
+        return mne.annotations.Annotations(onset=[], duration=[], description=None)
+
+    onsets = np.concatenate(onsets) + (first_samples[0]/sfreq)
+    return mne.annotations.Annotations(onset=onsets,
+        duration=np.concatenate([ann.duration for ann in annotations]),
+        description=np.concatenate([ann.description for ann in annotations]))
+
+
+def blocks(raw):
+    '''
+    Return a dictionary that encodes information about trials in raw.
+    '''
     trigs, buts = get_events(raw)
     es, ee, trl, bl = metadata.define_blocks(trigs)
-    megmeta = metadata.get_meta(trigs, es, ee, trl, bl,
-                                metadata.fname2session(filename), snum)
+    return {'start':es, 'end':ee, 'trial':trl, 'block':bl}
 
+
+def load_block(raw, trials, block):
+    '''
+    Crop a block of trials from raw file.
+    '''
+    start = trials['start'][trials['block']==block].min()
+    end = trials['end'][trials['block']==block].max()
+    r = raw.copy().crop(max(0, raw.times[start]-5), min(raw.times[-1], raw.times[end]+5))
+    r_id = {'filename':r.info['filename'], 'first_samp':r.first_samp}
+    r.load_data()
+    return r, r_id
+
+
+def preprocess_block(raw):
+    '''
+    Apply artifact detection to a block of data.
+    '''
+    ab = artifacts.annotate_blinks(raw)
+    am, zm = artifacts.annotate_muscle(raw)
+    ac, zc = artifacts.annotate_cars(raw)
+    ar, zj = artifacts.annotate_jumps(raw)
+    ants = artifacts.combine_annotations([x for x in  [ab, am, ac, ar] if x is not None])
+    ants.onset += raw.first_samp/raw.info['sfreq']
+    raw.annotations = ants
+    artdef = {'muscle':zm, 'cars':zc, 'jumps':zj}
+    return raw, ants, artdef
+
+
+def concatenate_epochs(epochs, metas):
+    '''
+    Concatenate a list of epoch and meta objects and set their dev_head_t projection to
+    that of the first epoch.
+    '''
+    dev_head_t = epochs[0].info['dev_head_t']
+    index_cnt = 0
+    epoch_arrays = []
+    processed_metas = []
+    for e, m in zip(epochs, metas):
+        e.info['dev_head_t'] = dev_head_t
+        processed_metas.append(m)
+        e = mne.epochs.EpochsArray(e._data, e.info, events=e.events)
+        epoch_arrays.append(e)
+    return mne.concatenate_epochs(epoch_arrays), pd.concat(processed_metas)
+
+
+def get_meta(data, raw, snum, block):
+    '''
+    Return meta and timing data for a raw file and align it with behavioral data.
+
+    Parameters
+    ----------
+    data : DataFrame
+        Contains trial meta data from behavioral responses.
+    raw : mne.io.raw objects
+        MEG data that needs to be aligned to the behavioral data.
+    snum : int
+        Subject number that this raw object corresponds to.
+    block : int
+        Block within recording that this raw object corresponds to.
+
+    Note: Data is matched agains the behavioral data with snum, recording, trial
+    number and block number. Since the block number is not encoded in MEG data it
+    needs to be passed explicitly. The order of responses is encoded in behavioral
+    data and MEG data and is compared to check for alignment.
+    '''
+    trigs, buts = get_events(raw)
+    es, ee, trl, bl = metadata.define_blocks(trigs)
+
+    megmeta = metadata.get_meta(trigs, es, ee, trl, bl,
+                                metadata.fname2session(raw.info['filename']), snum)
     assert len(unique(megmeta.snum)==1)
     assert len(unique(megmeta.day)==1)
-    data = data.query('snum==%i & day==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0]))
+    assert len(unique(megmeta.block_num)==1)
+    megmeta.loc[:, 'block_num'] = block
+    data = data.query('snum==%i & day==%i & block_num==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0], block))
     data = data.set_index(['day', 'block_num', 'trial'])
     megmeta = metadata.correct_recording_errors(megmeta)
     megmeta = megmeta.set_index(['day', 'block_num', 'trial'])
+    assert all(megmeta.button.replace({21:1, 22:1, 23:-1, 24:-1})==data.response)
+    assert all(megmeta.button.replace({21:2, 22:1, 23:1, 24:2})==data.confidence)
+    del megmeta['snum']
     meta = pd.concat([megmeta, data], axis=1)
     meta = metadata.cleanup(meta)
     cols = [x for x in meta.columns if x[-2:] == '_t']
     timing = meta.loc[:, cols]
-    picks = mne.pick_types(raw.info, meg=True, eeg=False, stim=False, eog=False, exclude='bads')
-    dropchans = [x for x in array(raw.ch_names)[picks] if not x.startswith('M')]
-    dropchans = dict((k, 'syst') for k in dropchans)
-    raw.set_channel_types(dropchans)
-    if notch:
-        raw.load_data()
-        raw.notch_filter(np.arange(50, 251, 50))
-    return raw, meta.drop(cols, axis=1), timing
+    return meta.drop(cols, axis=1), timing
 
 
-def get_stimulus_epoch(raw, meta, timing, tmin=-.2, tmax=1.5):
-    ev = metadata.mne_events(pd.concat([meta, timing], axis=1).loc[~isnan(meta.response), :],
-            'stim_onset_t', 'response')
-    eb = metadata.mne_events(pd.concat([meta, timing], axis=1).loc[~isnan(meta.response), :],
-            'stim_onset_t', 'response')
+def get_epoch(raw, meta, timing,
+              event='stim_onset_t', epoch_time=(-.2, 1.5),
+              base_event='stim_onset_t', base_time=(-.2, 0),
+              epoch_label='hash'):
+    '''
+    Cut out epochs from raw data and apply baseline correction.
+
+    Parameters
+    ----------
+    raw : raw data
+    meta, timing : Dataframes that contain meta and timing information
+    event : Column in timing that contains event onsets in sample time
+    epoch_time : (start, end) in sec. relative to event onsets defined by 'event'
+    base_event : Column in timing that contains baseline onsets in sample time
+    base_time : (start, end) in sec. relative to baseline onset
+    epoch_label : Column in meta that contains epoch labels.
+    '''
+    joined_meta = pd.concat([meta, timing], axis=1)
+    ev = metadata.mne_events(joined_meta, event, epoch_label)
+    eb = metadata.mne_events(joined_meta, base_event, epoch_label)
     picks = mne.pick_types(raw.info, meg=True, eeg=False, stim=False, eog=False, exclude='bads')
-    base = mne.Epochs(raw, eb, tmin=-.2, tmax=.0, baseline=None, picks=picks,
-            reject_by_annotation=True, reject=dict(mag=5e-12))
-    stimperiod = mne.Epochs(raw, ev, tmin=-.2, tmax=1.2, baseline=None, picks=picks,
-            reject_by_annotation=True, reject=dict(mag=5e-12))
+
+    base = mne.Epochs(raw, eb, tmin=base_time[0], tmax=base_time[1], baseline=None, picks=picks,
+            reject_by_annotation=True)
+    stim_period = mne.Epochs(raw, ev, tmin=epoch_time[0], tmax=epoch_time[1], baseline=None, picks=picks,
+            reject_by_annotation=True)
     base.load_data()
-    stimperiod.load_data()
-    stim_period, dl = apply_baseline(stimperiod, base)
-    return stim_period
+    stim_period.load_data()
+    stim_period, dl = apply_baseline(stim_period, base)
+    # Now filter raw object to only those left.
+    sei = stim_period.events[:, 2]
+    meta = meta.reset_index().set_index('hash').loc[sei]
+    return meta, stim_period
 
 
 def concat(raws, metas, timings):
@@ -130,7 +215,6 @@ def concat(raws, metas, timings):
     timings = pd.concat(timings)
     metas = pd.concat(metas)
     return raw, metas, timings
-
 
 
 def apply_baseline(epochs, baseline):
@@ -154,152 +238,9 @@ def get_events(raw):
     return triggers, buttons
 
 
-def session(subject, session):
-    filename = metadata.get_sub_session_rawname(subject, session)
-    raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
-    events = mne.find_events(raw, 'UPPT001')
-    ts, te, trial, block = metadata.define_blocks(events)
-    blocks = unique(block)
-    return raw, ts, te, trial, block, blocks, events
+def load_epochs(filenames):
+    return [mne.read_epochs(f) for f in filenames]
 
 
-def ppd(vieweing_distance=62.5, screen_width=38.0, x_resolution=1450):
-    o = tan(0.5*pi/180) *vieweing_distance;
-    return 2 * o*x_resolution/screen_width;
-
-
-def annotate_blinks(raw):
-    '''
-    Detect blinks and annotate as bad blinks
-    '''
-    x, y, p = eye_voltage2gaze(raw)
-    xpos, ypos = x.ravel()/ppd(), y.ravel()/ppd()
-    sc = saccade_detection(xpos, ypos, threshold=10, acc_thresh=2000, Hz=1000)
-    blinks, scfilt = blink_detection(xpos, ypos, sc)
-    blink_onsets = raw.times[blinks[:,0]]
-    blink_durations = raw.times[blinks[:,1]]-raw.times[blinks[:,0]]
-    raw.annotations = mne.Annotations(blink_onsets, blink_durations, 'bad blinks')
-    return raw
-
-def eye_voltage2gaze(raw, ranges=(-5, 5), screen_x=(0, 1920),
-                     screen_y=(0, 1080),
-                     ch_mapping={'x':'UADC002-3705', 'y':'UADC003-3705', 'p':'UADC004-3705'}):
-    '''
-    Convert analog output of EyeLink 1000+ to gaze coordinates.
-    '''
-    minvoltage, maxvoltage = ranges
-    maxrange, minrange = 1., 0.
-    screenright, screenleft = screen_x
-    screenbottom, screentop = screen_y
-
-    idx = where(array(raw.ch_names) == ch_mapping['x'])[0][0]
-    R = (raw[idx, :][0]-minvoltage)/(maxvoltage-minvoltage)
-    S = R*(maxrange-minrange)+minrange
-    x = S*(screenright-screenleft+1)+screenleft
-
-    idy = where(array(raw.ch_names) == ch_mapping['y'])[0][0]
-    R = (raw[idy, :][0]-minvoltage)/(maxvoltage-minvoltage)
-    S = R*(maxrange-minrange)+minrange
-    y = S*(screenbottom-screentop+1)+screentop
-
-    idp = where(array(raw.ch_names) == ch_mapping['p'])[0][0]
-    p = raw[idp, :][0]
-    return x, y, p
-
-
-velocity_window_size = 3
-def get_velocity(x, y, Hz):
-    '''
-    Compute velocity of eye-movements.
-
-    'x' and 'y' specify the x,y coordinates of gaze location. The function
-    assumes that the values in x,y are sampled continously at a rate specified
-    by 'Hz'.
-    '''
-    Hz = float(Hz)
-    distance = ((np.diff(x) ** 2) +
-                (np.diff(y) ** 2)) ** .5
-    distance = np.hstack(([distance[0]], distance))
-    win = np.ones((velocity_window_size)) / float(velocity_window_size)
-    velocity = np.convolve(distance, win, mode='same')
-    velocity = velocity / (velocity_window_size / Hz)
-    acceleration = np.diff(velocity) / (1. / Hz)
-    acceleration = abs(np.hstack(([acceleration[0]], acceleration)))
-    return velocity, acceleration
-
-
-def saccade_detection(x, y, Hz=1000, threshold=30,
-                      acc_thresh=2000):
-    '''
-    Detect saccades in a stream of gaze location samples.
-
-    Coordinates of x,y are assumed to be in degrees.
-
-    Saccades are detect by a velocity/acceleration threshold approach.
-    A saccade starts when a) the velocity is above threshold, b) the
-    acceleration is above acc_thresh at least once during the interval
-    defined by the velocity threshold.
-    '''
-
-    velocity, acceleration = get_velocity(x, y, float(Hz))
-    saccades = (velocity > threshold)
-
-    borders = np.where(np.diff(saccades.astype(int)))[0] + 1
-    if velocity[1] > threshold:
-        borders = np.hstack(([0], borders))
-
-    saccade = 0 * np.ones(x.shape)
-
-    saccade_times = []
-    # Only count saccades when acceleration also surpasses threshold
-    for i, (start, end) in enumerate(zip(borders[0::2], borders[1::2])):
-        if sum(acceleration[start:end] > acc_thresh) >= 1:
-            saccade[start:end] = 1
-            saccade_times.append((start, end))
-
-    return array(saccade_times)
-
-
-def microssacade_detection(x, y, VFAC):
-    if len(x)<5:
-        return None
-    dt = 1/1000.
-    kernel = array([1., 1., 0., -1., -1.])
-    vx = convolve(x, kernel, mode='same')/(6*dt)
-    vy = convolve(y, kernel, mode='same')/(6*dt)
-    msdx = sqrt( median((vx-median(vx))**2))
-    msdy = sqrt( median((vy-median(vy))**2))
-    radiusx = VFAC*msdx
-    radiusy = VFAC*msdy
-    test = (vx/radiusx)**2 + (vy/radiusy)**2
-    borders = np.where(np.diff((test>1).astype(int)))[0] + 1
-    if test[0] > 1:
-        borders = np.hstack(([0], borders))
-    if test[-1] > 1:
-        borders = np.hstack((borders, [len(x)]))
-
-    borders = borders.reshape(len(borders)/2, 2)
-    return borders
-
-
-def blink_detection(x, y, saccades):
-    '''
-    A blink is everything that is surrounded by two saccades and  period in
-    between where the eye is off screen.
-    '''
-    rm_sac = (saccades[:,0]*0).astype(bool)
-    blinks = []
-    skipnext=False
-    for i, ((pss, pse), (nss, nse)) in enumerate(zip(saccades[:-1], saccades[1:])):
-        if skipnext:
-            skipnext=False
-            continue
-        xavg = x[pse:nss].mean()
-        yavg = y[pse:nss].mean()
-
-        if (xavg>40) and (yavg>20):
-            rm_sac[i:i+2] = True
-            blinks.append((pss, nse))
-            skip_next=True
-
-    return array(blinks), saccades[~rm_sac,:]
+def load_meta(filenames):
+    return [pd.read_hdf(f, 'meta') for f in filenames]
