@@ -17,6 +17,21 @@ from os.path import basename, join
 
 memory = Memory(cachedir=metadata.cachedir, verbose=0)
 
+
+def load_jw():
+    df = pd.read_csv('/Users/nwilming/u/conf_analysis/jw_yes_no_task_data.csv')
+    df.columns = [u'Unnamed: 0', u'blinks_nr', u'confidence', u'contrast', u'correct',
+       u'noise_redraw', u'present', u'pupil_b', u'pupil_d', u'choice_rt', u'block_num',
+       u'sacs_nr', u'session_num', u'staircase', u'snum', u'trial', u'response']
+    sub_map = dict((k, v) for v, k in enumerate(unique(df.snum)))
+    df.loc[:, 'snum'] = df.snum.replace(sub_map)
+    #def foo(x):
+    #    x.loc[:, 'trial'] = arange(len(x))+1
+    #    return x
+    #df = df.groupby(['session_num', 'block_num', 'snum']).apply(foo)
+    return df.drop(u'Unnamed: 0', axis=1)
+
+
 @memory.cache
 def load_data():
     '''
@@ -64,11 +79,9 @@ def load_data():
         data.loc[:, 'block_num'] = data.session.astype('str')
         data.block_num = data.block_num.replace(lt)
         return data
-    print data.shape
+
     data = data.groupby('snum').apply(session_num)
-    print data.shape
     data = data.groupby(['snum', 'session_num']).apply(block_num)
-    print data.shape
     return data
 
 
@@ -111,6 +124,8 @@ def dp(data, field='response'):
     compute d'
     '''
     hit, fa, _, _ = tbl(data, field=field)
+    if hit==1 or fa==1:
+        raise RuntimeError('Too good or too bad')
     return phi(hit) - phi(fa)
 
 def crit(data, field='response'):
@@ -233,7 +248,8 @@ def fit_pmetric(df, features=['contrast'], targetname='response'):
     return log_res
 
 
-def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)], hyperplane_only=False):
+def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)],
+            hyperplane_only=False, alpha=1):
     C, M = meshgrid(*bins)
     resp1 = histogram2d(df[df.response==1].stdc.values, df[df.response==1].mc.values, bins=bins)[0] +1
     resp2 = histogram2d(df[df.response==-1].stdc.values, df[df.response==-1].mc.values, bins=bins)[0] +1
@@ -249,7 +265,7 @@ def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)], hyperpl
     mind, maxd = xlim()
     ylim(bins[0][0], bins[0][-1])
     xlim(bins[1][0], bins[1][-1])
-    plot([mind, maxd], [decision(mind), decision(maxd)], 'r', lw=2)
+    plot([mind, maxd], [decision(mind), decision(maxd)], 'r', lw=2, alpha=alpha)
     plot([0, 0], [bins[0][0], bins[0][-1]], 'r--', lw=2)
     #ylim([0, 0.25])
     #xlim([0, 1])

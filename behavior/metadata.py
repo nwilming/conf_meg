@@ -4,7 +4,7 @@ Keep track of all the subject data
 from pylab import *
 import os, socket
 import pandas as pd
-
+from conf_analysis.meg.tools import deprecated
 
 if socket.gethostname().startswith('node'):
     raw_path = '/home/nwilming/conf_meg/raw/'
@@ -54,36 +54,57 @@ def get_fif_filenames(first):
 def get_sub_session_rawname(sub, session):
     return os.path.join(raw_path, data_files[sub][session])
 
+@deprecated
 def get_datum_filename(sub, session, block):
-    return os.path.join(data_path, sub, '%s_sess%02i_block%02i.fif.gz'%(sub, session, block))
+    return os.path.join(raw_path, sub, '%s_sess%02i_block%02i.fif.gz'%(sub, session, block))
 
 
 def define_blocks(events):
     '''
     Parse block structure from events in MEG files.
     '''
-    print events.shape
+    events = events.astype(float)
     start = [0,0,]
     end = [0,]
-    while not len(start) == len(end):
+    if not len(start) == len(end):
         dif = len(start)-len(end)
-        # Aborted block during a trial, find location where [start start end] occurs
         start = where(events[:,2] == 150)[0]
         end = where(events[:, 2] == 151)[0]
-        # TODO fix starts with end or end with start
-        for i, (ts, te) in enumerate(zip(start[:-1], end)):
-            if events[start[i+1],0] < events[te,0]:
-                events[ts:start[i+1], :] = np.nan
-                break
-        events = events[~isnan(events[:,0]),:]
+        plot(events[end, 0], events[end, 0]*0, 'ko')
+        plot(events[start, 0], events[start, 0]*0, 'rp')
+        # Aborted block during a trial, find location where [start ... start end] occurs
+        i_start, i_end = 0, 0   # i_start points to the beginning of the current
+                                # trial and i_end to the beginning of the current trial.
+
+        if len(start) > len(end):
+            id_keep = (0*events[:,0]).astype(bool)
+            start_times = events[start, 0]
+            end_times = events[end, 0]
+            for i, e in enumerate(end_times):
+                d = start_times-e
+                d[d>0] = -inf
+                matching_start = argmax(d)
+                evstart = start[matching_start]
+
+                if (151 in events[evstart-10:evstart, 2]):
+                    prev_end = 10-where(events[evstart-10:evstart, 2]==151)[0][0]
+                    id_keep[(start[matching_start]-prev_end+1):end[i]+1] = True
+                else:
+                    id_keep[(start[matching_start]-10):end[i]+1] = True
+            events = events[id_keep,:]
+
         start = where(events[:,2] == 150)[0]
         end = where(events[:, 2] == 151)[0]
-        if dif == (len(start)-len(end)):
+        #plot(events[end, 0], events[end, 0]*0+1, 'ko')
+        #plot(events[start, 0], events[start, 0]*0+1, 'rp')
+        print len(start), len(end)
+        if not (len(start)==len(end)):
             raise RuntimeError('Something is wrong in the trial def. Fix this!')
+
 
     trials = []
     blocks = []
-    block = 0
+    block = -1
     for i, (ts, te) in enumerate(zip(start, end)):
         # Get events just before trial onset, they mark trial numbers
         trial_nums = events[ts-8:ts+1, 2]
@@ -100,17 +121,14 @@ def define_blocks(events):
         blocks.append(block)
     return events[start,0], events[end, 0], np.array(trials), np.array(blocks)
 
+val2field = {
+    41:'meg_side', 40:'meg_side',
+    31:'meg_noise_sigma', 32:'meg_noise_sigma', 33:'meg_noise_sigma',
+    64:'_onset', 49:'ref_offset', 50:'cc', 48:'stim_offset',
+    24:'button', 23:'button', 22:'button', 21:'button', 88:'button',
+    10:'meg_feedback', 11:'meg_feedback'
+    }
 
-admissible = [
-    (41,40), (30, 31, 32), (64,), (49,),
-    (64,), (50,), (50,), (50,), (50,), (50,), (50,), (50,), (50,), (50,), (48,),
-    (24, 23, 22, 21, 88),
-    (10, 11)]
-field_names = [
-    'meg_side', 'meg_noise_sigma', 'ref_onset', 'ref_offset',
-    'stim_onset', 'cc0', 'cc1', 'cc2', 'cc3','cc4', 'cc5', 'cc6','cc7', 'cc8', 'cc9', 'stim_offset',
-    'button', 'meg_feedback'
-    ]
 
 def fname2session(filename):
     #'/Volumes/dump/conf_data/raw/s04-04_Confidence_20151217_02.ds'
@@ -121,10 +139,20 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject):
     for ts, te, trialnum, block in zip(tstart, tend, tnum, bnum):
         trig_idx = (ts < events[:, 0]) & (events[:, 0] < te)
         trigs = events[trig_idx, :]
-        trial = dict((k, v) for v, k in zip(trigs[:, 2], field_names))
-        trial.update(dict((k+'_t', v) for v, k in zip(trigs[:, 0], field_names)))
+        trial = {}
+        stim_state = ['stim', 'ref']
+        cc_state = range(10)[::-1]
+        for i, (v, t) in enumerate(zip(trigs[:, 2], trigs[:, 0])):
+            fname = val2field[v]
+            if v == 64:
+                fname = stim_state.pop() + fname
+            if v == 50:
+                fname = fname + str(cc_state.pop())
+            trial[fname] = v
+            trial[fname + '_t'] = t
+
         trial['trial'] = trialnum-1
-        trial['block_num'] = block-1
+        trial['block_num'] = block
         trial['start'] = ts
         trial['end'] = te
         trial['day'] = day
@@ -132,6 +160,7 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject):
         trls.append(trial)
 
     trls = pd.DataFrame(trls)
+
     return trls
 
 
@@ -150,6 +179,15 @@ def correct_recording_errors(df):
     if all((df.snum==4) & (df.day==20151215)):
         df = df.query('block_num>1')
         df.loc[:, 'block_num'] -= 2
+    #  S3 had a response fuckup where the participant had memorized a wrong key
+    # mapping. This will be treated seperatedly.
+    if 3 in unique(df.snum):
+        id_button_21 = ((df.snum==3) & (df.button == 21) &
+                      ((df.day == 20151207) | (df.day == 20151208)))
+        id_button_22 =  ((df.snum==3) & (df.button == 22) &
+                      ((df.day == 20151207) | (df.day == 20151208)))
+        df.loc[id_button_21, 'button'] = 22
+        df.loc[id_button_22, 'button'] = 21
     return df
 
 
@@ -160,8 +198,10 @@ def cleanup(meta):
     '''
     cols = []
     # Check button + conf + response
-    no_lates = meta.query('~(button==88)')
-    assert all(isnan(no_lates.button)==isnan(no_lates.response))
+    no_lates = meta.loc[~isnan(meta.button)]
+    no_lates = no_lates.query('~(button==88)')
+
+    # Check for proper button to response mappings!
     assert all(no_lates.button.replace({21:1, 22:1, 23:-1, 24:-1})==no_lates.response)
     assert all(no_lates.button.replace({21:2, 22:1, 23:1, 24:2})==no_lates.confidence)
     cols += ['button']
@@ -174,6 +214,7 @@ def cleanup(meta):
     cols += ['cc%i'%c for c in range(10)]
     cols += ['meg_side_t', ]
     return meta.drop(cols, axis=1)
+
 
 def mne_events(data, time_field, event_val):
     return vstack([data[time_field], 0*data[time_field], data[event_val]]).astype(int).T
