@@ -515,6 +515,43 @@ sb2fname = {
 			4:('/home/nwilming/conf_data/S14/S14_20160229T140853.edf', '/home/nwilming/conf_data/S14/S14_29-Feb-2016 14:22:54_results.mat'),
 		},
 	},
+	'S15':{
+		1:{
+			0:('/home/nwilming/conf_data/S15/S15_20160420T112519.edf', '/home/nwilming/conf_data/S15/S15_20-Apr-2016 11:42:22_results.mat'),
+			1:('/home/nwilming/conf_data/S15/S15_20160420T114254.edf', '/home/nwilming/conf_data/S15/S15_20-Apr-2016 11:57:20_results.mat'),
+			2:('/home/nwilming/conf_data/S15/S15_20160420T115732.edf', '/home/nwilming/conf_data/S15/S15_20-Apr-2016 12:11:21_results.mat'),
+			3:('/home/nwilming/conf_data/S15/S15_20160420T121216.edf', '/home/nwilming/conf_data/S15/S15_20-Apr-2016 12:25:48_results.mat'),
+			4:('/home/nwilming/conf_data/S15/S15_20160420T122603.edf', '/home/nwilming/conf_data/S15/S15_20-Apr-2016 12:51:04_results.mat'),
+		},
+		2:{
+			0:('/home/nwilming/conf_data/S15/S15_20160421T083131.edf', '/home/nwilming/conf_data/S15/S15_21-Apr-2016 08:45:04_results.mat'),
+			1:('/home/nwilming/conf_data/S15/S15_20160421T084538.edf', '/home/nwilming/conf_data/S15/S15_21-Apr-2016 08:59:16_results.mat'),
+			2:('/home/nwilming/conf_data/S15/S15_20160421T085946.edf', '/home/nwilming/conf_data/S15/S15_21-Apr-2016 09:13:13_results.mat'),
+			3:('/home/nwilming/conf_data/S15/S15_20160421T091927.edf', '/home/nwilming/conf_data/S15/S15_21-Apr-2016 09:32:59_results.mat'),
+			4:('/home/nwilming/conf_data/S15/S15_20160421T093327.edf', '/home/nwilming/conf_data/S15/S15_21-Apr-2016 09:47:01_results.mat'),
+		},
+		3:{
+			0:('/home/nwilming/conf_data/S15/S15_20160425T122301.edf', '/home/nwilming/conf_data/S15/S15_25-Apr-2016 12:38:43_results.mat'),
+			1:('/home/nwilming/conf_data/S15/S15_20160425T123923.edf', '/home/nwilming/conf_data/S15/S15_25-Apr-2016 12:53:11_results.mat'),
+			2:('/home/nwilming/conf_data/S15/S15_20160425T125418.edf', '/home/nwilming/conf_data/S15/S15_25-Apr-2016 13:07:59_results.mat'),
+			3:('/home/nwilming/conf_data/S15/S15_20160425T131553.edf', '/home/nwilming/conf_data/S15/S15_25-Apr-2016 13:29:55_results.mat'),
+			4:('/home/nwilming/conf_data/S15/S15_20160425T133050.edf', '/home/nwilming/conf_data/S15/S15_25-Apr-2016 13:44:33_results.mat'),
+		},
+		4:{
+			0:('/home/nwilming/conf_data/S15/S15_20160427T133443.edf', '/home/nwilming/conf_data/S15/S15_27-Apr-2016 13:48:30_results.mat'),
+			1:('/home/nwilming/conf_data/S15/S15_20160427T135353.edf', '/home/nwilming/conf_data/S15/S15_27-Apr-2016 14:07:06_results.mat'),
+			2:('/home/nwilming/conf_data/S15/S15_20160427T140729.edf', '/home/nwilming/conf_data/S15/S15_27-Apr-2016 14:20:59_results.mat'),
+			3:('/home/nwilming/conf_data/S15/S15_20160427T142710.edf', '/home/nwilming/conf_data/S15/S15_27-Apr-2016 14:41:05_results.mat'),
+			4:('/home/nwilming/conf_data/S15/S15_20160427T144133.edf', '/home/nwilming/conf_data/S15/S15_27-Apr-2016 14:54:54_results.mat'),
+		},
+		5:{
+			0:('/home/nwilming/conf_data/S15/S15_20160428T082849.edf', '/home/nwilming/conf_data/S15/S15_28-Apr-2016 08:43:35_results.mat'),
+			1:('/home/nwilming/conf_data/S15/S15_20160428T084747.edf', '/home/nwilming/conf_data/S15/S15_28-Apr-2016 09:01:14_results.mat'),
+			2:('/home/nwilming/conf_data/S15/S15_20160428T090205.edf', '/home/nwilming/conf_data/S15/S15_28-Apr-2016 09:15:34_results.mat'),
+			3:('/home/nwilming/conf_data/S15/S15_20160428T092124.edf', '/home/nwilming/conf_data/S15/S15_28-Apr-2016 09:35:12_results.mat'),
+			4:('/home/nwilming/conf_data/S15/S15_20160428T093545.edf', '/home/nwilming/conf_data/S15/S15_28-Apr-2016 09:49:16_results.mat'),
+		},
+	},
 }
 
 

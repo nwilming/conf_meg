@@ -22,16 +22,17 @@ from pylab import *
 import pandas as pd
 import glob
 from itertools import product
-from conf_analysis.behavior import metadata
+from conf_analysis.behavior import metadata, empirical
 from os.path import basename, join, isfile
 from conf_analysis.meg.tools import hilbert
 from conf_analysis.meg import artifacts
 import logging
 from joblib import Memory
+import cPickle
 
 memory = Memory(cachedir=metadata.cachedir)
 
-def one_block(data, snum, session, raw, block_in_raw, block_in_experiment):
+def one_block(snum, session, block_in_raw, block_in_experiment):
     '''
     Preprocess a single block and save results.
 
@@ -48,19 +49,26 @@ def one_block(data, snum, session, raw, block_in_raw, block_in_experiment):
     block_in_experiment to the block in the metadata that block_in_raw should be
     mapped to. block_in_experiment will be used for saving.
     '''
+    #block_map = cPickle.load(open('meg/blockmap.pickle'))
+
+    data = empirical.load_data()
+    data = empirical.data_cleanup(data)
+
+    filename = metadata.get_raw_filename(snum, session)
+    raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
     trials = blocks(raw)
-    assert len(trials['block'])==500
+    #assert len(trials['block'])==500
     assert len(np.unique(trials['block']))==5
-    assert sum(trials['trial']) == sum(range(1,101))*5
+    #assert sum(trials['trial']) == sum(range(1,101))*5
     assert block_in_raw in unique(trials['block'])
 
-    block_in_raw, block_in_experiment = block_map
+    #block_in_raw, block_in_experiment = block_map
     block_cnt = 0
 
     # Load data and preprocess it.
-    r, r_id = preprocessing.load_block(raw, trials, block_in_raw)
-    r, ants, artdefs = preprocessing.preprocess_block(r)
-    meta, timing = preprocessing.get_meta(data, r, snum, block_cnt)
+    r, r_id = load_block(raw, trials, block_in_raw)
+    r, ants, artdefs = preprocess_block(r)
+    meta, timing = get_meta(data, r, snum, block_cnt)
 
     artdefs['id'] = r_id
     art_fname = metadata.get_epoch_filename(snum, session,
@@ -73,7 +81,7 @@ def one_block(data, snum, session, raw, block_in_raw, block_in_experiment):
                                          [(-.2, 1.5), (-1.5, .5), (-.5, .5)]
                                          ):
 
-        m, s = preprocessing.get_epoch(r, meta, timing,
+        m, s = get_epoch(r, meta, timing,
                                        event=event, epoch_time=(tmin, tmax),
                                        base_event='stim_onset_t', base_time=(-.2, 0))
 

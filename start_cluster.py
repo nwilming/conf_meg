@@ -29,6 +29,7 @@ parser.add_argument("--walltime", help="Walltime (h)?", default=5, type=int)
 args = parser.parse_args()
 
 cwd = os.getcwd()
+
 command = '''
 #!/bin/sh
 # walltime: defines maximum lifetime of a job
@@ -38,15 +39,21 @@ command = '''
    #PBS -l walltime=%i:00:00
    #PBS -l nodes=1:ppn=1
    #PBS -l mem=%igb
+   #PBS -o cluster/$PBS_JOBID.o
+   #PBS -e cluster/$PBS_JOBID.e
 
 # -- run in the current working (submission) directory --
 cd %s
 
 chmod g=wx $PBS_JOBNAME
 
+export PYTHONPATH=/home/nwilming/
+
 # FILE TO EXECUTE
-dask-worker %s:%i
+dask-worker %s:%i 1> cluster/$PBS_JOBID.out 2> cluster/$PBS_JOBID.err
 '''%(args.walltime, args.memory, cwd, s.ip, port)
+
+print command 
 
 with open('cluster_worker.sh', 'w') as cw:
     cw.write(command)
@@ -63,5 +70,6 @@ try:
 except KeyboardInterrupt:
     print 'Cancelling all workers'
     subprocess.Popen('qdel %s'%torque_id, shell=True)
+    time.sleep(5)
     import sys
     sys.exit()
