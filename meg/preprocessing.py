@@ -68,7 +68,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
     # Load data and preprocess it.
     r, r_id = load_block(raw, trials, block_in_raw)
     r, ants, artdefs = preprocess_block(r)
-    meta, timing = get_meta(data, r, snum, block_cnt)
+    meta, timing = get_meta(data, r, snum, block_in_experiment)
 
     artdefs['id'] = r_id
     art_fname = metadata.get_epoch_filename(snum, session,
@@ -177,15 +177,16 @@ def get_meta(data, raw, snum, block):
 
     megmeta = metadata.get_meta(trigs, es, ee, trl, bl,
                                 metadata.fname2session(raw.info['filename']), snum)
+
     assert len(unique(megmeta.snum)==1)
     assert len(unique(megmeta.day)==1)
     assert len(unique(megmeta.block_num)==1)
     megmeta.loc[:, 'block_num'] = block
+
     dq = data.query('snum==%i & day==%i & block_num==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0], block))
     dq.loc[:, 'trial'] = data.loc[:, 'trial']
     trial_idx = np.in1d(dq.trial, unique(megmeta.trial))
     dq = dq.iloc[trial_idx, :]
-    print unique(dq.trial), unique(megmeta.trial)
 
     dq = dq.set_index(['day', 'block_num', 'trial'])
     megmeta = metadata.correct_recording_errors(megmeta)
