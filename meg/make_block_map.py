@@ -1,8 +1,8 @@
 '''
 Determine mapping of blocks in data files to blocks in experiment.
 '''
-from conf_analysis.meg import artifacts, preprocessing, keymap
-from conf_analysis.behavior import empirical, metadata
+from conf_analysis.meg import artifacts, preprocessing
+from conf_analysis.behavior import empirical, metadata, keymap
 import mne, locale
 import numpy as np
 import cPickle
@@ -13,7 +13,7 @@ try:
 except IOErrror:
     block_map = {}
 
-for snum in range(5, 6    ):
+for snum in range(1, 2):
     filenames = [metadata.get_raw_filename(snum, b) for b in range(4)]
     block_map[snum] = {}
     for session, filename in enumerate(filenames):

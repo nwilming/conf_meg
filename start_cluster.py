@@ -1,7 +1,7 @@
 '''
 Start a cluster of dask python instances.
 '''
-
+import subprocess
 
 from tornado.ioloop import IOLoop
 loop = IOLoop()
@@ -15,6 +15,9 @@ from distributed import Scheduler
 s = Scheduler(loop=loop)
 port = 8786
 s.start(port)
+
+
+print 'Started scheduler at >>> %s:%i'%(s.ip, port)
 
 # Now the scheduler is running.
 import argparse, os
@@ -50,13 +53,16 @@ with open('cluster_worker.sh', 'w') as cw:
     cw.write(command)
 
 print 'Submitting %i worker to TOEQUE'%args.num_workers
-subprocess.system('qsub -N nwilming_cluster -t 0-%i cluster_worker.sh'%args.num_workers)
+r = subprocess.Popen('qsub -N nwilming_cluster -t 0-%i cluster_worker.sh'%args.num_workers, shell=True, stdout=subprocess.PIPE)
+torque_id = r.stdout.readline().split('.')[0]
+print 'Workers submitted. QSUB ID is' , torque_id
 
 import time
 try:
     while True:
         time.sleep(0.5)
 except KeyboardInterrupt:
-    print 'Interrupt'
+    print 'Cancelling all workers'
+    subprocess.Popen('qdel %s'%torque_id, shell=True)
     import sys
     sys.exit()
