@@ -37,3 +37,19 @@ meta, timing = preprocessing.get_meta(data, r, snum, block_cnt)
 m, s = preprocessing.get_epoch(r, meta, timing,
                                event='stim_onset_t', epoch_time=(-.2, 1.5),
                                base_event='stim_onset_t', base_time=(-.2, 0))
+
+
+from sklearn import svm
+from sklearn import cross_validation
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+estimators = [('Scale', StandardScaler()), ('svm', svm.LinearSVC())]
+
+clf = Pipeline(estimators)
+
+y = m.response.values
+scores = []
+for t in range(e._data.shape[2]):
+    X = e._data[:, :, -100]
+    scores += [mean(cross_validation.cross_val_score(clf, X, y, cv=5))]

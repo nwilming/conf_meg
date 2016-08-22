@@ -29,43 +29,60 @@ from conf_analysis.meg import artifacts
 import logging
 
 
-def combine_annotations(annotations, first_samples, last_samples, sfreq):
+def one_block(data, snum, session, raw, block_in_raw, block_in_experiment):
     '''
-    Concatenate a list of annotations objects such that annotations
-    stay in sync with the output of mne.concatenate_raws.
-
-    This function assumes that annotations objects come from different raw objects
-    that are to be concatenated. In this case the concatenated raw object retains
-    the first sample of the first raw object and then treats the data as
-    continuous. In contrast, the annotation onsets already shifted by each individual
-    raw object's first sample to be in sync. When concatenting annotations this
-    needs to be taken into account.
+    Preprocess a single block and save results.
 
     Parameters
     ----------
-    annotations : list of annotations objects, shape (n_objects,)
-    first_samples : list of ints, shape (n_objects,)
-        First sample of each annotations' raw object.
-    last_samples : list of ints, shape (n_objects,)
-        Last sample of each annotations' raw object.
-    sfreq : int
-        Sampling frequency of data in raw objects.
+        snum, session : int
+    Subject number and session number
+        raw : mne.io.Raw object
+    Raw data for an entire session of a subject.
+        block_in_raw, block_in_experiment : int
+    Each succesfull session consists out of five blocks, yet a sessions MEG data
+    file sometimes contains more. This happens, for example, when a block is
+    restarted. 'block_in_raw' refers to the actual block in a raw file, and
+    block_in_experiment to the block in the metadata that block_in_raw should be
+    mapped to. block_in_experiment will be used for saving.
     '''
-    if all([ann is None for ann in annotations]):
-        return None
-    durations = [(1+l-f)/sfreq for f, l in zip(first_samples, last_samples)]
-    offsets = np.cumsum([0] + durations[:-1])
+    trials = blocks(raw)
+    assert len(trials['block'])==500
+    assert len(np.unique(trials['block']))==5
+    assert sum(trials['trial']) == sum(range(1,101))*5
+    assert block_in_raw in unique(trials['block'])
 
-    onsets = [(ann.onset-(fs/sfreq))+offset
-                        for ann, fs, offset in zip(annotations, first_samples, offsets) if ann is not None]
+    block_in_raw, block_in_experiment = block_map
+    block_cnt = 0
 
-    if len(onsets) == 0:
-        return mne.annotations.Annotations(onset=[], duration=[], description=None)
+    # Load data and preprocess it.
+    r, r_id = preprocessing.load_block(raw, trials, block_in_raw)
+    r, ants, artdefs = preprocessing.preprocess_block(r)
+    meta, timing = preprocessing.get_meta(data, r, snum, block_cnt)
 
-    onsets = np.concatenate(onsets) + (first_samples[0]/sfreq)
-    return mne.annotations.Annotations(onset=onsets,
-        duration=np.concatenate([ann.duration for ann in annotations]),
-        description=np.concatenate([ann.description for ann in annotations]))
+    artdefs['id'] = r_id
+    art_fname = metadata.get_epoch_filename(snum, session,
+                                block_in_experiment, None, 'artifacts')
+    cPickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
+
+    for epoch, event, (tmin, tmax) in zip(
+                                         ['stimulus', 'response', 'feedback'],
+                                         ['stim_onset_t', 'button_t', 'meg_feedback_t'],
+                                         [(-.2, 1.5), (-1.5, .5), (-.5, .5)]
+                                         ):
+
+        m, s = preprocessing.get_epoch(r, meta, timing,
+                                       event=event, epoch_time=(tmin, tmax),
+                                       base_event='stim_onset_t', base_time=(-.2, 0))
+
+        if len(s)>0:
+            epo_fname = metadata.get_epoch_filename(snum, session,
+                                        block_in_experiment, epoch, 'fif')
+            epo_metaname = metadata.get_epoch_filename(snum, session,
+                                        block_in_experiment, epoch, 'meta')
+            s = s.resample(600, npad='auto')
+            s.save(epo_fname)
+            m.to_hdf(epo_metaname, 'meta')
 
 
 def blocks(raw):
@@ -244,3 +261,41 @@ def load_epochs(filenames):
 
 def load_meta(filenames):
     return [pd.read_hdf(f, 'meta') for f in filenames]
+
+def combine_annotations(annotations, first_samples, last_samples, sfreq):
+    '''
+    Concatenate a list of annotations objects such that annotations
+    stay in sync with the output of mne.concatenate_raws.
+
+    This function assumes that annotations objects come from different raw objects
+    that are to be concatenated. In this case the concatenated raw object retains
+    the first sample of the first raw object and then treats the data as
+    continuous. In contrast, the annotation onsets already shifted by each individual
+    raw object's first sample to be in sync. When concatenting annotations this
+    needs to be taken into account.
+
+    Parameters
+    ----------
+    annotations : list of annotations objects, shape (n_objects,)
+    first_samples : list of ints, shape (n_objects,)
+        First sample of each annotations' raw object.
+    last_samples : list of ints, shape (n_objects,)
+        Last sample of each annotations' raw object.
+    sfreq : int
+        Sampling frequency of data in raw objects.
+    '''
+    if all([ann is None for ann in annotations]):
+        return None
+    durations = [(1+l-f)/sfreq for f, l in zip(first_samples, last_samples)]
+    offsets = np.cumsum([0] + durations[:-1])
+
+    onsets = [(ann.onset-(fs/sfreq))+offset
+                        for ann, fs, offset in zip(annotations, first_samples, offsets) if ann is not None]
+
+    if len(onsets) == 0:
+        return mne.annotations.Annotations(onset=[], duration=[], description=None)
+
+    onsets = np.concatenate(onsets) + (first_samples[0]/sfreq)
+    return mne.annotations.Annotations(onset=onsets,
+        duration=np.concatenate([ann.duration for ann in annotations]),
+        description=np.concatenate([ann.description for ann in annotations]))
