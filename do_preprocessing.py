@@ -2,6 +2,7 @@ from conf_analysis.meg import artifacts, preprocessing, keymap
 from conf_analysis.behavior import empirical, metadata
 from distributed import Executor, as_completed
 import cPickle
+
 executor = Executor()
 
 

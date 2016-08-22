@@ -2,7 +2,7 @@
 Start a cluster of dask python instances.
 '''
 
-
+import subprocess
 from tornado.ioloop import IOLoop
 loop = IOLoop()
 
