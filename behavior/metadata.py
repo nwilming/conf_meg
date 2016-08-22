@@ -126,8 +126,8 @@ def define_blocks(events):
 
         start = where(events[:,2] == 150)[0]
         end = where(events[:, 2] == 151)[0]
-        for s, e in zip(events[start, 0], events[end, 0]):
-            plot([s, e], [0, 1], 'g')
+        #for s, e in zip(events[start, 0], events[end, 0]):
+        #    plot([s, e], [0, 1], 'g')
         #plot(events[end, 0], events[end, 0]*0+1, 'ko')
         #plot(events[start, 0], events[start, 0]*0+1, 'rp')
         #print len(start), len(end)
