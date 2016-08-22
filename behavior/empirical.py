@@ -10,13 +10,12 @@ import patsy
 import time
 from scipy.stats import norm
 from os.path import join
-import metadata
+import metadata, keymap
 
 from joblib import Memory
 from os.path import basename, join
 
 memory = Memory(cachedir=metadata.cachedir, verbose=0)
-
 
 def load_jw():
     df = pd.read_csv('/Users/nwilming/u/conf_analysis/jw_yes_no_task_data.csv')
@@ -82,6 +81,9 @@ def load_data():
 
     data = data.groupby('snum').apply(session_num)
     data = data.groupby(['snum', 'session_num']).apply(block_num)
+
+    data.loc[:, 'hash'] =  [keymap.hash(x) for x in data.loc[:, ('day', 'snum', 'block_num', 'trial')].values]
+    assert len(np.unique(data.loc[:, 'hash'])) == len(data.loc[:, 'hash'])
     return data
 
 

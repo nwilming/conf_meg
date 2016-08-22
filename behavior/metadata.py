@@ -8,15 +8,13 @@ from conf_analysis.meg.tools import deprecated
 
 if socket.gethostname().startswith('node'):
     raw_path = '/home/nwilming/conf_meg/raw/'
-    downsampled = '/home/nwilming/conf_data/'
-    convert_path = '/home/nwilming/MNE-2.7.0-3106-Linux-x86_64/bin/mne_ctf2fiff'
+    preprocessed = '/home/nwilming/conf_data/'
     cachedir = '/home/nwilming/conf_data/cache/'
     behavioral_path = '/home/nwilming/conf_data/'
 
 else:
     raw_path = '/Volumes/dump/conf_data/raw/'
-    downsampled = '/Volumes/dump/conf_data/'
-    convert_path = '/Applications/MNE-2.7.4-3378-MacOSX-x86_64/bin/mne_ctf2fiff'
+    preprocessed = '/Volumes/dump/conf_data/'
     cachedir = '/Users/nwilming/u/conf_analysis/cache/'
     behavioral_path = '/Users/nwilming/u/conf_data/'
 
@@ -46,17 +44,36 @@ data_files = {'S01': ['s01-01_Confidence_20151208_02.ds',
                       's06-03_Confidence_20151217_02.ds',
                       's06-04_Confidence_20151218_04.ds']}
 
+file_type_map = {'fif':'-epo.fif.gz', 'artifacts':'.artifact_def', 'meta':'.meta'}
 
-def get_fif_filenames(first):
-    files = glob.glob(first.replace('raw.fif', '*.fif'))
-    return files
+block_map = {1: {0: {},
+                 1: {},
+                 2: {},
+                 3: {}},
+             2: {0: {},
+                 1: {},
+                 2: {},
+                     3: {}}}
 
-def get_sub_session_rawname(sub, session):
-    return os.path.join(raw_path, data_files[sub][session])
+def get_epoch_filename(snum, session, block, period, data_type):
+    '''
+    Return filename for a epoch object.
 
-@deprecated
-def get_datum_filename(sub, session, block):
-    return os.path.join(raw_path, sub, '%s_sess%02i_block%02i.fif.gz'%(sub, session, block))
+    Parameters:
+        snum, session, block : int
+    Subject, session and block of desired epoch object.
+        period : str
+    One of 'response', 'stimulus', 'feedback'
+        type : str
+    One of 'fif', 'artifcats', 'meta'
+    '''
+    assert(data_type in file_type_map.keys())
+    path = join(processed, 'S%i'%snum)
+    if period is None:
+        fname = 'SUB%i_S%i_B%i'%(snum, session, block) + file_type_map[data_type]
+    else:
+        fname = 'SUB%i_S%i_B%i_%s'%(snum, session, block, period) + file_type_map[data_type]
+    return fname
 
 
 def define_blocks(events):
