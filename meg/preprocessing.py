@@ -181,20 +181,18 @@ def get_meta(data, raw, snum, block):
     assert len(unique(megmeta.day)==1)
     assert len(unique(megmeta.block_num)==1)
     megmeta.loc[:, 'block_num'] = block
-    data = data.query('snum==%i & day==%i & block_num==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0], block))
-    data.loc[:, 'trial'] = data.loc[:, 'trial']
-    trial_idx = np.in1d(data.trial, unique(megmeta.trial))
-    data = data.iloc[trial_idx, :]
-    print unique(data.trial), unique(megmeta.trial)
+    dq = data.query('snum==%i & day==%i & block_num==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0], block))
+    dq.loc[:, 'trial'] = data.loc[:, 'trial']
+    trial_idx = np.in1d(dq.trial, unique(megmeta.trial))
+    dq = dq.iloc[trial_idx, :]
+    print unique(dq.trial), unique(megmeta.trial)
 
-    data = data.set_index(['day', 'block_num', 'trial'])
+    dq = dq.set_index(['day', 'block_num', 'trial'])
     megmeta = metadata.correct_recording_errors(megmeta)
     megmeta = megmeta.set_index(['day', 'block_num', 'trial'])
-    assert all(megmeta.button.replace({21:1, 22:1, 23:-1, 24:-1})==data.response)
-    assert all(megmeta.button.replace({21:2, 22:1, 23:1, 24:2})==data.confidence)
     del megmeta['snum']
-    meta = pd.concat([megmeta, data], axis=1)
-    meta = metadata.cleanup(meta)
+    meta = pd.concat([megmeta, dq], axis=1)
+    meta = metadata.cleanup(meta) # Performs some alignment checks
     cols = [x for x in meta.columns if x[-2:] == '_t']
     timing = meta.loc[:, cols]
     return meta.drop(cols, axis=1), timing
