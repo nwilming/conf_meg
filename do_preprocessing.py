@@ -19,11 +19,11 @@ block_map = cPickle.load(open('meg/blockmap.pickle'))
 results = []
 for snum in range(1, 6):
     for session in range(4):
-            filename = metadata.get_raw_filename(snum, session)
+        #filename = metadata.get_raw_filename(snum, session)
         #raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
 
         map_blocks = dict((v,k) for k, v in block_map[snum][session].iteritems())
-        for block in range(1, 6):
+        for block in range(0, 5):
             block_in_raw, block_in_experiment = map_blocks[block], block
             #results.append(executor.submit(sum, [1,2,3,4,]))
 
