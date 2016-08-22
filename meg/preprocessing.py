@@ -57,13 +57,11 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
     filename = metadata.get_raw_filename(snum, session)
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
     trials = blocks(raw)
-    #assert len(trials['block'])==500
-    assert len(np.unique(trials['block']))==5
-    #assert sum(trials['trial']) == sum(range(1,101))*5
-    assert block_in_raw in unique(trials['block'])
+    if (not (len(np.unique(trials['block']))==5)) or (not (block_in_raw in unique(trials['block']))):
+        err_msg = 'Error when processing %i, %i, %i, %i, data file = %s'%(snum, session, block_in_raw, block_in_experiment, filename)
+        raise RuntimeError(err_msg)
 
     #block_in_raw, block_in_experiment = block_map
-    block_cnt = 0
 
     # Load data and preprocess it.
     r, r_id = load_block(raw, trials, block_in_raw)
@@ -271,12 +269,12 @@ def apply_baseline(epochs, baseline):
 def get_events_from_file(filename):
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
     buttons = mne.find_events(raw, 'UPPT002')
-    triggers = mne.find_events(raw, 'UPPT001')
+    triggers = mne.find_events(raw, 'UPPT001', shortest_event=1)
     return triggers, buttons
 
 def get_events(raw):
     buttons = mne.find_events(raw, 'UPPT002')
-    triggers = mne.find_events(raw, 'UPPT001')
+    triggers = mne.find_events(raw, 'UPPT001', shortest_event=1)
     return triggers, buttons
 
 
