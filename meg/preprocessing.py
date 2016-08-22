@@ -57,7 +57,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
     filename = metadata.get_raw_filename(snum, session)
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
     trials = blocks(raw)
-    if (not (len(np.unique(trials['block']))==5)) or (not (block_in_raw in unique(trials['block']))):
+    if  not (block_in_raw in unique(trials['block'])):
         err_msg = 'Error when processing %i, %i, %i, %i, data file = %s'%(snum, session, block_in_raw, block_in_experiment, filename)
         raise RuntimeError(err_msg)
 
