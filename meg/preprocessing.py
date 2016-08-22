@@ -27,7 +27,9 @@ from os.path import basename, join, isfile
 from conf_analysis.meg.tools import hilbert
 from conf_analysis.meg import artifacts
 import logging
+from joblib import Memory
 
+memory = Memory(cachedir=metadata.cachedir)
 
 def one_block(data, snum, session, raw, block_in_raw, block_in_experiment):
     '''
@@ -83,13 +85,17 @@ def one_block(data, snum, session, raw, block_in_raw, block_in_experiment):
             s = s.resample(600, npad='auto')
             s.save(epo_fname)
             m.to_hdf(epo_metaname, 'meta')
+        return 'Finished', snum, session, block_in_experiment
 
 
-def blocks(raw):
+def blocks(raw, full_file_cache=False):
     '''
     Return a dictionary that encodes information about trials in raw.
     '''
-    trigs, buts = get_events(raw)
+    if full_file_cache:
+        trigs, buts = get_events_from_file(raw.info['filename'])
+    else:
+        trigs, buts = get_events(raw)
     es, ee, trl, bl = metadata.define_blocks(trigs)
     return {'start':es, 'end':ee, 'trial':trl, 'block':bl}
 
@@ -168,6 +174,11 @@ def get_meta(data, raw, snum, block):
     assert len(unique(megmeta.block_num)==1)
     megmeta.loc[:, 'block_num'] = block
     data = data.query('snum==%i & day==%i & block_num==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0], block))
+    data.loc[:, 'trial'] = data.loc[:, 'trial']
+    trial_idx = np.in1d(data.trial, unique(megmeta.trial))
+    data = data.iloc[trial_idx, :]
+    print unique(data.trial), unique(megmeta.trial)
+
     data = data.set_index(['day', 'block_num', 'trial'])
     megmeta = metadata.correct_recording_errors(megmeta)
     megmeta = megmeta.set_index(['day', 'block_num', 'trial'])
@@ -248,6 +259,13 @@ def apply_baseline(epochs, baseline):
 
     return epochs.drop(drop_list), drop_list
 
+
+@memory.cache
+def get_events_from_file(filename):
+    raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
+    buttons = mne.find_events(raw, 'UPPT002')
+    triggers = mne.find_events(raw, 'UPPT001')
+    return triggers, buttons
 
 def get_events(raw):
     buttons = mne.find_events(raw, 'UPPT002')

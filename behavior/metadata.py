@@ -55,6 +55,11 @@ block_map = {1: {0: {},
                  2: {},
                      3: {}}}
 
+def get_raw_filename(snum, session):
+    return os.path.join(raw_path,
+                        data_files['S%02i'%snum][session])
+
+
 def get_epoch_filename(snum, session, block, period, data_type):
     '''
     Return filename for a epoch object.
@@ -68,7 +73,7 @@ def get_epoch_filename(snum, session, block, period, data_type):
     One of 'fif', 'artifcats', 'meta'
     '''
     assert(data_type in file_type_map.keys())
-    path = join(processed, 'S%i'%snum)
+    path = os.path.join(processed, 'S%i'%snum)
     if period is None:
         fname = 'SUB%i_S%i_B%i'%(snum, session, block) + file_type_map[data_type]
     else:
@@ -79,6 +84,12 @@ def get_epoch_filename(snum, session, block, period, data_type):
 def define_blocks(events):
     '''
     Parse block structure from events in MEG files.
+
+    Aggresively tries to fix introduced by recording crashes and late recording
+    starts.
+    
+    Beware: The trial number and block numbers will not yet match to the behavioral
+    data.
     '''
     events = events.astype(float)
     start = [0,0,]
@@ -87,16 +98,19 @@ def define_blocks(events):
         dif = len(start)-len(end)
         start = where(events[:,2] == 150)[0]
         end = where(events[:, 2] == 151)[0]
-        plot(events[end, 0], events[end, 0]*0, 'ko')
-        plot(events[start, 0], events[start, 0]*0, 'rp')
+        #plot(events[end, 0], events[end, 0]*0+1, 'ko')
+        #plot(events[start, 0], events[start, 0]*0, 'rp')
+        #print len(start), len(end)
         # Aborted block during a trial, find location where [start ... start end] occurs
         i_start, i_end = 0, 0   # i_start points to the beginning of the current
                                 # trial and i_end to the beginning of the current trial.
 
-        if len(start) > len(end):
+        if not (len(start) == len(end)):
+            # Handle this condition by looking for the closest start to each end.
             id_keep = (0*events[:,0]).astype(bool)
             start_times = events[start, 0]
             end_times = events[end, 0]
+
             for i, e in enumerate(end_times):
                 d = start_times-e
                 d[d>0] = -inf
@@ -112,12 +126,13 @@ def define_blocks(events):
 
         start = where(events[:,2] == 150)[0]
         end = where(events[:, 2] == 151)[0]
+        for s, e in zip(events[start, 0], events[end, 0]):
+            plot([s, e], [0, 1], 'g')
         #plot(events[end, 0], events[end, 0]*0+1, 'ko')
         #plot(events[start, 0], events[start, 0]*0+1, 'rp')
-        print len(start), len(end)
-        if not (len(start)==len(end)):
-            raise RuntimeError('Something is wrong in the trial def. Fix this!')
-
+        #print len(start), len(end)
+        #if not (len(start)==len(end)):
+        #    raise RuntimeError('Something is wrong in the trial def. Fix this!')
 
     trials = []
     blocks = []
@@ -130,12 +145,17 @@ def define_blocks(events):
             trial = 1
         else:
             # Convert pins to numbers
-            trial = 0
             trial = sum([2**(8-pin) for pin in pins])
         if trial == 1:
             block += 1
         trials.append(trial)
         blocks.append(block)
+    # If the recording did not start before the first trial we might miss trials
+    # In this case the first trial should not be labelled 1.
+    for b in unique(blocks):
+        if sum(blocks==b) is not 100:
+            ids = where(blocks==b)[0]
+            trials[ids[0]] = trials[ids[1]]-1
     return events[start,0], events[end, 0], np.array(trials), np.array(blocks)
 
 val2field = {
