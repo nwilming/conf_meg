@@ -3,7 +3,7 @@ import multiprocessing
 import cPickle
 import socket
 import warnings
-
+import logging
 
 nthread = multiprocessing.cpu_count()
 
@@ -16,7 +16,7 @@ try:
     # Load wisdom from previous plans if it exists
 
     hostname = socket.gethostname()
-    cache =  '/Users/nwilming/%s_fftw.wisdom.pickle'%hostname
+    cache =  '/home/nwilming/%s_fftw.wisdom.pickle'%hostname
     try:
         wisdom = cPickle.load(open(cache))
         pyfftw.import_wisdom(wisdom)
@@ -26,6 +26,7 @@ try:
 
 
     def fft(X, shape=None):
+        logging.info('This is FFT before')
         X = asarray(X)
         if shape is None:
             shape = X.shape
@@ -33,15 +34,18 @@ try:
         out = pyfftw.empty_aligned(shape, dtype='complex128')
         fft_object = pyfftw.FFTW(out, out, flags=['FFTW_MEASURE'], threads=nthread,
                                  planning_timelimit=1.)
+        logging.info('This is FFT after')
         return fft_object(X)
 
     def ifft(X, shape=None):
+        logging.info('This is IFFT before')
         if shape is None:
             shape = X.shape
         inp  = pyfftw.empty_aligned(shape, dtype='complex128')
         out = pyfftw.empty_aligned(shape, dtype='complex128')
         ifft_object = pyfftw.FFTW(inp, out, flags=['FFTW_MEASURE'], threads=nthread,
                                   planning_timelimit=1., direction='FFTW_BACKWARD')
+        logging.info('This is IFFT after')
         return ifft_object(X)
 
     def fftconvolve(inp, kernel):
@@ -63,6 +67,7 @@ try:
         Note: Inpute must be (N_channels x Time)!
         Note: Input array is destroyed!
         """
+        logging.info('Starting hilbert transform')
         axis = 1
         x = asarray(x)
         if iscomplexobj(x):
@@ -90,10 +95,12 @@ try:
 
         x = ifft(Xf*h)
         del Xf
+        logging.info('Finished Hilbert transform')
         cPickle.dump(pyfftw.export_wisdom(), open(cache, 'w'))
         return x
 
 except ImportError:
+    raise RuntimeError('pyfftw can not be loaded')
     from scipy import signal
     hilbert = signal.hilbert
 

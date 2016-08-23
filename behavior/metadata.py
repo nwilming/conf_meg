@@ -8,7 +8,7 @@ from conf_analysis.meg.tools import deprecated
 
 if socket.gethostname().startswith('node'):
     raw_path = '/home/nwilming/conf_meg/raw/'
-    preprocessed = '/home/nwilming/conf_data/'
+    preprocessed = '/home/nwilming/conf_meg/'
     cachedir = '/home/nwilming/conf_data/cache/'
     behavioral_path = '/home/nwilming/conf_data/'
 
@@ -73,7 +73,7 @@ def get_epoch_filename(snum, session, block, period, data_type):
     One of 'fif', 'artifcats', 'meta'
     '''
     assert(data_type in file_type_map.keys())
-    path = os.path.join(processed, 'S%i'%snum)
+    path = os.path.join(preprocessed, 'S%i'%snum)
     if period is None:
         fname = 'SUB%i_S%i_B%i'%(snum, session, block) + file_type_map[data_type]
     else:

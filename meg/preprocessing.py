@@ -49,51 +49,59 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
     block_in_experiment to the block in the metadata that block_in_raw should be
     mapped to. block_in_experiment will be used for saving.
     '''
-    #block_map = cPickle.load(open('meg/blockmap.pickle'))
+    
+    try:
+        data = empirical.load_data()
+        data = empirical.data_cleanup(data)
 
-    data = empirical.load_data()
-    data = empirical.data_cleanup(data)
+        filename = metadata.get_raw_filename(snum, session)
+        raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
+        trials = blocks(raw)
+        if  not (block_in_raw in unique(trials['block'])):
+            err_msg = 'Error when processing %i, %i, %i, %i, data file = %s'%(snum, session, block_in_raw, block_in_experiment, filename)
+            raise RuntimeError(err_msg)
 
-    filename = metadata.get_raw_filename(snum, session)
-    raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
-    trials = blocks(raw)
-    if  not (block_in_raw in unique(trials['block'])):
-        err_msg = 'Error when processing %i, %i, %i, %i, data file = %s'%(snum, session, block_in_raw, block_in_experiment, filename)
-        raise RuntimeError(err_msg)
+        #block_in_raw, block_in_experiment = block_map
 
-    #block_in_raw, block_in_experiment = block_map
+        # Load data and preprocess it.
+        logging.info('Loading block of data: %s; block: %i'%(filename, block_in_experiment))
+        r, r_id = load_block(raw, trials, block_in_raw)
+        logging.info('Starting artifact detection')
+        r, ants, artdefs = preprocess_block(r)
+        logging.info('Aligning meta data')
+        meta, timing = get_meta(data, r, snum, block_in_experiment)
 
-    # Load data and preprocess it.
-    r, r_id = load_block(raw, trials, block_in_raw)
-    r, ants, artdefs = preprocess_block(r)
-    meta, timing = get_meta(data, r, snum, block_in_experiment)
+        artdefs['id'] = r_id
+        art_fname = metadata.get_epoch_filename(snum, session,
+                                    block_in_experiment, None, 'artifacts')
+        cPickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
+        
+        for epoch, event, (tmin, tmax) in zip(
+                                             ['stimulus', 'response', 'feedback'],
+                                             ['stim_onset_t', 'button_t', 'meg_feedback_t'],
+                                             [(-.2, 1.5), (-1.5, .5), (-.5, .5)]
+                                             ):
 
-    artdefs['id'] = r_id
-    art_fname = metadata.get_epoch_filename(snum, session,
-                                block_in_experiment, None, 'artifacts')
-    cPickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
+            logging.info('Processing epoch: %s' %epoch)
+            m, s = get_epoch(r, meta, timing,
+                                           event=event, epoch_time=(tmin, tmax),
+                                           base_event='stim_onset_t', base_time=(-.2, 0))
 
-    for epoch, event, (tmin, tmax) in zip(
-                                         ['stimulus', 'response', 'feedback'],
-                                         ['stim_onset_t', 'button_t', 'meg_feedback_t'],
-                                         [(-.2, 1.5), (-1.5, .5), (-.5, .5)]
-                                         ):
-
-        m, s = get_epoch(r, meta, timing,
-                                       event=event, epoch_time=(tmin, tmax),
-                                       base_event='stim_onset_t', base_time=(-.2, 0))
-
-        if len(s)>0:
-            epo_fname = metadata.get_epoch_filename(snum, session,
-                                        block_in_experiment, epoch, 'fif')
-            epo_metaname = metadata.get_epoch_filename(snum, session,
-                                        block_in_experiment, epoch, 'meta')
-            s = s.resample(600, npad='auto')
-            s.save(epo_fname)
-            m.to_hdf(epo_metaname, 'meta')
-        return 'Finished', snum, session, block_in_experiment
+            if len(s)>0:
+                epo_fname = metadata.get_epoch_filename(snum, session,
+                                            block_in_experiment, epoch, 'fif')
+                epo_metaname = metadata.get_epoch_filename(snum, session,
+                                            block_in_experiment, epoch, 'meta')
+                s = s.resample(600, npad='auto')
+                s.save(epo_fname)
+                m.to_hdf(epo_metaname, 'meta')
+    except MemoryError:
+        print snum, session, block_in_raw, block_in_experiment
+        raise RuntimeError('MemoryError caught in one block ' + str(snum) + ' ' + str(session) + ' ' + str(block_in_raw) + ' ' + str(block_in_experiment) )
+    return 'Finished', snum, session, block_in_experiment
 
 
+            #results.append(executor.submit(sum, [1,2,3,4,]))
 def blocks(raw, full_file_cache=False):
     '''
     Return a dictionary that encodes information about trials in raw.

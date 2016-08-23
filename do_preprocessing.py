@@ -17,6 +17,13 @@ executor = Executor("172.18.101.120:8786")
 block_map = cPickle.load(open('meg/blockmap.pickle'))
 
 results = []
+
+q = [] 
+
+def expand(x):
+    print x
+    return  preprocessing.one_block(*x)
+
 for snum in range(1, 6):
     for session in range(4):
         #filename = metadata.get_raw_filename(snum, session)
@@ -25,12 +32,9 @@ for snum in range(1, 6):
         map_blocks = dict((v,k) for k, v in block_map[snum][session].iteritems())
         for block in range(0, 5):
             block_in_raw, block_in_experiment = map_blocks[block], block
-            #results.append(executor.submit(sum, [1,2,3,4,]))
 
-            results.append(executor.submit(preprocessing.one_block, snum, session, block_in_raw, block_in_experiment))
+            q.append((snum, session, block_in_raw, block_in_experiment))
 
-
+results = executor.map(expand, q)
 diagnostics.progress(results)
-
-for result in as_completed(results):
-    print result.result()
+executor.gather(results)
