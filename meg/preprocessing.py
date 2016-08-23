@@ -56,7 +56,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
 
     filename = metadata.get_raw_filename(snum, session)
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
-    trials = blocks(raw)
+    trials = blocks(raw, full_file_cache=True)
     if  not (block_in_raw in unique(trials['block'])):
         err_msg = 'Error when processing %i, %i, %i, %i, data file = %s'%(snum, session, block_in_raw, block_in_experiment, filename)
         raise RuntimeError(err_msg)
@@ -175,19 +175,18 @@ def get_meta(data, raw, snum, block):
 
     megmeta = metadata.get_meta(trigs, es, ee, trl, bl,
                                 metadata.fname2session(raw.info['filename']), snum)
-
     assert len(unique(megmeta.snum)==1)
     assert len(unique(megmeta.day)==1)
     assert len(unique(megmeta.block_num)==1)
-    megmeta.loc[:, 'block_num'] = block
 
     dq = data.query('snum==%i & day==%i & block_num==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0], block))
     dq.loc[:, 'trial'] = data.loc[:, 'trial']
     trial_idx = np.in1d(dq.trial, unique(megmeta.trial))
     dq = dq.iloc[trial_idx, :]
-
     dq = dq.set_index(['day', 'block_num', 'trial'])
     megmeta = metadata.correct_recording_errors(megmeta)
+    megmeta.loc[:, 'block_num'] = block
+
     megmeta = megmeta.set_index(['day', 'block_num', 'trial'])
     del megmeta['snum']
     meta = pd.concat([megmeta, dq], axis=1)

@@ -42,7 +42,28 @@ data_files = {'S01': ['s01-01_Confidence_20151208_02.ds',
               'S06': ['s06-01_Confidence_20151215_02.ds',
                       's06-02_Confidence_20151216_02.ds',
                       's06-03_Confidence_20151217_02.ds',
-                      's06-04_Confidence_20151218_04.ds']}
+                      's06-04_Confidence_20151218_04.ds'],
+              'S07': ['S07-01_Confidence_20160216_01.ds',
+                      'S07-2_Confidence_20160224_01.ds',
+                      'S07-3_Confidence_20160302_01.ds',
+                      'S07-4_Confidence_20160303_01.ds'],
+              'S08': ['S08-01_Confidence_20160216_01.ds',
+                      'S08-2_Confidence_20160225_01.ds',
+                      'S08-3_Confidence_20160229_01.ds',
+                      'S08-4_Confidence_20160302_01.ds'],
+              'S09': ['S09-01_Confidence_20160216_01.ds',
+                      'S09-2_Confidence_20160223_01.ds',
+                      'S09-3_Confidence_20160226_01.ds',
+                      'S09-4_Confidence_20160303_01.ds'],
+              'S10': ['S10-01_Confidence_20160223_01.ds',
+                      'S10-2_Confidence_20160224_01.ds',
+                      'S10-3_Confidence_20160301_02.ds',
+                      'S10-4_Confidence_20160302_01.ds'],
+              'S11': ['S11-1_Confidence_20160223_01.ds',
+                      'S11-2_Confidence_20160224_01.ds',
+                      'S11-3_Confidence_20160225_01.ds',
+                      'S11-4_Confidence_20160226_01.ds']
+}
 
 file_type_map = {'fif':'-epo.fif.gz', 'artifacts':'.artifact_def', 'meta':'.meta'}
 
@@ -87,7 +108,7 @@ def define_blocks(events):
 
     Aggresively tries to fix introduced by recording crashes and late recording
     starts.
-    
+
     Beware: The trial number and block numbers will not yet match to the behavioral
     data.
     '''
@@ -204,20 +225,8 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject):
 def correct_recording_errors(df):
     '''
     Cleanup some of the messy things that occured.
-
-    S04-04: /Volumes/dump/conf_data/raw/s04-04_Confidence_20151217_02.ds
-        - 6 blocks because of error in beginning. First two trials / first block needs to be killed
-          : '/Volumes/dump/conf_data/raw/s04-03_Confidence_20151215_02.ds'
-        - 7 blocks.
     '''
-    if all((df.snum==4) & (df.day==20151217)):
-        df = df.query('block_num>0')
-        df.loc[:, 'block_num'] -= 1
-    if all((df.snum==4) & (df.day==20151215)):
-        df = df.query('block_num>1')
-        df.loc[:, 'block_num'] -= 2
-    #  S3 had a response fuckup where the participant had memorized a wrong key
-    # mapping. This will be treated seperatedly.
+
     if 3 in unique(df.snum):
         id_button_21 = ((df.snum==3) & (df.button == 21) &
                       ((df.day == 20151207) | (df.day == 20151208)))
