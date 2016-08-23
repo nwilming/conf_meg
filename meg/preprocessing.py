@@ -101,7 +101,6 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
     return 'Finished', snum, session, block_in_experiment
 
 
-            #results.append(executor.submit(sum, [1,2,3,4,]))
 def blocks(raw, full_file_cache=False):
     '''
     Return a dictionary that encodes information about trials in raw.
@@ -183,19 +182,18 @@ def get_meta(data, raw, snum, block):
 
     megmeta = metadata.get_meta(trigs, es, ee, trl, bl,
                                 metadata.fname2session(raw.info['filename']), snum)
-
     assert len(unique(megmeta.snum)==1)
     assert len(unique(megmeta.day)==1)
     assert len(unique(megmeta.block_num)==1)
-    megmeta.loc[:, 'block_num'] = block
 
     dq = data.query('snum==%i & day==%i & block_num==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0], block))
     dq.loc[:, 'trial'] = data.loc[:, 'trial']
     trial_idx = np.in1d(dq.trial, unique(megmeta.trial))
     dq = dq.iloc[trial_idx, :]
-
     dq = dq.set_index(['day', 'block_num', 'trial'])
     megmeta = metadata.correct_recording_errors(megmeta)
+    megmeta.loc[:, 'block_num'] = block
+
     megmeta = megmeta.set_index(['day', 'block_num', 'trial'])
     del megmeta['snum']
     meta = pd.concat([megmeta, dq], axis=1)
