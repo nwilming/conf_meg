@@ -76,7 +76,12 @@ def annotate_blinks(raw):
 
 def annotate_muscle(raw, cutoff=10):
     logging.info('Annotating muscle artifacts')
-    arts, z = detect_muscle(raw.copy(), cutoff=cutoff)
+    try:
+        arts, z = detect_muscle(raw.copy(), cutoff=cutoff)
+    except MemoryError:
+        print 'Memory Error detected:', raw
+        raise RuntimeError('Memory error detected in annotate muscle: '+raw.info['filename'])
+
     annotations = None
     if len(arts)>0:
         annotations = mne.Annotations(arts[:,0],
