@@ -7,11 +7,13 @@ import pandas as pd
 from conf_analysis.meg.tools import deprecated
 
 if socket.gethostname().startswith('node'):
+    home = '/home/nwilming/'
     raw_path = '/home/nwilming/conf_meg/raw/'
     preprocessed = '/home/nwilming/conf_meg/'
     cachedir = '/home/nwilming/conf_data/cache/'
     behavioral_path = '/home/nwilming/conf_data/'
 else:
+    home = '/Users/nwilming/'
     raw_path = '/Volumes/dump/conf_data/raw/'
     preprocessed = '/Volumes/dump/conf_data/'
     cachedir = '/Users/nwilming/u/conf_analysis/cache/'

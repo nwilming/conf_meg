@@ -1,9 +1,11 @@
 from numpy import asarray, iscomplexobj, zeros, newaxis, zeros_like, real
 import multiprocessing
+import os
 import cPickle
 import socket
 import warnings
 import logging
+from conf_analysis.behavior import metadata
 
 nthread = multiprocessing.cpu_count()
 
@@ -16,7 +18,7 @@ try:
     # Load wisdom from previous plans if it exists
 
     hostname = socket.gethostname()
-    cache =  '/home/nwilming/%s_fftw.wisdom.pickle'%hostname
+    cache =  os.path.join(metadata.home, '%s_fftw.wisdom.pickle'%hostname)
     try:
         wisdom = cPickle.load(open(cache))
         pyfftw.import_wisdom(wisdom)
