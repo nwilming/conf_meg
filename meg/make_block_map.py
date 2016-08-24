@@ -34,7 +34,7 @@ def do_one(filename):
     return result
 
 block_map = {}
-for snum in range(1, 12):
+for snum in range(1, 16):
     filenames = [metadata.get_raw_filename(snum, b) for b in range(4)]
     block_map[snum] = {}
     for session, filename in enumerate(filenames):

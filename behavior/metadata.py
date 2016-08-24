@@ -4,7 +4,6 @@ Keep track of all the subject data
 from pylab import *
 import os, socket
 import pandas as pd
-from conf_analysis.meg.tools import deprecated
 
 if socket.gethostname().startswith('node'):
     home = '/home/nwilming/'
@@ -72,14 +71,14 @@ data_files = {'S01': ['s01-01_Confidence_20151208_02.ds',
                       'S13-2_Confidence_20160302_01.ds',
                       'S13-3_Confidence_20160303_01.ds',
                       'S13-4_Confidence_20160304_01.ds'],
-              'S14': ['S14-1_Confidence_20160301_01.ds',
+              'S14': ['14-1_Confidence_20160301_01.ds',
                       'S14-2_Confidence_20160302_01.ds',
                       'S14-3_Confidence_20160303_01.ds',
-                      'S14-4_Confidence_20160304_01.ds']
+                      'S14-4_Confidence_20160304_01.ds'],
               'S15': ['S15-1_Confidence_20160421_01.ds',
                       'S15-2_Confidence_20160425_01.ds',
                       'S15-3_Confidence_20160427_01.ds',
-                      'S15-4_Confidence_20160428_01.ds'],
+                      'S15-4_Confidence_20160428_01.ds']
 }
 
 file_type_map = {'fif':'-epo.fif.gz', 'artifacts':'.artifact_def', 'meta':'.meta'}
