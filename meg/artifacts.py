@@ -91,11 +91,11 @@ def annotate_muscle(raw, cutoff=10):
 
 def annotate_cars(raw, cutoff=10):
     logging.info('Annotating car artifacts')
-    arts, z = detect_cars(raw.copy(), cutoff=cutoff)
+    arts, z, d = detect_cars(raw.copy(), cutoff=cutoff)
     annotations = None
     if len(arts)>0:
         annotations = mne.Annotations(arts[:,0], arts[:,1], 'bad car')
-    return annotations, z
+    return annotations, z, d
 
 
 def annotate_jumps(raw, cutoff=25):
@@ -250,7 +250,7 @@ def nan_bad_epochs(data, raw):
     return data
 
 
-def detect_cars(raw, cutoff=10, frequency_band=(None, 1)):
+def detect_cars(raw, cutoff=4.0, frequency_band=(None, 1)):
     '''
     Detect cars artifacts on blocks and ignore intermediate data.
 
@@ -282,16 +282,24 @@ def detect_cars(raw, cutoff=10, frequency_band=(None, 1)):
     # Normalize zh to have 80 between 0 an 1
     q80 = np.percentile(zh, [80])
     zh = zh/q80
+
+    # Compute derivative of zh
+    d = np.concatenate(([0], diff(zh)))
+    d = d/diff(np.percentile(d, [10, 80])) # Normalize to have 80 between -1 and 1
+    d[:raw.info['sfreq']]=0
+    d[-raw.info['sfreq']:]=0
     art_borders = np.where(np.diff(np.concatenate([[0], zh>cutoff, [0]])))[0]
     artifacts = []
     for start, end in zip(art_borders[0::2], art_borders[1::2]):
-        onset_t = (start-1)/raw.info['sfreq']
-        end_t = (end)/raw.info['sfreq']
-        onset_t -= 2.5
-        end_t += 2.5
-        duration = end_t-onset_t
-        artifacts.append((onset_t, duration))
-    return np.array(artifacts), zh
+        onset_t = (start-1) - int(2.5*raw.info['sfreq'])
+        end_t = (end) + int(2.5*raw.info['sfreq'])
+        # Check for derivative
+        if d[onset_t:end_t].min() < -5 and d[onset_t:end_t].max() > 5:
+            onset_t /= raw.info['sfreq']
+            end_t /= raw.info['sfreq']
+            duration = end_t-onset_t
+            artifacts.append((onset_t, duration))
+    return np.array(artifacts), zh, d
 
 
 def detect_muscle(raw, cutoff=10, frequency_band=(110, 140)):

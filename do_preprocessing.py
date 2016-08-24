@@ -11,14 +11,11 @@ locale.setlocale(locale.LC_ALL, "en_US")
 executor = Executor("172.18.101.120:8786")
 
 
-#data = empirical.load_data()
-#data = empirical.data_cleanup(data)
-
 block_map = cPickle.load(open('meg/blockmap.pickle'))
 
 results = []
 
-q = [] 
+q = []
 
 def expand(x):
     print x

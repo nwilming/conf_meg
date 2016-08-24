@@ -49,7 +49,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
     block_in_experiment to the block in the metadata that block_in_raw should be
     mapped to. block_in_experiment will be used for saving.
     '''
-    
+
     try:
         data = empirical.load_data()
         data = empirical.data_cleanup(data)
@@ -75,7 +75,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         art_fname = metadata.get_epoch_filename(snum, session,
                                     block_in_experiment, None, 'artifacts')
         cPickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
-        
+
         for epoch, event, (tmin, tmax) in zip(
                                              ['stimulus', 'response', 'feedback'],
                                              ['stim_onset_t', 'button_t', 'meg_feedback_t'],
@@ -131,30 +131,13 @@ def preprocess_block(raw):
     '''
     ab = artifacts.annotate_blinks(raw)
     am, zm = artifacts.annotate_muscle(raw)
-    ac, zc = artifacts.annotate_cars(raw)
+    ac, zc, d = artifacts.annotate_cars(raw)
     ar, zj = artifacts.annotate_jumps(raw)
     ants = artifacts.combine_annotations([x for x in  [ab, am, ac, ar] if x is not None])
     ants.onset += raw.first_samp/raw.info['sfreq']
     raw.annotations = ants
-    artdef = {'muscle':zm, 'cars':zc, 'jumps':zj}
+    artdef = {'muscle':zm, 'cars':(zc, d), 'jumps':zj}
     return raw, ants, artdef
-
-
-def concatenate_epochs(epochs, metas):
-    '''
-    Concatenate a list of epoch and meta objects and set their dev_head_t projection to
-    that of the first epoch.
-    '''
-    dev_head_t = epochs[0].info['dev_head_t']
-    index_cnt = 0
-    epoch_arrays = []
-    processed_metas = []
-    for e, m in zip(epochs, metas):
-        e.info['dev_head_t'] = dev_head_t
-        processed_metas.append(m)
-        e = mne.epochs.EpochsArray(e._data, e.info, events=e.events)
-        epoch_arrays.append(e)
-    return mne.concatenate_epochs(epoch_arrays), pd.concat(processed_metas)
 
 
 def get_meta(data, raw, snum, block):
@@ -290,6 +273,36 @@ def load_epochs(filenames):
 
 def load_meta(filenames):
     return [pd.read_hdf(f, 'meta') for f in filenames]
+
+
+def concatenate_epochs(epochs, metas):
+    '''
+    Concatenate a list of epoch and meta objects and set their dev_head_t projection to
+    that of the first epoch.
+    '''
+    dev_head_t = epochs[0].info['dev_head_t']
+    index_cnt = 0
+    epoch_arrays = []
+    processed_metas = []
+    for e, m in zip(epochs, metas):
+        e.info['dev_head_t'] = dev_head_t
+        processed_metas.append(m)
+        e = mne.epochs.EpochsArray(e._data, e.info, events=e.events)
+        epoch_arrays.append(e)
+    return mne.concatenate_epochs(epoch_arrays), pd.concat(processed_metas)
+
+
+@memory.cache
+def get_epochs_for_subject(snum, epoch):
+    from itertools import product
+
+    metas = [metadata.get_epoch_filename(snum, session, block, epoch, 'meta')
+                for session, block in product(range(4), range(5))]
+    data = [metadata.get_epoch_filename(snum, session, block, epoch, 'fif')
+                for session, block in product(range(4), range(5))]
+    meta = load_meta(metas)
+    data = load_epochs(data)
+    return concatenate_epochs(data, meta)
 
 def combine_annotations(annotations, first_samples, last_samples, sfreq):
     '''

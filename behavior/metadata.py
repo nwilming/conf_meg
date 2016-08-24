@@ -11,7 +11,6 @@ if socket.gethostname().startswith('node'):
     preprocessed = '/home/nwilming/conf_meg/'
     cachedir = '/home/nwilming/conf_data/cache/'
     behavioral_path = '/home/nwilming/conf_data/'
-
 else:
     raw_path = '/Volumes/dump/conf_data/raw/'
     preprocessed = '/Volumes/dump/conf_data/'
