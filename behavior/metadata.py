@@ -63,7 +63,23 @@ data_files = {'S01': ['s01-01_Confidence_20151208_02.ds',
               'S11': ['S11-1_Confidence_20160223_01.ds',
                       'S11-2_Confidence_20160224_01.ds',
                       'S11-3_Confidence_20160225_01.ds',
-                      'S11-4_Confidence_20160226_01.ds']
+                      'S11-4_Confidence_20160226_01.ds'],
+              'S12': ['S12-1_Confidence_20160225_01.ds',
+                      'S12-2_Confidence_20160226_01.ds',
+                      'S12-3_Confidence_20160303_01.ds',
+                      'S12-4_Confidence_20160304_01.ds'],
+              'S13': ['S13-1_Confidence_20160301_01.ds',
+                      'S13-2_Confidence_20160302_01.ds',
+                      'S13-3_Confidence_20160303_01.ds',
+                      'S13-4_Confidence_20160304_01.ds'],
+              'S14': ['S14-1_Confidence_20160301_01.ds',
+                      'S14-2_Confidence_20160302_01.ds',
+                      'S14-3_Confidence_20160303_01.ds',
+                      'S14-4_Confidence_20160304_01.ds']
+              'S15': ['S15-1_Confidence_20160421_01.ds',
+                      'S15-2_Confidence_20160425_01.ds',
+                      'S15-3_Confidence_20160427_01.ds',
+                      'S15-4_Confidence_20160428_01.ds'],
 }
 
 file_type_map = {'fif':'-epo.fif.gz', 'artifacts':'.artifact_def', 'meta':'.meta'}
