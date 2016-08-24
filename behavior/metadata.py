@@ -67,14 +67,6 @@ data_files = {'S01': ['s01-01_Confidence_20151208_02.ds',
 
 file_type_map = {'fif':'-epo.fif.gz', 'artifacts':'.artifact_def', 'meta':'.meta'}
 
-block_map = {1: {0: {},
-                 1: {},
-                 2: {},
-                 3: {}},
-             2: {0: {},
-                 1: {},
-                 2: {},
-                     3: {}}}
 
 def get_raw_filename(snum, session):
     return os.path.join(raw_path,
@@ -99,6 +91,7 @@ def get_epoch_filename(snum, session, block, period, data_type):
         fname = 'SUB%i_S%i_B%i'%(snum, session, block) + file_type_map[data_type]
     else:
         fname = 'SUB%i_S%i_B%i_%s'%(snum, session, block, period) + file_type_map[data_type]
+    fname = os.path.join(path, fname)
     return fname
 
 

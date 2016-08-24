@@ -24,13 +24,15 @@ def expand(x):
     print x
     return  preprocessing.one_block(*x)
 
-for snum in range(1, 6):
+for snum in range(1, 12):
     for session in range(4):
         #filename = metadata.get_raw_filename(snum, session)
         #raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
 
         map_blocks = dict((v,k) for k, v in block_map[snum][session].iteritems())
-        for block in range(0, 5):
+        print snum, session
+        print map_blocks
+        for block in map_blocks.keys():
             block_in_raw, block_in_experiment = map_blocks[block], block
 
             q.append((snum, session, block_in_raw, block_in_experiment))

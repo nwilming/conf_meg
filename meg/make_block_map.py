@@ -34,13 +34,13 @@ def do_one(filename):
     return result
 
 block_map = {}
-for snum in range(1, 7):
+for snum in range(1, 12):
     filenames = [metadata.get_raw_filename(snum, b) for b in range(4)]
     block_map[snum] = {}
     for session, filename in enumerate(filenames):
         block_map[snum][session] = executor.submit(do_one, filename)
 
 diagnostics.progress(block_map)
-block_map = executor.gather(key_map)
+block_map = executor.gather(block_map)
 
 cPickle.dump(block_map, open('blockmap.pickle', 'w'))

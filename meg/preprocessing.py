@@ -274,12 +274,12 @@ def apply_baseline(epochs, baseline):
 @memory.cache
 def get_events_from_file(filename):
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
-    buttons = mne.find_events(raw, 'UPPT002')
+    buttons = mne.find_events(raw, 'UPPT002', shortest_event=1)
     triggers = mne.find_events(raw, 'UPPT001', shortest_event=1)
     return triggers, buttons
 
 def get_events(raw):
-    buttons = mne.find_events(raw, 'UPPT002')
+    buttons = mne.find_events(raw, 'UPPT002', shortest_event=1)
     triggers = mne.find_events(raw, 'UPPT001', shortest_event=1)
     return triggers, buttons
 
