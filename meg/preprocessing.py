@@ -304,6 +304,7 @@ def get_epochs_for_subject(snum, epoch):
     data = load_epochs(data)
     return concatenate_epochs(data, meta)
 
+
 def combine_annotations(annotations, first_samples, last_samples, sfreq):
     '''
     Concatenate a list of annotations objects such that annotations
