@@ -29,6 +29,7 @@ from conf_analysis.meg import artifacts
 import logging
 from joblib import Memory
 import cPickle
+import os
 
 memory = Memory(cachedir=metadata.cachedir)
 
@@ -51,6 +52,10 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
     '''
 
     try:
+        
+        art_fname = metadata.get_epoch_filename(snum, session,
+            block_in_experiment, None, 'artifacts')
+        
         data = empirical.load_data()
         data = empirical.data_cleanup(data)
 
@@ -72,8 +77,6 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         meta, timing = get_meta(data, r, snum, block_in_experiment)
 
         artdefs['id'] = r_id
-        art_fname = metadata.get_epoch_filename(snum, session,
-                                    block_in_experiment, None, 'artifacts')
         cPickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
 
         for epoch, event, (tmin, tmax) in zip(
@@ -297,9 +300,12 @@ def get_epochs_for_subject(snum, epoch):
     from itertools import product
 
     metas = [metadata.get_epoch_filename(snum, session, block, epoch, 'meta')
-                for session, block in product(range(4), range(5))]
+                for session, block in product(range(4), range(5))
+                    if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'meta'))]
     data = [metadata.get_epoch_filename(snum, session, block, epoch, 'fif')
-                for session, block in product(range(4), range(5))]
+                for session, block in product(range(4), range(5))
+                    if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'fif'))]
+    assert len(metas)==len(data)
     meta = load_meta(metas)
     data = load_epochs(data)
     return concatenate_epochs(data, meta)
