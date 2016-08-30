@@ -170,7 +170,7 @@ def get_meta(data, raw, snum, block):
     assert len(unique(megmeta.block_num)==1)
 
     dq = data.query('snum==%i & day==%i & block_num==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0], block))
-    dq.loc[:, 'trial'] = data.loc[:, 'trial']
+    #dq.loc[:, 'trial'] = data.loc[:, 'trial']
     trial_idx = np.in1d(dq.trial, unique(megmeta.trial))
     dq = dq.iloc[trial_idx, :]
     dq = dq.set_index(['day', 'block_num', 'trial'])

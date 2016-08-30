@@ -1,7 +1,10 @@
 import numpy as np
 import cPickle
+import metadata
+import os
 
-mapname = '/Users/nwilming/u/conf_analysis/meg/key_map.pickle'
+
+mapname = os.path.join(metadata.project, 'key_map.pickle')
 
 try:
   cache = cPickle.load(open(mapname))

@@ -6,6 +6,9 @@ from sklearn import cross_validation, svm, pipeline, preprocessing as skpre
 from sklearn import decomposition
 import numpy as np
 import pandas as pd
+from joblib import Memory
+
+memory = Memory(cachedir=metadata.cachedir)
 
 clf = lambda: pipeline.Pipeline([
             ('scale', skpre.StandardScaler()),
@@ -14,6 +17,8 @@ clf = lambda: pipeline.Pipeline([
 
 cv = lambda x: cross_validation.StratifiedShuffleSplit(x, n_iter=10, test_size=0.1)
 
+
+@memory.cache
 def decode(classifier, data, labels, train_time, predict_times,
         cv=cross_validation.StratifiedKFold):
     '''
