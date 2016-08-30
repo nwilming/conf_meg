@@ -200,6 +200,7 @@ val2field = {
 
 
 def fname2session(filename):
+    print filename
     #'/Volumes/dump/conf_data/raw/s04-04_Confidence_20151217_02.ds'
     return int(filename.split('/')[-1].split('_')[-2])
 

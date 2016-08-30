@@ -20,8 +20,10 @@ def expand(x):
     res = preprocessing.one_block(*x)
     print 'Ended task:', x
 
-for snum in range(15, 16):
-    for session in range(4):
+
+for snum in range(1, 16):
+    for session in range(0,4):
+
         map_blocks = dict((v,k) for k, v in block_map[snum][session].iteritems())
         for block in map_blocks.keys():
             block_in_raw, block_in_experiment = map_blocks[block], block
