@@ -285,6 +285,8 @@ def detect_cars(raw, cutoff=3.5, der_cutoff=5.0, frequency_band=(None, 1)):
     d = d/np.diff(np.percentile(d, [10, 80])) # Normalize to have 80 between -1 and 1
     d[:raw.info['sfreq']]=0
     d[-raw.info['sfreq']:]=0
+
+    # Compute artifact borders
     art_borders = np.where(np.diff(np.concatenate([[0], zh>cutoff, [0]])))[0]
     artifacts = []
     for start, end in zip(art_borders[0::2], art_borders[1::2]):

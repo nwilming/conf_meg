@@ -52,10 +52,10 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
     '''
 
     try:
-        
+
         art_fname = metadata.get_epoch_filename(snum, session,
             block_in_experiment, None, 'artifacts')
-        
+
         data = empirical.load_data()
         data = empirical.data_cleanup(data)
 
