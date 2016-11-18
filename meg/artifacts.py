@@ -213,7 +213,7 @@ def microssacade_detection(x, y, VFAC):
 
 def blink_detection(x, y, saccades):
     '''
-    A blink is everything that is surrounded by two saccades and  period in
+    A blink is everything that is surrounded by two saccades and period in
     between where the eye is off screen.
     '''
     rm_sac = (saccades[:,0]*0).astype(bool)
@@ -250,7 +250,7 @@ def nan_bad_epochs(data, raw):
     return data
 
 
-def detect_cars(raw, cutoff=4.0, der_cutoff=7.5, frequency_band=(None, 1)):
+def detect_cars(raw, cutoff=3.5, der_cutoff=5.0, frequency_band=(None, 1)):
     '''
     Detect cars artifacts on blocks and ignore intermediate data.
 
@@ -270,9 +270,6 @@ def detect_cars(raw, cutoff=4.0, der_cutoff=7.5, frequency_band=(None, 1)):
     del raw._data
     hilb = np.abs(hilb).astype(float)
 
-    #m,s = hilb.mean(1), hilb.std(1)
-    #zh = (((hilb-m[:, np.newaxis])/s[:, np.newaxis])).mean(0)
-
     # Compute IGR and median
     Qs = np.percentile(hilb, [10, 50, 90], axis=1)
     IQR = Qs[2,:]-Qs[0,:]
@@ -288,6 +285,8 @@ def detect_cars(raw, cutoff=4.0, der_cutoff=7.5, frequency_band=(None, 1)):
     d = d/np.diff(np.percentile(d, [10, 80])) # Normalize to have 80 between -1 and 1
     d[:raw.info['sfreq']]=0
     d[-raw.info['sfreq']:]=0
+
+    # Compute artifact borders
     art_borders = np.where(np.diff(np.concatenate([[0], zh>cutoff, [0]])))[0]
     artifacts = []
     for start, end in zip(art_borders[0::2], art_borders[1::2]):

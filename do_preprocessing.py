@@ -12,9 +12,7 @@ executor = Executor("172.18.101.120:8786")
 
 
 block_map = cPickle.load(open('meg/blockmap.pickle'))
-
 results = []
-
 q = []
 
 def expand(x):
@@ -22,10 +20,9 @@ def expand(x):
     res = preprocessing.one_block(*x)
     print 'Ended task:', x
 
+
 for snum in range(1, 16):
     for session in range(0,4):
-        #filename = metadata.get_raw_filename(snum, session)
-        #raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
 
         map_blocks = dict((v,k) for k, v in block_map[snum][session].iteritems())
         for block in map_blocks.keys():

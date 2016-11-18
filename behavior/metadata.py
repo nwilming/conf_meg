@@ -7,12 +7,14 @@ import pandas as pd
 
 if socket.gethostname().startswith('node'):
     home = '/home/nwilming/'
+    project = '/home/nwilming/conf_analysis/'
     raw_path = '/home/nwilming/conf_meg/raw/'
     preprocessed = '/home/nwilming/conf_meg/'
     cachedir = '/home/nwilming/conf_data/cache/'
     behavioral_path = '/home/nwilming/conf_data/'
 else:
     home = '/Users/nwilming/'
+    project = '/Users/nwilming/u/conf_analysis/'
     raw_path = '/Volumes/dump/conf_data/raw/'
     preprocessed = '/Volumes/dump/conf_data/'
     cachedir = '/Users/nwilming/u/conf_analysis/cache/'

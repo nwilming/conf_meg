@@ -14,15 +14,11 @@ sensors = dict(
         all= lambda x:x,
         occipital= lambda x:[ch for ch in x if ch.startswith('MLO') or ch.startswith('MRO')],
         posterior= lambda x:[ch for ch in x if ch.startswith('MLP') or ch.startswith('MRP')],
-        central= lambda x:[ch for ch in x if ch.startswith('MLC') 
+        central= lambda x:[ch for ch in x if ch.startswith('MLC')
             or ch.startswith('MRC') or ch.startswith('MZC')],
-        frontal= lambda x:[ch for ch in x if ch.startswith('MLF') 
+        frontal= lambda x:[ch for ch in x if ch.startswith('MLF')
             or ch.startswith('MRF') or ch.startswith('MZF')],
         temporal= lambda x:[ch for ch in x if ch.startswith('MLT') or ch.startswith('MRT')])
-
-
-
-memory = Memory(cachedir=metadata.cachedir)
 
 
 def clf():
@@ -35,6 +31,7 @@ def cv(x):
     return cross_validation.StratifiedShuffleSplit(x, n_iter=10, test_size=0.1)
 
 
+
 def decode(classifier, data, labels, train_time, predict_times,
         cv=cross_validation.StratifiedKFold, collapse=np.mean):
     '''
@@ -45,12 +42,12 @@ def decode(classifier, data, labels, train_time, predict_times,
 
     train_time can be a slice object to allow averaging across time or using
     time_sequences for prediction. In this case indexing data with train_time
-    potentially results in a (n_epochs, n_channels, n_time) and the time 
+    potentially results in a (n_epochs, n_channels, n_time) and the time
     dimension needs to be collapsed to obtain a (n_epochs, n_channels) matrix.
     How to do this can be controlled by the collapse keyword. If collapes=='reshape'
     data is coercd into  (n_epochs, n_channels*n_matrix), else collapse is applied
     to data like so:
-        
+
         >>> X = collapse(data, axis=2)
 
     If train_time is a slice object, predict_times should be a list of slice objects
@@ -68,7 +65,7 @@ def decode(classifier, data, labels, train_time, predict_times,
     '''
     assert len(labels) == data.shape[0]
     results = []
-    
+
     # With only one label no decoding is possible.
     if len(np.unique(labels)) == 1:
         return pd.DataFrame({
@@ -109,7 +106,7 @@ def decode(classifier, data, labels, train_time, predict_times,
                 train = train.reshape((train.shape[0], np.prod(train.shape[1:])))
             else:
                 train = collapse(train, axis=2)
-            train_time = train_time.stop 
+            train_time = train_time.stop
 
         clf=clf.fit(train, labels[train_indices])
 
@@ -146,7 +143,7 @@ def generalization_matrix(epochs, labels, dt, classifier=clf, cv=cv, slices=Fals
     Time resolution of the decoding in ms (!).
         slices : False, 'reshape' or function
     Indicates how time dimension should be treated during decoding.
-    False implies single time point decoding, reshape implies 
+    False implies single time point decoding, reshape implies
     using time sequence data for decoding and function can be used
     to reduce time series data to single point.
     '''
@@ -156,10 +153,10 @@ def generalization_matrix(epochs, labels, dt, classifier=clf, cv=cv, slices=Fals
     tlen = data.shape[-1]/(float(sfreq)/1000.)
     nsteps = np.around(float(tlen)/dt)
     #steps = np.linspace(0, data.shape[-1]-1, nsteps).astype(int)
-    steps = np.arange(0, data.shape[-1], int(data.shape[-1]/nsteps)) 
+    steps = np.arange(0, data.shape[-1], int(data.shape[-1]/nsteps))
     if slices:
         steps = [slice(s, e) for s, e in zip(steps[0:-1], steps[1:])]
-        decoder = lambda x: decode(clf, data, labels, x, steps, cv=cv, collapse=slices) 
+        decoder = lambda x: decode(clf, data, labels, x, steps, cv=cv, collapse=slices)
     else:
         decoder = lambda x: decode(clf, data, labels, x, steps, cv=cv)
     return pd.concat([decoder(tt) for tt in steps])
@@ -205,7 +202,7 @@ def apply_decoder(func, snum, epoch, label, channels=sensors['all']):
     s = s[list(use_loc.astype(str))]
 
     # Sort order index to align epochs with labels.
-    m = m.loc[s.events[:, 2]] 
+    m = m.loc[s.events[:, 2]]
     if not all(s.events[:, 2] == m.index.values):
         raise RuntimeError('Indices of epochs and meta do not match! Task: ' + str(snum) + ' ' + epoch + ' ' + label)
     # Recode labels to 0-(n-1)
