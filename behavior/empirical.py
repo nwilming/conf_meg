@@ -79,8 +79,16 @@ def load_data():
         data.block_num = data.block_num.replace(lt)
         return data
 
+    def contrast_block_mean(data):
+        con = abs(vstack(data.contrast_probe)-0.5)
+        m = mean(con)
+        data.loc[:, 'contrast_block_mean'] = m
+        return data
+
+
     data = data.groupby('snum').apply(session_num)
     data = data.groupby(['snum', 'session_num']).apply(block_num)
+    data = data.groupby(['snum', 'session_num', 'block_num']).apply(contrast_block_mean)
 
     data.loc[:, 'hash'] =  [keymap.hash(x) for x in data.loc[:, ('day', 'snum', 'block_num', 'trial')].values]
     assert len(np.unique(data.loc[:, 'hash'])) == len(data.loc[:, 'hash'])
@@ -109,6 +117,7 @@ def phi(x):
     '''
     return norm.ppf(x)
 
+
 def tbl(data, field='response'):
     '''
     Compute hit, false alarm, miss and correct rejection rate.
@@ -121,6 +130,7 @@ def tbl(data, field='response'):
     Nb = float(fa + cr)+1.
     return hit/Na, fa/Nb, miss/Na, cr/Nb
 
+
 def dp(data, field='response'):
     '''
     compute d'
@@ -130,12 +140,14 @@ def dp(data, field='response'):
         raise RuntimeError('Too good or too bad')
     return phi(hit) - phi(fa)
 
+
 def crit(data, field='response'):
     '''
     compute criterion.
     '''
     hit, fa, _, _ = tbl(data, field=field)
     return -.5 *(phi(hit) + phi(fa))
+
 
 def acc(data, field='correct'):
     '''
@@ -163,14 +175,6 @@ def pk(df, gs=matplotlib.gridspec.GridSpec(1,3), row=0):
     xlabel('')
     legend(bbox_to_anchor=(1.001, 1), loc=2, borderaxespad=0.)
 
-def plot_kernel(y, response,  **kw):
-    r = unique(response)
-    del kw['label']
-    sns.tsplot(vstack(y[response==r[0]].values), arange(0.5, 9.6, 1), **kw)
-    sns.tsplot(vstack(y[response==r[1]].values), arange(0.5, 9.6, 1), **kw)
-    #plot(arange(0.5, 9.6, 1), vstack(y[response==r[0]].values).mean(0), **kw)
-    #plot(arange(0.5, 9.6, 1), vstack(y[response==r[1]].values).mean(0),   **kw)
-
 
 def bootstrap(v, n, N, func=nanmean, alpha=.05):
     '''
@@ -182,6 +186,7 @@ def bootstrap(v, n, N, func=nanmean, alpha=.05):
         id_rs = np.random.randint(0, len(v), size = (n,))
         r.append(func(v[id_rs]))
     return prctile(r, [(alpha*100)/2, 50, 100 - (alpha*100)/2])
+
 
 def conf_kernels(df, alpha=1, rm_mean=False, label=True, err_band=False):
     legend_labels = {(-1., 2.): 'Yes, the 1st', (-1., 1.): 'Maybe, the 1st',
@@ -211,6 +216,7 @@ def conf_kernels(df, alpha=1, rm_mean=False, label=True, err_band=False):
     sns.despine()
     #legend()
 
+
 def asfuncof(xval, data, bins=linspace(1, 99, 12), aggregate=np.mean, remove_outlier=True):
     low, high = prctile(xval, [1, 99])
     idx = (low<xval) & (xval<high)
@@ -233,10 +239,11 @@ def asfuncof(xval, data, bins=linspace(1, 99, 12), aggregate=np.mean, remove_out
 def fit_logistic(df, formula, summary=True):
     y,X = patsy.dmatrices(formula, df, return_type='dataframe')
     log_res = sm.GLM(y, X, family=sm.families.Binomial())
-    results = log_res.fit()
+    results = log_res.fit(disp=False)
     if summary:
         print results.summary()
     return log_res, results
+
 
 def fit_pmetric(df, features=['contrast'], targetname='response'):
     log_res = linear_model.LogisticRegression()
@@ -251,25 +258,144 @@ def fit_pmetric(df, features=['contrast'], targetname='response'):
 
 
 def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)],
-            hyperplane_only=False, alpha=1):
+            hyperplane_only=False, alpha=1, cmap=None):
     C, M = meshgrid(*bins)
-    resp1 = histogram2d(df[df.response==1].stdc.values, df[df.response==1].mc.values, bins=bins)[0] +1
-    resp2 = histogram2d(df[df.response==-1].stdc.values, df[df.response==-1].mc.values, bins=bins)[0] +1
-    resp1 = resp1.astype(float)/sum(resp1)
-    resp2 = resp2.astype(float)/sum(resp2)
+    resp1 = histogram2d(df[df.response==1].stdc.values, df[df.response==1].mc.values,
+        bins=bins)[0] +1
+    resp1[resp1==1] = nan
+    resp2 = histogram2d(df[df.response==-1].stdc.values, df[df.response==-1].mc.values,
+        bins=bins)[0] +1
+    resp2[resp2==1] = nan
+    resp1 = resp1.astype(float)/nansum(resp1)
+    resp2 = resp2.astype(float)/nansum(resp2)
 
     p = model.predict(vstack([M.ravel(), C.ravel(), 0*ones(M.shape).ravel()]).T)
     p = p.reshape(M.shape)
 
     decision = lambda x: -(model.params.mc*x+ model.params.Intercept)/model.params.stdc
     if not hyperplane_only:
-        pcolor(bins[1], bins[0], log(resp1/resp2))
+        plane = log(resp1/resp2)
+        plane[plane==1] = nan
+        pcolormesh(bins[1], bins[0], np.ma.masked_invalid(plane), cmap=cmap, vmin=-2.4, vmax=2.4)
+
     mind, maxd = xlim()
     ylim(bins[0][0], bins[0][-1])
     xlim(bins[1][0], bins[1][-1])
-    plot([mind, maxd], [decision(mind), decision(maxd)], 'r', lw=2, alpha=alpha)
-    plot([0, 0], [bins[0][0], bins[0][-1]], 'r--', lw=2)
+    plot([mind, maxd], [decision(mind), decision(maxd)], 'k', lw=2, alpha=alpha)
+    plot([0, 0], [bins[0][0], bins[0][-1]], 'k--', lw=2)
     #ylim([0, 0.25])
     #xlim([0, 1])
     #contour(bins[1], bins[0], p.T, [0.5])
     return bins, p
+
+
+# Compute kernel data frame
+def get_pk(data, contrast_mean=0.5, response_field='response'):
+    '''
+    Converts data to a data frame that is long form for different contrast probes.
+    I.e. indexed by trial, time and whether contrast was for chosen or non-chosen option.
+
+    '''
+    dr1 = data.query('%s==1'%response_field)
+    dr2 = data.query('%s==-1'%response_field)
+
+    # Subtract QUEST mean from trials.
+    con_select2nd = (vstack(dr1.contrast_probe) - contrast_mean
+                        - (dr1.contrast_block_mean * dr1.side)[:, newaxis])
+    con_select1st = (vstack(dr2.contrast_probe) - contrast_mean
+                        - (dr2.contrast_block_mean * dr2.side)[:, newaxis])
+
+    sel = vstack((con_select2nd, 0*con_select1st))
+    nsel = vstack((con_select1st, 0*con_select2nd))
+
+
+    sel = pd.DataFrame(sel)
+    sel.index.name='trial'
+    sel.columns.name='time'
+    sel =  sel.unstack().reset_index()
+    sel['optidx'] = 1
+    sel = sel.set_index(['time', 'optidx', 'trial'])
+
+    nsel = pd.DataFrame(nsel)
+    nsel.index.name='trial'
+    nsel.columns.name='time'
+    nsel = nsel.unstack().reset_index()
+    nsel['optidx'] = 0
+    nsel = nsel.set_index(['time', 'optidx', 'trial'])
+    df = pd.concat((sel, nsel))
+    df.rename(columns={0:'contrast'}, inplace=True)
+    return df
+
+
+def get_decision_kernel(data, contrast_mean=0.5, response_field='response'):
+    kernels = []
+
+    kernel = (data.groupby(['snum'])
+         .apply(lambda x: get_pk(x, contrast_mean=contrast_mean, response_field=response_field))
+         .groupby(level=['snum', 'time', 'optidx']).mean()
+         .reset_index())
+
+    kernel_diff = (data.groupby(['snum'])
+         .apply(lambda x: get_pk(x, contrast_mean=contrast_mean, response_field=response_field))
+         .groupby(level=['snum', 'time'])
+              .apply(lambda x: x.query('optidx==1').mean() + x.query('optidx==0').mean())
+         .reset_index())
+
+    kernel_diff['optidx'] = 3
+    kernel = pd.concat((kernel, kernel_diff))
+
+    condition = kernel.optidx.astype('category')
+    condition = condition.cat.rename_categories([r'$E_N$', r'$E_S$', r'$E_D = E_S + E_N$'])
+    kernel['Kernel'] = condition
+    return kernel
+
+
+def get_confidence_kernels(data, confidence_field='confidence', response_field='response'):
+    kernel = (data.groupby([confidence_field, 'snum'])
+        .apply(lambda x: get_pk(x, contrast_mean=0, response_field=response_field))
+        .groupby(level=[confidence_field, 'optidx', 'snum', 'time']).mean()
+        .reset_index())
+    condition = (kernel[confidence_field]*(kernel.optidx-0.5))
+    condition = pd.Categorical(condition, categories=[-1, -0.5, 0.5, 1])
+
+    condition = condition.rename_categories([r'$E_{N}^{High}$',
+                                                 r'$E_{N}^{Low}$',
+                                                 r'$E_{S}^{Low}$',
+                                                 r'$E_{S}^{High}$'])
+    kernel['Kernel'] = condition.astype(str)
+    return kernel
+
+
+def get_confidence_kernel(data, confidence_field='confidence', response_field='response'):
+    kernel = (data.groupby([confidence_field, 'snum'])
+         .apply(lambda x: get_pk(x, contrast_mean=0, response_field=response_field))
+         .groupby(level=['optidx', 'snum', 'time'])
+              .apply(lambda x: x.query('%s==2'%confidence_field).mean()
+                              -x.query('%s==1'%confidence_field).mean())
+         .reset_index())
+
+    df = lambda x: x.query('optidx==1').mean()+x.query('optidx==0').mean()
+
+    kernel_diff = (kernel.set_index(['snum', 'time', 'optidx'])
+                         .groupby(level=['snum', 'time']).apply(df)).reset_index()
+    kernel_diff['optidx'] = 3
+    kd = pd.concat((kernel, kernel_diff))
+    condition = pd.Categorical(kd.optidx, categories=[0, 1, 3])
+
+    condition = condition.rename_categories([ r'$E_{N}^{conf}$',
+                                              r'$E_{S}^{conf}$',
+                                              r'$E^{conf}$'])
+    kd['Kernel'] = condition.astype(str)
+    return kd
+
+
+def plot_kernel(kernel, colors, legend=True, trim=True):
+    g = sns.tsplot(time='time', unit='snum', value='contrast', condition='Kernel',
+               data=kernel, ci=95, color=colors, legend=legend)
+
+    plot([0, 9], [0, 0], lw=1, color='k', alpha=0.5)
+    yticks([-0.2, 0, 0.2])
+    xlim([-0.5, 9.25])
+    xlabel('Sample #')
+    sns.despine(trim=True, ax=gca())
+    return g

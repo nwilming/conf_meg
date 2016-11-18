@@ -304,7 +304,7 @@ def concatenate_epochs(epochs, metas):
     for e, m in zip(epochs, metas):
         e.info['dev_head_t'] = dev_head_t
         processed_metas.append(m)
-        e = mne.epochs.EpochsArray(e._data, e.info, events=e.events)
+        e = mne.epochs.EpochsArray(e._data, e.info, events=e.events, tmin=e.tmin)
         epoch_arrays.append(e)
     return mne.concatenate_epochs(epoch_arrays), pd.concat(processed_metas)
 

@@ -8,7 +8,6 @@ import mne
 import numpy as np
 import pandas as pd
 
-from conf_analysis.behavior import metadata
 from conf_analysis.meg.tools import hilbert
 
 

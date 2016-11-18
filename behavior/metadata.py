@@ -122,6 +122,8 @@ def define_blocks(events):
 
     Beware: The trial number and block numbers will not yet match to the behavioral
     data.
+
+    TODO: Doc.
     '''
     events = events.astype(float)
     start = [0,0,]
@@ -130,9 +132,7 @@ def define_blocks(events):
         dif = len(start)-len(end)
         start = where(events[:,2] == 150)[0]
         end = where(events[:, 2] == 151)[0]
-        #plot(events[end, 0], events[end, 0]*0+1, 'ko')
-        #plot(events[start, 0], events[start, 0]*0, 'rp')
-        #print len(start), len(end)
+
         # Aborted block during a trial, find location where [start ... start end] occurs
         i_start, i_end = 0, 0   # i_start points to the beginning of the current
                                 # trial and i_end to the beginning of the current trial.
@@ -158,13 +158,6 @@ def define_blocks(events):
 
         start = where(events[:,2] == 150)[0]
         end = where(events[:, 2] == 151)[0]
-        #for s, e in zip(events[start, 0], events[end, 0]):
-        #    plot([s, e], [0, 1], 'g')
-        #plot(events[end, 0], events[end, 0]*0+1, 'ko')
-        #plot(events[start, 0], events[start, 0]*0+1, 'rp')
-        #print len(start), len(end)
-        #if not (len(start)==len(end)):
-        #    raise RuntimeError('Something is wrong in the trial def. Fix this!')
 
     trials = []
     blocks = []

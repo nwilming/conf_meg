@@ -85,15 +85,26 @@ def fit_internal_sigma(data):
         .reset_index().pivot_table(index='noise_sigma'))
 
 
-def explicit(confidence, choice, trial_contrast, threshold, trial_sigma, side):
-    w, s = meshgrid(linspace(0., 1., 101), linspace(0., 2.5, 101))
+def explicit(confidence, choice, trial_contrast, threshold,
+            trial_sigma, side, p_e=None):
+    '''
+    Fit variance misperception model.
+
+    '''
+    w, s = meshgrid(linspace(0., 1., 101), linspace(0, 2, 51))
+
     mcadjusted = trial_contrast.values.copy()
     mcadjusted[~side.values.astype(bool)] *= -1
-    p_e = fit_internal_sigma(pd.DataFrame({'correct':choice,
-        'mc':mcadjusted,
-        'noise_sigma':trial_sigma}))
+
+    if p_e is None:
+        p_e = fit_internal_sigma(
+            pd.DataFrame({'correct':choice,
+                          'mc':mcadjusted,
+                          'noise_sigma':trial_sigma}))
+
     sigma_int = dict((k, v) for k, v in zip(p_e.index.values, p_e.values))
     sigmas = array([sigma_int[n] for n in trial_sigma]).ravel()
+
     target = conf_vs_noise(
                     pd.DataFrame({'conf_0index':confidence,
                                   'noise_sigma':trial_sigma})).values.ravel()
@@ -112,7 +123,7 @@ def explicit(confidence, choice, trial_contrast, threshold, trial_sigma, side):
     conf = predict_confidence(w.ravel()[m], s.ravel()[m], trial_contrast, sigmas,
                                     threshold, sigma_int.values())
     predicted = array([mean(conf[trial_sigma.values==ns]) for ns in p_e.index.values])
-    return w, s, res, target, predicted
+    return w, s, res, target, predicted, p_e
 
 
 def grid2D(data):

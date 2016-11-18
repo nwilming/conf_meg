@@ -69,18 +69,29 @@ def psmaller(mean, std, n, prior):
     return t(df,loc,scale).cdf(0).reshape(mean.shape)
 
 
-def logLPR(mean, std, prior):
+def logLPR(mean, std, prior, N=10):
     '''
     This gives the log posterior ration. Since probabilities can
     easily become 0 or 1 I make sure to clip them to 0+eps and 1-eps.
     '''
     mean = np.asarray(mean)
     std = np.asarray(std)
-    pL = plarger(mean, std, 10, prior)
+    pL = plarger(mean, std, N, prior)
     pL = np.maximum(np.minimum(pL, 1-np.finfo(float).eps), 0+np.finfo(float).eps)
     #pS = psmaller(mean, std, 10, prior)
     #pS = np.maximum(np.minimum(pS, 1-np.finfo(float).eps), 0+np.finfo(float).eps)
     return np.log(pL) - np.log(1-pL)
+
+
+def cumulative_LLPR(samples, prior):
+    '''
+    Compute the log posterior along the columns in matrix samples.
+    '''
+    results = samples*0
+    for k in range(1, samples.shape[1]+1):
+        mean, std = samples[:, :k].mean(1), samples[:, :k].std(1)
+        results[:, k-1] = logLPR(mean, std, prior, N=k)
+    return results
 
 
 def get_samples(N=10, thresh=0.25, symmetric=True, vars=[0.05, 0.1, 0.15]):
@@ -116,6 +127,7 @@ class IdealObserver(object):
         '''
         Return a decision (-2, -1, 1, 2) for sample with mu=mean and sigma=sigma.
         '''
+
         LPR = logLPR(mean, sigma, self.prior)-self.bias
         confidence = 1 + (abs(LPR) >  self.conf_threshold)
         choice = np.sign(LPR)
