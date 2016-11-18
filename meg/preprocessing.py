@@ -104,6 +104,20 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
     return 'Finished', snum, session, block_in_experiment
 
 
+def get_block_meta(snum, session, block_in_raw, block_in_experiment):
+    data = empirical.load_data()
+    data = empirical.data_cleanup(data)
+    filename = metadata.get_raw_filename(snum, session)
+    raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
+    trials = blocks(raw)
+    if  not (block_in_raw in unique(trials['block'])):
+        err_msg = 'Error when processing %i, %i, %i, %i, data file = %s'%(snum, session, block_in_raw, block_in_experiment, filename)
+        raise RuntimeError(err_msg)
+    r, r_id = load_block(raw, trials, block_in_raw)
+    meta, timing = get_meta(data, r, snum, block_in_experiment)
+    return pd.concat((meta, timing), axis=1)
+
+
 def blocks(raw, full_file_cache=False):
     '''
     Return a dictionary that encodes information about trials in raw.

@@ -78,19 +78,30 @@ def decode(classifier, data, labels, train_time, predict_times,
             'accuracy':[np.nan]
             })
 
+    # Need at least two samples per class
+    for label in np.unique(labels):
+        if sum(labels==label)<2:
+            return pd.DataFrame({
+                'fold':[np.nan],
+                'train_time':[np.nan],
+                'predict_time':[np.nan],
+                'accuracy':[np.nan]
+                })
+
     for i, (train_indices, test_indices) in enumerate(cv(labels)):
         np.random.shuffle(train_indices)
         fold = []
         clf = classifier()
-        l1, l2 = np.unique(labels)
-        l1 = train_indices[labels[train_indices]==l1]
-        l2 = train_indices[labels[train_indices]==l2]
-        if len(l1)>len(l2):
-            l1 = l1[:len(l2)]
-        else:
-            l2 = l2[:len(l1)]
-        assert not any([k in l2 for k in l1])
-        train_indices = np.concatenate([l1, l2])
+        if len(np.unique(labels)) == 2:
+            l1, l2 = np.unique(labels)
+            l1 = train_indices[labels[train_indices]==l1]
+            l2 = train_indices[labels[train_indices]==l2]
+            if len(l1)>len(l2):
+                l1 = l1[:len(l2)]
+            else:
+                l2 = l2[:len(l1)]
+            assert not any([k in l2 for k in l1])
+            train_indices = np.concatenate([l1, l2])
 
         train = data[train_indices, :, train_time]
         if len(train.shape) == 3:
@@ -176,6 +187,15 @@ def apply_decoder(func, snum, epoch, label, channels=sensors['all']):
     '''
     s, m = preprocessing.get_epochs_for_subject(snum, epoch) #This will cache.
     s = s.pick_channels(channels(s.ch_names))
+    
+    # Add confidence labels
+    idx = m.response==1
+    r1c = m.confidence.copy()
+    r1c[~idx] = np.nan
+    rm1c = m.confidence.copy()
+    rm1c[idx] = np.nan
+    m.loc[:, 'conf_rm1'] = rm1c
+    m.loc[:, 'conf_r1'] = r1c
 
     # Drop nan labels
     nan_loc = m.index[np.isnan(m.loc[:, label])]
