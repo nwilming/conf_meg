@@ -1,7 +1,8 @@
 '''
 Keep track of all the subject data
 '''
-from pylab import *
+from numpy import *
+import numpy as np
 import os, socket
 import pandas as pd
 

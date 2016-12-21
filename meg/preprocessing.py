@@ -18,7 +18,8 @@ This leads to the following design:
 '''
 
 import mne
-from pylab import *
+from numpy import *
+import numpy as np
 import pandas as pd
 import glob
 from itertools import product
@@ -71,6 +72,8 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         # Load data and preprocess it.
         logging.info('Loading block of data: %s; block: %i'%(filename, block_in_experiment))
         r, r_id = load_block(raw, trials, block_in_raw)
+        print 'Working on:', filename, block_in_experiment, block_in_raw
+        print r
         logging.info('Starting artifact detection')
         r, ants, artdefs = preprocess_block(r)
         logging.info('Aligning meta data')
@@ -82,7 +85,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         for epoch, event, (tmin, tmax) in zip(
                                              ['stimulus', 'response', 'feedback'],
                                              ['stim_onset_t', 'button_t', 'meg_feedback_t'],
-                                             [(-.2, 1.5), (-1.5, .5), (-.5, .5)]
+                                             [(-1, 1.5), (-1.5, 1), (-1, 1)]
                                              ):
 
             logging.info('Processing epoch: %s' %epoch)

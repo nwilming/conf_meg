@@ -37,6 +37,7 @@ def get_worker_templates(walltime, memory, cwd, ip, port):
             npw = get_num_nodes(node, info, memory)
             mem_str = '%s:ppn=%i'%(node, npw)
             max_jobs = info[node]['ncpus']/npw
+            print max_jobs
             command = '''
     #!/bin/sh
     # walltime: defines maximum lifetime of a job

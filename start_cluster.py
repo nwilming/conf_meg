@@ -5,22 +5,6 @@ import numpy as np
 Start a cluster of dask python instances.
 '''
 
-# 1. Start dask scheduler
-from tornado.ioloop import IOLoop
-loop = IOLoop()
-
-from threading import Thread
-t = Thread(target=loop.start)
-t.daemon=True
-t.start()
-
-from distributed import Scheduler
-s = Scheduler(loop=loop)
-port = 8786
-s.start(port)
-print 'Started scheduler at >>> %s:%i'%(s.ip, port)
-
-
 # 2. Create workers
 parser = argparse.ArgumentParser()
 parser.add_argument("num_workers", help="How many workers do you need?",
@@ -32,13 +16,15 @@ args = parser.parse_args()
 
 cwd = os.getcwd()
 
-commands = cluster_tools.get_worker_templates(args.walltime, args.memory, cwd, s.ip, port)
+commands = cluster_tools.get_worker_templates(args.walltime, args.memory, cwd, "172.18.101.117", 8786)
 np.random.shuffle(commands)
+
 print commands[0][1]
 
 num_workers = 0
 torque_ids = []
 
+cnt = 0
 for max_jobs, command in commands:
     with open('cluster_worker.sh', 'w') as cw:
         cw.write(command)
@@ -50,7 +36,7 @@ for max_jobs, command in commands:
     torque_ids.append(torque_id)
     print 'Workers submitted. QSUB ID is' , torque_id
     num_workers += max_jobs
-    if max_jobs >= args.num_workers:
+    if num_workers >= args.num_workers:
         break
 
 

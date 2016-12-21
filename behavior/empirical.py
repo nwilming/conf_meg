@@ -1,5 +1,6 @@
 import pandas as pd
-from pylab import *
+from numpy import *
+import numpy as np
 import seaborn as sns
 sns.set_style('ticks')
 import glob
@@ -14,6 +15,8 @@ import metadata, keymap
 
 from joblib import Memory
 from os.path import basename, join
+
+import matplotlib
 
 memory = Memory(cachedir=metadata.cachedir, verbose=0)
 
