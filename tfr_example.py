@@ -29,13 +29,15 @@ def tfr(filename, outstr='tfr.pickle', foi=None, cycles=None, time_bandwidth=Non
     outname = filename.replace('-epo.fif.gz', outstr)
     epochs = mne.read_epochs(filename)
     power = mne.time_frequency.tfr_multitaper(epochs, foi, cycles,
-        decim=decim, time_bandwidth=time_bandwidth, average=False, return_itc=False, n_jobs=12)
+        decim=decim, time_bandwidth=time_bandwidth, average=False, return_itc=False,
+        n_jobs=12)
     print filename, '-->', outname
     cPickle.dump({'power': power,
                   'foi': foi,
                   'cycles': cycles,
                   'time_bandwidth': time_bandwidth,
-                  'decim':decim}, open(outname, 'w'), 2)
+                  'decim':decim,
+                  'events':epochs.events}, open(outname, 'w'), 2)
     return True
 
 
