@@ -13,7 +13,9 @@ def modification_date(filename):
 
 
 def list_tasks(older_than='now'):
-    if older_than is 'now':
+    print older_than
+    if older_than == 'now':
+        print 'Now'
         older_than = datetime.datetime.today()
     else:
         older_than = datetime.datetime.strptime(older_than, '%Y%m%d')
@@ -27,10 +29,12 @@ def list_tasks(older_than='now'):
                     print (snum, session, block), map_blocks
                 else:
                     block_in_raw, block_in_experiment = map_blocks[block], block
-                    filename = '/home/nwilming/conf_meg/S%i/SUB%i_S%i_B%i_stimulus-epo.fif.gz'%(snum, snum, session, block_in_experiment)
+                    filenames = ['/home/nwilming/conf_meg/S%i/SUB%i_S%i_B%i_stimulus-epo.fif.gz'%(snum, snum, session, block_in_experiment),
+                                 '/home/nwilming/conf_meg/S%i/SUB%i_S%i_B%i_response-epo.fif.gz'%(snum, snum, session, block_in_experiment),
+                                 '/home/nwilming/conf_meg/S%i/SUB%i_S%i_B%i_feedback-epo.fif.gz'%(snum, snum, session, block_in_experiment)]
                     try:
-                        mod_date = modification_date(filename)
-                        if mod_date>older_than:
+                        mod_dates = [modification_date(filename) for filename in filenames]
+                        if all([mod_date>older_than for mod_date in mod_dates]):
                             continue
                     except OSError:
                         pass

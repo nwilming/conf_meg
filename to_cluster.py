@@ -15,7 +15,7 @@ def submit(walltime, cores, memory, cwd, script):
     #PBS -l walltime=%i:00:00
     #PBS -l nodes=1:ppn=%s
     #PBS -l mem=%igb
-    #PBS -l nodes=node041
+    ##PBS -l nodes=node041
     #PBS -N niklas
     #### set journal & error options
     #PBS -o /home/nwilming/scratch/$PBS_JOBID.o
