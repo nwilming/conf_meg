@@ -35,7 +35,7 @@ def cleanup(events):
     #events['pac'] = (filtered - events.pa.mean())/events.pa.std()
     return events
 
-def interp_blinks(events, err_source, pre, post, offset=10, field='left_pa'):
+def interp_blinks(events, err_source, pre, post, offset=10, field='pa'):
     '''
     Linearly interpolate blinks
     '''
@@ -46,7 +46,7 @@ def interp_blinks(events, err_source, pre, post, offset=10, field='left_pa'):
         blinks.insert(0, 0)
     if err_source[-1] == 1:
         #Ends with blink that will not be detected. Add it
-        blinks.append(len(events.blink.values))
+        blinks.append(len(err_source))
 
     if not (mod(len(blinks), 2)==0):
         raise RuntimeError('Number of errs not even')

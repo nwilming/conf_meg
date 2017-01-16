@@ -188,7 +188,7 @@ def bootstrap(v, n, N, func=nanmean, alpha=.05):
     for i in range(N):
         id_rs = np.random.randint(0, len(v), size = (n,))
         r.append(func(v[id_rs]))
-    return prctile(r, [(alpha*100)/2, 50, 100 - (alpha*100)/2])
+    return np.prctile(r, [(alpha*100)/2, 50, 100 - (alpha*100)/2])
 
 
 def conf_kernels(df, alpha=1, rm_mean=False, label=True, err_band=False):
@@ -221,11 +221,11 @@ def conf_kernels(df, alpha=1, rm_mean=False, label=True, err_band=False):
 
 
 def asfuncof(xval, data, bins=linspace(1, 99, 12), aggregate=np.mean, remove_outlier=True):
-    low, high = prctile(xval, [1, 99])
+    low, high = np.percentile(xval, [1, 99])
     idx = (low<xval) & (xval<high)
     xval = xval[idx]
     data = data[idx]
-    edges = prctile(xval, bins)
+    edges = np.percentile(xval, bins)
     cfrac = []
     centers = []
     frac = []
