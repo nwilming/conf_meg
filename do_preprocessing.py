@@ -18,7 +18,10 @@ def list_tasks(older_than='now'):
         print 'Now'
         older_than = datetime.datetime.today()
     else:
-        older_than = datetime.datetime.strptime(older_than, '%Y%m%d')
+        if len(older_than) == 8:
+            older_than = datetime.datetime.strptime(older_than, '%Y%m%d')
+        else:
+            older_than = datetime.datetime.strptime(older_than, '%Y%m%d%H%M')
 
     block_map = cPickle.load(open('meg/blockmap.pickle'))
     for snum in range(1, 16):
@@ -40,8 +43,12 @@ def list_tasks(older_than='now'):
                         pass
                     yield (snum, session, block_in_raw, block_in_experiment)
 
-
 def execute(x):
+    import do_tfr
     print 'Starting task:', x
     res = preprocessing.one_block(*x)
     print 'Ended task:', x
+    #print 'Now doing TFR'
+    #for file in res[-1]:
+    #    do_tfr.execute(file)
+    #print 'Done with TFR'

@@ -8,81 +8,71 @@ import cPickle
 import json
 import pylab as plt
 import seaborn as sns
+from pymeg import tfr
 sns.set_style('ticks')
 
-def cr_plot(avg, meta, dt=0.1, db=0.1):
-    cvals = np.vstack(meta.contrast_probe)-0.5
-    edges = np.percentile(cvals.ravel(), np.arange(0, 101, 20))
-    colors = sns.color_palette(n_colors=len(edges)-1)
-    labels = edges[:-1] + (np.diff(edges)/2.)
-    colors = dict( (l,c) for l,c in zip(labels, colors))
 
-    for idx, toi in zip(range(10), np.arange(0, 1, 0.1)):
-        plt.subplot(2, 5, idx+1)
-        k = contrast_response(avg, meta, cvals[:, idx], edges, toi=(toi, toi+dt), baseline=(toi-db, toi))
-        for i, (g, l) in enumerate(k.groupby(level='cgroup').mean().iterrows()):
-            plt.plot(l.index.get_level_values('time'), l.values, label=np.around(g, 2), color=colors[g])
-            plt.legend()
-    sns.despine()
-    plt.tight_layout()
+def get_df(files):
+    '''
+    Load saved TFRs and prepare a data frame.
+    '''
+    pass
 
 
-def allcr(avg, meta, dt=0.1, db=0.1, bins=5, events=np.arange(0, 10)):
-    cvals = np.vstack(meta.contrast_probe)-0.5
-    edges = np.percentile(cvals.ravel(), np.linspace(0, 100, bins+1))
-    colors = sns.color_palette(n_colors=len(edges)-1)
-    labels = edges[:-1] + (np.diff(edges)/2.)
+def get_all_tfr():
+    pass
+
+import time
+
+def get_subs(freq, channel, tmin, tmax, epoch='stimulus', subs=range(1, 16)):
+    avgs = []
+    metas = []
+    for snum in subs:
+        start = time.time()
+        filenames = glob.glob('/home/nwilming/conf_meg/S%i/*%stfr.hdf5'%(snum, epoch))
+        metafiles = glob.glob('/home/nwilming/conf_meg/S%i/*%s.meta'%(snum, epoch))
+        df = tfr.get_tfrs(filenames, freq=freq, channel=channel, tmin=tmin, tmax=tmax)
+        print 'S%i loading %2.1fs'%(snum, time.time()-start)
+        avg = df.groupby(level=['freq', 'trial']).mean()
+        avg.loc[:, 'snum'] = snum
+        avg.set_index('snum', append=True, inplace=True)
+        print 'S%i grouping and setting index %2.1fs'%(snum, time.time()-start)
+        avgs.append(avg)
+        metas.append(pd.concat([pd.read_hdf(f) for f in metafiles]))
+        print 'S%i took %2.1fs'%(snum, time.time()-start)
+    return avgs, metas
+
+def avg_baseline(avg, baseline):
+    '''
+    Baseline correction by dividing by average baseline
+    '''
+    time =  avg.columns.get_level_values('time').values.astype(float)
+    id_base = (baseline[0]<time) & (time<baseline[1])
     crs = []
-    event_t = np.arange(0, 1, 0.1)[events]
-    print edges
-    for idx, toi in zip(events, event_t):
-        if db is not None:
-            db = (toi-db, toi)
-            if db[0] > db[1]:
-                db = db[::-1]
-        k = contrast_response(avg, meta, cvals[:, idx], edges, 
-                              toi=(toi, toi+dt), baseline=db,
-                              labels=labels)#np.arange(len(edges)-1))
-        tlabels = k.columns.get_level_values('time')
-        time_res = np.diff(tlabels)[0]
-        new_labels = dict((k, np.around(i*time_res, 4)) for i, k in enumerate(tlabels))
-        k = k.rename(columns=new_labels)
-        crs.append(k)
-    return pd.concat(crs)
+    # Baseline correction with average baseline across all trials. (base is freq specific)
+    base = avg.loc[:, id_base].groupby(level='freq').mean().mean(1) # This should be len(#Freq)
+    div = lambda x: np.log10((x / base.loc[x.index.get_level_values('freq').values[0]]))
+    return avg.groupby(level='freq').apply(div)
 
 
-def contrast_response(avg, meta, grouper, edges, toi=(0, 0.1), baseline=(-0.1, 0), labels=None):
+def trial_baseline(avg, baseline):
     '''
-    Average is a dataframe that is indexed by trial and has time points as
-    columns.
+    Baseline correction by dividing by per-trial baseline
     '''
-    column_index = avg.columns
-    if labels is None:
-        labels = edges[:-1] + (np.diff(edges)/2.)
-    groups = pd.cut(grouper, edges, labels=labels)
-    #groups = pd.DataFrame({'cgroups':groups.to_dense()}, index=avg.index)
-    avg.loc[:, 'cgroup'] = groups.to_dense()
-    avg.set_index('cgroup', append=True, inplace=True)
-    def cr(group, baseline, toi):
-        time = group.columns.get_level_values('time').values
-        idx = (toi[0]<= time) & (time < toi[1])
-        data = group.loc[:, idx]# Dim: num_trials x time
-        if baseline is not None:
-            idx = (baseline[0]<= time) & (time < baseline[1])
-            base =  group.loc[:, idx].mean().mean() # Dim: num_trials
-            data = data-base
-        return data
-
-    # Compute baseline corrected contrast for each groups
-    cr =  avg.groupby(level='cgroup', as_index=True, group_keys=True).apply(lambda x: cr(x, baseline, toi))
-    avg.index = avg.index.droplevel(1)
-    avg.columns = column_index 
-    return cr
+    time =  avg.columns.get_level_values('time').values.astype(float)
+    id_base = (baseline[0]<time) & (time<baseline[1])
+    crs = []
+    # Baseline correction with average baseline across all trials. (base is freq specific)
+    avg = np.log10(avg)
+    base = avg.loc[:, id_base].groupby(level=['freq', 'trial']).mean().mean(1)
+    return avg.sub(base, axis=0)
 
 
-def avg_contrast_resp(avg, meta, edges=np.linspace(0.2, 0.8, 7), 
+def avg_contrast_resp(avg, meta, edges=np.linspace(0.2, 0.8, 7),
                       cidx=slice(0, 10),
-                      baseline=(-0.4, 0)):
+                      baseline=(-0.4, 0), per_group_baseline=False,
+                      baseline_func=avg_baseline
+                      ):
     '''
     avg needs to be indexed by freq and trial hash
     '''
@@ -92,39 +82,54 @@ def avg_contrast_resp(avg, meta, edges=np.linspace(0.2, 0.8, 7),
                          meta.index.get_level_values('hash'))
     grouper = (pd.cut(contrast, edges, labels=np.arange(n_groups))
                         .reset_index())
-    time =  avg.columns.get_level_values('time').values.astype(float)
-    id_base = (baseline[0]<time) & (time<baseline[1])
     crs = []
+
+    if not per_group_baseline:
+        avg = baseline_func(avg, baseline)
+
     for i, (c, o) in enumerate(grouper.groupby(0)):
         m = (avg.loc[(slice(None), list(o.hash.values)), :]
              .groupby(level='freq')
              .mean())
-        base = m.loc[:, id_base].mean(1)
-        m = m.div(base, axis=0)-1
+        if per_group_baseline:
+            m = baseline_func(m, baseline)
         m.loc[:, 'cgroup'] = c
         m.set_index('cgroup', append=True, inplace=True)
         crs.append(m)
     return pd.concat(crs)
 
 
-def plot_by_freq(resp):
+def plot_by_freq(resp, **kwargs):
+    if 'vmin' not in kwargs.keys():
+        kwargs['vmin'] = -0.5
+    if 'vmax' not in kwargs.keys():
+        kwargs['vmax'] = 0.5
+    if 'cmap' not in kwargs.keys():
+        kwargs['cmap'] = 'RdBu_r'
+
     n_groups = len(np.unique(resp.index.get_level_values('cgroup')))
     for i, (c, m) in enumerate(resp.groupby(level='cgroup')):
-        time = m.columns.get_level_values('time')
-        freqs = m.index.get_level_values('freq')
-        plt.subplot(1, n_groups, i+1)       
-        plt.pcolormesh(time, freqs,
-                m.values, vmin=-0.5, vmax=0.5, cmap='RdBu_r')
-        plt.xlim([-0.4, 1.1])
-        plt.ylim([20, 140])
+        time = np.unique(m.columns.get_level_values('time'))
+        tc = np.array([time[0]] + list([(low+(high-low)/2.)
+            for low, high in zip(time[:-1], time[1:])]) + [time[-1]])
+        freqs = np.unique(m.index.get_level_values('freq'))
+        fc = np.array([freqs[0]] + list([(low+(high-low)/2.)
+            for low, high in zip(freqs[:-1], freqs[1:])]) + [freqs[-1]])
+
+        plt.subplot(1, n_groups, i+1)
+        print m.values.min().min(), m.values.max().max()
+        plt.pcolormesh(tc, fc,
+                m.values, **kwargs)
+        #plt.xlim([-0.4, 1.1])
+        plt.ylim([min(freqs), max(freqs)])
         if i>0:
             plt.yticks([])
         else:
             plt.ylabel('Frequency')
             plt.xlabel('Time')
         plt.xticks([-.4, 0, .4, .8])
-        
- 
+
+
 def plot_avg_freq(resp, freqs=slice(60, 90)):
     n_groups = len(np.unique(resp.index.get_level_values('cgroup')))
     colors = sns.color_palette("coolwarm", n_groups)
@@ -134,8 +139,7 @@ def plot_avg_freq(resp, freqs=slice(60, 90)):
         time = m.columns.get_level_values('time')
         m = m.loc[(freqs,), :]
         y = m.values.mean(0)
-        print y.shape, time.shape
         plt.plot(time, y, label=c, color=colors[i])
-        plt.xlim([-0.4, 1.1])
+        #plt.xlim([-0.4, 1.1])
         plt.xlabel('Time')
         plt.xticks([-.4, 0, .4, .8])
