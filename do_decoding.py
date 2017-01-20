@@ -1,6 +1,6 @@
 import sys
 sys.path.append('/home/nwilming/')
-from conf_analysis.meg import artifacts, preprocessing, decoding
+from conf_analysis.meg import preprocessing, decoding
 from conf_analysis.behavior import empirical, metadata, keymap
 from distributed import Executor, as_completed
 from distributed import diagnostics
