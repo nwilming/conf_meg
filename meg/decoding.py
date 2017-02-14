@@ -28,13 +28,14 @@ def clf():
             ('SVM', svm.LinearSVC())])
 
 def cv(x):
-    return cross_validation.StratifiedShuffleSplit(x, n_iter=10, test_size=0.1)
+    return cross_validation.StratifiedShuffleSplit(x, n_iter=2, test_size=0.2)
 
 
 
 def decode(classifier, data, labels, train_time, predict_times,
         cv=cross_validation.StratifiedKFold, collapse=np.mean,
-        relabel_times=False):
+        relabel_times=False,
+        obs_average=None):
     '''
     Apply a classifier to data [epochs x channels xtime] and predict labels with cross validation.
     Train classifier from data at data[:, :, train_time] and apply to all
@@ -101,7 +102,6 @@ def decode(classifier, data, labels, train_time, predict_times,
             assert not any([k in l2 for k in l1])
             train_indices = np.concatenate([l1, l2])
         train = data[train_indices, :, train_time]
-
         train_time_marker = train_time
         if len(train.shape) == 3:
             if collapse == 'reshape':
@@ -110,7 +110,11 @@ def decode(classifier, data, labels, train_time, predict_times,
                 train = collapse(train, axis=2)
             train_time_marker = train_time.stop-1
 
-        clf=clf.fit(train, labels[train_indices])
+        train_labels = labels[train_indices]
+        if obs_average is not None:
+            train, train_labels = obs_average(train, train_labels)
+
+        clf=clf.fit(train, train_labels)
 
         for pt in predict_times:
             #print pt
@@ -126,19 +130,42 @@ def decode(classifier, data, labels, train_time, predict_times,
                 fold_result['predict_time'] = pt
             fold_result['train_time'] = train_time_marker
 
-            if relabel_times:
+            if relabel_times is not False:
                 fold_result['train_time'] = relabel_times[fold_result['train_time']]
                 fold_result['predict_time'] = relabel_times[fold_result['predict_time']]
             #print 'Test:', test.shape
+            test_labels = labels[test_indices]
+            if obs_average is not None:
+                test, test_labels = obs_average(test, test_labels)
             fold_result.update({
                 'fold':i,
-                'accuracy': clf.score(test, labels[test_indices])})
+                'accuracy': clf.score(test, test_labels)})
             results.append(fold_result)
     return pd.DataFrame(results)
 
 
-def generalization_matrix(epochs, labels, dt,
-    classifier=clf, cv=cv, slices=False, baseline=None):
+def observation_average(train, labels, N=5):
+    '''
+    Average X observations from each class into one observation.
+
+    Works only for 2 classes at the moment.
+    '''
+    a, b = np.unique(labels)
+    def foo(train, label, N):
+        acc, lbl = [], []
+        index = np.arange(train.shape[0])
+        for idx in np.unique(index//N):
+            acc.append(train[index==idx,:].mean(0))
+            lbl.append(label[index==idx].mean())
+        return np.vstack(acc), np.array(lbl)
+
+    ta, la = foo(train[labels==a,:], labels[labels==a], N)
+    tb, lb = foo(train[labels==b,:], labels[labels==b], N)
+    return np.vstack([ta, tb]), np.concatenate((la, lb))
+
+
+def generalization_matrix(epochs, labels, dt, slicelen=None,
+    classifier=clf, cv=cv, slices=False, baseline=None, obs_average=None):
     '''
     Get data for a generalization across time matrix.
 
@@ -156,23 +183,26 @@ def generalization_matrix(epochs, labels, dt,
     using time sequence data for decoding and function can be used
     to reduce time series data to single point.
     '''
-
+    if slicelen is None:
+        slicelen = dt
     data = epochs._data
-
     sfreq = epochs.info['sfreq']
 
     tlen = data.shape[-1]/(float(sfreq)/1000.)
     nsteps = np.around(float(tlen)/dt)
-    #steps = np.linspace(0, data.shape[-1]-1, nsteps).astype(int)
-    steps = np.arange(0, data.shape[-1], int(data.shape[-1]/nsteps))
-    relabel_times = dict((k, v) for k, v in enumerate(epochs.time))
+    stepsize= max(1, int(data.shape[-1]/nsteps))
+    steps = np.arange(0, data.shape[-1], stepsize)
+
+    relabel_times = dict((k, v) for k, v in enumerate(epochs.times))
+
     if slices:
-        steps = [slice(s, e) for s, e in zip(steps[0:-1], steps[1:])]
+        slicelen = int(round(slicelen/(1000./sfreq)))
+        steps = [slice(s, s+slicelen) for s in steps if (s+slicelen) < data.shape[-1]]
         decoder = lambda x: decode(clf, data, labels, x, steps, cv=cv,
-                collapse=slices, relabel_times=relabel_times)
+                collapse=slices, relabel_times=relabel_times, obs_average=obs_average)
     else:
         decoder = lambda x: decode(clf, data, labels, x, steps, cv=cv,
-                relabel_times=relabel_times)
+                relabel_times=relabel_times, obs_average=obs_average)
     return pd.concat([decoder(tt) for tt in steps])
 
 
@@ -299,7 +329,8 @@ def tfr_apply_decoder(func, snum, epoch, label,
 
 
 def tfr_generalization_matrix(epochs, labels,
-    classifier=clf, cv=cv, dt = 1, slices='reshape', baseline=None, relabel_times=False):
+    classifier=clf, cv=cv, dt = 1, slices='reshape', baseline=None,
+    relabel_times=False):
     '''
     Get data for a generalization across time matrix.
 
