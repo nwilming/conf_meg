@@ -74,7 +74,9 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         r_id['filnemae'] = filename
         print 'Working on:', filename, block_in_experiment, block_in_raw
         logging.info('Starting artifact detection')
+        print 'Notch filtering'
         r, ants, artdefs = pymegprepr.preprocess_block(r)
+        r.notch_filter(np.arange(50, 251, 50))
         logging.info('Aligning meta data')
         meta, timing = get_meta(data, r, snum, block_in_experiment, filename)
 
@@ -205,6 +207,6 @@ def get_epochs_for_subject(snum, epoch):
                 for session, block in product(range(4), range(5))
                     if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'fif'))]
     assert len(metas)==len(data)
-    meta = load_meta(metas)
-    data = load_epochs(data)
-    return concatenate_epochs(data, meta)
+    meta = pymegprepr.load_meta(metas)
+    data = pymegprepr.load_epochs(data)
+    return pymegprepr.concatenate_epochs(data, meta)

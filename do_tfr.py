@@ -7,7 +7,6 @@ import datetime
 
 from pymeg import tfr
 
-print tfr
 
 
 def modification_date(filename):
@@ -21,7 +20,7 @@ locale.setlocale(locale.LC_ALL, "en_US")
 
 outstr = 'tfr.hdf5'
 params = tfr.params_from_json('all_tfr150_parameters.json')
-tfr.describe_taper(**params)
+#tfr.describe_taper(**params)
 
 
 def list_tasks(older_than='now'):
@@ -43,9 +42,9 @@ def list_tasks(older_than='now'):
         mod_date = modification_date(filename)
         outname = filename.replace('-epo.fif.gz', outstr)
         try:
-            mod_date = modification_date(filename)
+            #mod_date = modification_date(filename)
             mod_out = modification_date(outname)
-            if (mod_date>older_than) and (mod_out>older_than):
+            if (mod_out>older_than): # and (mod_out>older_than):
                 continue
         except OSError:
             pass

@@ -1,3 +1,4 @@
+
 from conf_analysis.meg import tfr_analysis
 import pandas as pd
 import numpy as np
@@ -5,45 +6,47 @@ import patsy
 import pyglmnet
 from sklearn import cross_validation, svm, pipeline, preprocessing as skpre
 from pymeg import decoding
-from sklearn.linear_model import lasso_path, enet_path, LinearRegression
+from sklearn import linear_model
 from sklearn.metrics import r2_score
 from sklearn import decomposition
 from sklearn import svm
-
+import pylab as plt
 
 def clf():
     return pipeline.Pipeline([
             ('scale', skpre.StandardScaler()),
-            ('PCA', decomposition.PCA(n_components=.99)),
-             ('encode', LinearRegression())])
+            ('PCA', decomposition.PCA(n_components=250)),
+            ('encode', svm.SVR())])
 
 
 def encode_mean_contrast(avg, meta, classifier=clf, cv=decoding.cv):
     # Need to buiuld y and X
-    y = np.vstack(meta.contrast_probe.values).mean(1)
+    y = np.vstack(meta.contrast_probe.values)[:, 3]
     y = (y-y.mean())/y.std()
-    X = avg.unstack('freq')
-    X = X.values
+    #X = avg.unstack('freq')
+    X = avg#X.values
 
     idnan = np.isnan(y) | np.isnan(X).sum(1)>0
     y = y[~idnan]
     X = X[~idnan, :]
     results = []
     for i, (train_indices, test_indices) in enumerate(cv.split(y)):
+        X_train, X_test = X[train_indices, :], X[test_indices, :]
+        y_train, y_test = y[train_indices], y[test_indices]
+
         fold_result = {}
-        np.random.shuffle(train_indices)
+
         fold = []
         clf = classifier()
-        train = X[train_indices, :]
-        fit = clf.fit(train, y[train_indices])
-        test = X[test_indices, :]
+        fit = clf.fit(X_train, y_train)
+        yh = fit.predict(X_test)
 
-        yh = fit.predict(X[test_indices, :])
-        ytrain = fit.predict(X[train_indices,:])
+        plt.plot(y_test, yh, 'o')
+        ytrain = fit.predict(X_train)
         fold_result['predicted'] = yh
-        fold_result['true'] = y[test_indices]
+        fold_result['true'] = y_test
         fold_result['fold'] = i
-        fold_result['r2'] = r2_score(y[test_indices], yh)
-        print r2_score(y[train_indices], ytrain)
+        fold_result['r2'] = r2_score(y_test, yh)
+        print np.corrcoef(y_train, ytrain)[0,1], np.corrcoef(y_test, yh)[0,1]
         results.append(fold_result)
     return pd.DataFrame(results)
