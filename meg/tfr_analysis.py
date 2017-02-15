@@ -10,19 +10,8 @@ import pylab as plt
 import seaborn as sns
 from pymeg import tfr
 sns.set_style('ticks')
-
-
-def get_df(files):
-    '''
-    Load saved TFRs and prepare a data frame.
-    '''
-    pass
-
-
-def get_all_tfr():
-    pass
-
 import time
+
 
 def get_subs(freq, channel, tmin, tmax, epoch='stimulus', subs=range(1, 16)):
     avgs = []
@@ -41,6 +30,7 @@ def get_subs(freq, channel, tmin, tmax, epoch='stimulus', subs=range(1, 16)):
         metas.append(pd.concat([pd.read_hdf(f) for f in metafiles]))
         print 'S%i took %2.1fs'%(snum, time.time()-start)
     return avgs, metas
+
 
 def avg_baseline(avg, baseline):
     '''
