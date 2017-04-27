@@ -94,3 +94,4 @@ def parse(colors):
 
 
 color_palette = parse(colors)
+color_palette2 = parse(colors2)
