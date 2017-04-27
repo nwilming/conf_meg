@@ -4,7 +4,7 @@ import pandas as pd
 from pyedfread import edf
 import numpy as np
 import pylab
-import pupil
+from . import pupil
 
 
 def listfiles(dir):
@@ -28,7 +28,7 @@ def listfiles(dir):
         matdata[time.strptime(d, '%d-%b-%Y %H:%M:%S')] = f
         subs.append(sub)
     if not (len(np.unique(subs))==1):
-        print np.unique(subs)
+        print(np.unique(subs))
         raise RuntimeError('Files from more than one sub in folder')
     return edfdata, matdata, sub
 
@@ -55,7 +55,7 @@ def expand_trigA(events, messages, field, align_key='trial', default=np.nan):
     trial_begin = events.index.values[0]
     contrast = default + np.zeros(len(events))
     try:
-        for (start, end), value in zip(zip(con_on[:-1], con_on[1:]), con):
+        for (start, end), value in zip(list(zip(con_on[:-1], con_on[1:])), con):
             contrast[start-trial_begin:end-trial_begin] = value
         contrast[end-trial_begin:end-trial_begin+100] = con[-1]
     except TypeError:
@@ -101,7 +101,7 @@ def preprocess_trigA(events, messages):
     down_factor = 10
     if abs((Ti-1))>abs((Ti-2)):
         down_factor = 5
-    print Ti, down_factor
+    print(Ti, down_factor)
     events = events.set_index('sample_time')
     events = events.groupby('trial').apply(lambda x: expand_trigA(x, messages, 'conrast', default=0))
     down_factor = 10
@@ -150,7 +150,7 @@ def expand_trigB(events, messages, field, align_key='trial', align_time='trial_t
         con_on = messages[align_time].iloc[0]
         trial_begin = events.index.values[0]
         events[field] = default + np.zeros(len(events))
-        for (start, end), value in zip(zip(con_on[:-1], con_on[1:]), con):
+        for (start, end), value in zip(list(zip(con_on[:-1], con_on[1:])), con):
             events[field].loc[start:end] = value
         events[field].loc[end:end+100] = con[-1]
     except (IndexError, TypeError):
@@ -161,7 +161,7 @@ def expand_trigB(events, messages, field, align_key='trial', align_time='trial_t
 
 def load_behavior_trigB(behavioral):
     def unbox_messages(current):
-        for key in current.keys():
+        for key in list(current.keys()):
             try:
                 if len(current[key])==1:
                     current[key] = current[key][0]
@@ -171,7 +171,7 @@ def load_behavior_trigB(behavioral):
     # Also load behavioral results file to match with contrast levels shown
     behavioral = loadmat(behavioral)['session_struct']['results'][0,0]
     d = []
-    fields = behavioral.dtype.fields.keys()
+    fields = list(behavioral.dtype.fields.keys())
     for trial in range(behavioral.shape[1]):
         d.append({})
         for field in fields:
@@ -230,9 +230,9 @@ def get_data(edf, behavior):
         del events['contrast_probe']
         messages['contrast'] = messages['contrast_probe']
         messages['contrast_time'] = messages['con_change_time']
-        messages.drop([u'Noise_sigma', u'Noise_sigma_time', u'Stim_correct',
-                  u'Stim_correct_time', u'stim_off', u'stim_off_time',
-                  u'contrast_probe', 'correct', 'choice_rt', 'confidence',
+        messages.drop(['Noise_sigma', 'Noise_sigma_time', 'Stim_correct',
+                  'Stim_correct_time', 'stim_off', 'stim_off_time',
+                  'contrast_probe', 'correct', 'choice_rt', 'confidence',
                   'contrast_ref', 'expand', 'repeat', 'response', 'session', 'side',
                   'stim_onset', 'stim_onset_time', 'noise_sigma', 'repeated_stim',
                   'con_change', 'con_change_time'], 1, inplace=True)
@@ -255,13 +255,13 @@ def get_sub_df(sub):
     msgs = []
     keys = []
     sub_files = datadef.sb2fname[sub]
-    for session, sdata in sub_files.iteritems():
-        for block, (edf, matfile) in sdata.iteritems():
+    for session, sdata in sub_files.items():
+        for block, (edf, matfile) in sdata.items():
             try:
-                print '\nProcessing S%i, B%i: '%(session, block), edf
+                print('\nProcessing S%i, B%i: '%(session, block), edf)
                 events, messages = get_data(edf, matfile)
             except IOError:
-                print '\nS%i, B%i is corrupt'%(session, block), edf
+                print('\nS%i, B%i is corrupt'%(session, block), edf)
                 continue
             events['block'] = block
             events['session'] = session
@@ -278,9 +278,9 @@ def get_sub_df(sub):
 
 def save_sub(sub, path='temp_data'):
     events, messages = get_sub_df(sub)
-    import cPickle, os, gzip
+    import pickle, os, gzip
     file = gzip.open(os.path.join(path, sub+'.pickle.gzip'), 'w')
-    cPickle.dump({'events':events, 'messages':messages}, file, protocol=2)
+    pickle.dump({'events':events, 'messages':messages}, file, protocol=2)
     file.close()
 
 if __name__ == '__main__':

@@ -10,7 +10,7 @@ trigger_mapping = {150:'start', 151:'end', 64:'onset',
                    40:'ref_correct', 41:'stim_correct', 24:'RSP 1st Conf High',
                    23:'RSP 1st Conf Low', 22:'RSP 2nd Conf Low', 21:'RSP 2nd Conf High',
                    11:'Correct feedback', 10:'Incorrect feedback', 88:'no decision'}
-triggers = dict((v, k) for k, v in trigger_mapping.iteritems())
+triggers = dict((v, k) for k, v in trigger_mapping.items())
 
 
 class Trial(object):
@@ -52,17 +52,17 @@ class Trial(object):
             if field_name in self.field2val:
                 self.field2val[field_name](value)
             if field_name == 'response_t' and value == triggers['no decision']:
-                print 'No decision:', value
+                print('No decision:', value)
                 self.trial_stack = []
                 self.data[self.field_names.pop(0)] = np.nan
                 self.data[self.field_names.pop(0)] = np.nan
-                print self.field_names
+                print(self.field_names)
             self.data[field_name] = sample
 
         else:
-            print 'Error trial:', self.data
-            print 'Expecting: ', expected, 'Got:', value
-            print 'Upcoming:', self.trial_stack
+            print('Error trial:', self.data)
+            print('Expecting: ', expected, 'Got:', value)
+            print('Upcoming:', self.trial_stack)
             raise RuntimeError('Could not parse trial')
         if len(self.trial_stack) == 0 and len(self.field_names) ==0:
             raise StopIteration('Done')

@@ -8,7 +8,7 @@ import numpy as np
 locale.setlocale(locale.LC_ALL, "en_US")
 from distributed import Executor, as_completed
 from distributed import diagnostics
-import cPickle
+import pickle
 
 
 executor = Executor("172.18.101.120:8786")
@@ -19,7 +19,7 @@ def do_one(filename):
     from conf_analysis.behavior import empirical, metadata, keymap
     import mne, locale
     import numpy as np
-    import cPickle
+    import pickle
     locale.setlocale(locale.LC_ALL, "en_US")
     result = {}
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
@@ -30,7 +30,7 @@ def do_one(filename):
         if len(trl[bl==b]) >= 75:
             result[b] = bcnt
             bcnt +=1
-        print b, bcnt
+        print(b, bcnt)
     return result
 
 block_map = {}
@@ -43,4 +43,4 @@ for snum in range(1, 16):
 diagnostics.progress(block_map)
 block_map = executor.gather(block_map)
 
-cPickle.dump(block_map, open('blockmap.pickle', 'w'))
+pickle.dump(block_map, open('blockmap.pickle', 'w'))

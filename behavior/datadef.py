@@ -557,6 +557,6 @@ sb2fname = {
 
 
 fnames2sb = {}
-for sub, d in sb2fname.iteritems():
-    fnames2sb[sub] = dict((v[0].split('/')[-1], (session, block, v[1])) for session, bvs in d.iteritems() for block, v in bvs.iteritems())
+for sub, d in sb2fname.items():
+    fnames2sb[sub] = dict((v[0].split('/')[-1], (session, block, v[1])) for session, bvs in d.items() for block, v in bvs.items())
 

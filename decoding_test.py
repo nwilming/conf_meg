@@ -33,9 +33,9 @@ def get_data():
     ea2 = get_epochs('/home/pmurphy/Decoding_tests/meg_data/DC1_TimeScale_20170201_02.ds')
     ea2.info['dev_head_t'] = ea.info['dev_head_t']
     ea, df = align(ea, epoch_offset=10)
-    print df.shape
+    print((df.shape))
     ea2, df2 = align(ea2, epoch_offset=0, block_mapping=block_mapping_2)
-    print df2.shape
+    print((df2.shape))
     df2 = df2.set_index(2025+np.arange(len(df2)))
     meta = pd.concat([df, df2])
     epochs = mne.concatenate_epochs([ea, ea2])
@@ -62,7 +62,7 @@ def get_meta(block_mapping=block_mapping):
         d = pd.DataFrame({'block':i, 'target':data, 'type':block})
         d = d.set_index(np.arange(250)+index_offset)
         if block=='GO':
-            print 'Go'
+            print('Go')
             d.target-=90
         df.append(d)
         index_offset+=250

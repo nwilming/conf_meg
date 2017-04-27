@@ -135,7 +135,7 @@ def foo(variances, prior, t=1., side=1):
         )
     sm = samples_2nd.mean(0)
     ss = samples_2nd.std(0)
-    print ss.shape, mean(ss)
+    print(ss.shape, mean(ss))
     p = PestH1Vec(NG(**prior))
     p2nd = lambda x,s: p(x, s, 10.)
     phit = p2nd(sm, s2p(ss))
@@ -155,7 +155,7 @@ def centers(edges):
 
 def p(prior):
     ng = NG(**prior)
-    print "Mode of prior: %2.2f, %2.2fP / %2.2fS"%(ng.mu, (ng.alpha-.5)/ng.beta, p2s((ng.alpha-.5)/ng.beta))
+    print("Mode of prior: %2.2f, %2.2fP / %2.2fS"%(ng.mu, (ng.alpha-.5)/ng.beta, p2s((ng.alpha-.5)/ng.beta)))
     M,P = meshgrid(linspace(-2, 2, 151), linspace(s2p(6.5), s2p(0.15), 1051))
     clf()
     subplot(2,3,1)

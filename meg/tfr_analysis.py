@@ -5,7 +5,7 @@ from conf_analysis.behavior import metadata
 import mne
 import pandas as pd
 import numpy as np
-import cPickle
+import pickle
 import pylab as plt
 import seaborn as sns
 from pymeg import tfr
@@ -125,11 +125,11 @@ def avg_contrast_resp(avg, meta, edges=np.linspace(0.2, 0.8, 7),
 
 
 def plot_by_freq(resp, **kwargs):
-    if 'vmin' not in kwargs.keys():
+    if 'vmin' not in list(kwargs.keys()):
         kwargs['vmin'] = -0.5
-    if 'vmax' not in kwargs.keys():
+    if 'vmax' not in list(kwargs.keys()):
         kwargs['vmax'] = 0.5
-    if 'cmap' not in kwargs.keys():
+    if 'cmap' not in list(kwargs.keys()):
         kwargs['cmap'] = 'RdBu_r'
 
     n_groups = len(np.unique(resp.index.get_level_values('cgroup')))
@@ -169,7 +169,7 @@ def plot_avg_freq(resp, freqs=slice(60, 90)):
 
 @memory.cache
 def get_gamma_specific_data(snum, df):
-    loc = cPickle.load(open('localizer_results/lr_%i_gamma.pickle'%snum))
+    loc = pickle.load(open('localizer_results/lr_%i_gamma.pickle'%snum))
     id_cluster = np.argmin([len(loc[0]['ch_names']), len(loc[1]['ch_names'])])
     channels= loc[id_cluster]['ch_names']
     froi = loc[id_cluster]['froi']
@@ -201,7 +201,7 @@ def response_specific_cr(avg, meta, edges=6, dt=slice(0,10)):
         mc = np.mean(cvals.ravel())
         t = np.min(np.abs(np.percentile(cvals.ravel(), [1, 99])-0.5))
         spec_edges = np.linspace(mc-t, mc+t, edges)
-        print mc, np.mean(m.contrast), spec_edges
+        print(mc, np.mean(m.contrast), spec_edges)
         c = contrast_response(avg.loc[(index,),:], m, spec_edges, dt=dt)
         c.loc[:, 'side'] = mr
         c.set_index('side', append=True, inplace=True)

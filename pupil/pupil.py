@@ -11,7 +11,7 @@ import patsy
 import seaborn as sns
 sns.set_style('ticks')
 
-import patsy_transforms as pt
+from . import patsy_transforms as pt
 from scipy import interpolate as ipt
 
 EDF_HZ = 1000.0
@@ -122,7 +122,7 @@ def eval_model(model, data, summary=True):
     m.fit(X[~idnan,:],y[~idnan,:])
     yh = m.predict(X)
     if summary:
-        print 'R**2:', np.corrcoef(y.ravel(), yh.ravel())[0,1]**2
+        print('R**2:', np.corrcoef(y.ravel(), yh.ravel())[0,1]**2)
     return m, yh, y, X, res
 
 
@@ -169,8 +169,8 @@ def IRF_pupil(fs=100, dur=4, s=1.0/(10**26), n=10.1, tmax=.930):
 def prepare_glm_regressors(events, messages):
     events.sortlevel(level='subject', inplace=True, axis=1)
     messages.sortlevel(level='subject', inplace=True, axis=1)
-    print messages.index.names
-    print events.index.names
+    print(messages.index.names)
+    print(events.index.names)
 
     def make_index(field):
         md = field.reset_index()
@@ -233,13 +233,13 @@ def expand_field(events, messages, values, start, end):
     start_positions = get_locations(events, messages, start)
     end_positions = get_locations(events, messages, end)
     assert len(start_positions) == len(end_positions) == len(values)
-    print len(start_positions), len(end_positions), len(values)
+    print(len(start_positions), len(end_positions), len(values))
     for i, (s, e, v) in enumerate(zip(start_positions, end_positions, values)):
         if not s<e:
-            print i, s, e, v
+            print(i, s, e, v)
             return None
         field[s:e] = v
-    print s, e, v
+    print(s, e, v)
     return field
 
 def find_closest_index(sample_times, idx, offset):
@@ -260,7 +260,7 @@ def get_locations(events, messages, field='decision_time'):
     for (session, block, subject), ev in events.groupby(level=['session', 'block', 'subject']):
         index = [(session, block, subject, int(time))
                             for (session, block, subject, _), time in
-                                    messages.loc[idx[session, block, subject, :], field].iteritems()]
+                                    messages.loc[idx[session, block, subject, :], field].items()]
         st = ev.index.get_level_values('sample_time')
         pos.extend([offset + find_closest_index(st, i, 0) for i in index])
         offset += len(ev)

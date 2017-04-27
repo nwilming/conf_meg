@@ -47,6 +47,6 @@ def encode_mean_contrast(avg, meta, classifier=clf, cv=decoding.cv):
         fold_result['true'] = y_test
         fold_result['fold'] = i
         fold_result['r2'] = r2_score(y_test, yh)
-        print np.corrcoef(y_train, ytrain)[0,1], np.corrcoef(y_test, yh)[0,1]
+        print(np.corrcoef(y_train, ytrain)[0,1], np.corrcoef(y_test, yh)[0,1])
         results.append(fold_result)
     return pd.DataFrame(results)

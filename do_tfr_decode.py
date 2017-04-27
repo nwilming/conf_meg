@@ -3,13 +3,13 @@ sys.path.append('/home/nwilming/')
 from conf_analysis.meg import preprocessing, decoding
 from conf_analysis.behavior import empirical, metadata, keymap
 
-import cPickle
+import pickle
 import mne, locale
 import pandas as pd
 import numpy as np
 import datetime
 import os
-block_map = cPickle.load(open('meg/blockmap.pickle'))
+block_map = pickle.load(open('meg/blockmap.pickle'))
 
 
 def modification_date(filename):
@@ -30,7 +30,7 @@ def contrast_transform(row, j):
         return vals[:, j].mean(1)>0.5
 
 def execute(x):
-    print 'Starting task:', x
+    print('Starting task:', x)
     sensors = decoding.sensors[x[3]]
     results = []
     for j, s in enumerate([slice(i, i+1) for i in range(10)] + [slice(0, 10)]):
@@ -62,7 +62,7 @@ def list_tasks(older_than='now'):
     for snum in range(1, 16):
         for epoch in ['stimulus']:
             for label in ['contrast_probe', ]:
-                for sensors in decoding.sensors.keys():
+                for sensors in list(decoding.sensors.keys()):
                     filename = 'results/decoding' + str(snum) + epoch + label + sensors + 'tfr.hdf'
                     mod_date = modification_date(filename)
                     if mod_date>older_than:

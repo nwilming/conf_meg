@@ -67,15 +67,15 @@ def predict_conf_vs_noise(data, w, c):
     p_high_conf = fit_internal_sigma(data)
     sigma_int = dict((k, v) for k, v in zip(p_high_conf.index.values, p_high_conf.values))
     sigmas = array([sigma_int[n] for n in data.noise_sigma]).ravel()
-    return predict_confidence(w, c, data.mc, sigmas, mean(data.contrast), sigma_int.values())
+    return predict_confidence(w, c, data.mc, sigmas, mean(data.contrast), list(sigma_int.values()))
 
 
 def predicted_conf_vs_noise(data, w, c):
     p_high_conf = fit_internal_sigma(data)
     sigma_int = dict((k, v) for k, v in zip(p_high_conf.index.values, p_high_conf.values))
     sigmas = array([sigma_int[n] for n in data.noise_sigma]).ravel()
-    confidence = predict_confidence(w, c, data.mc, sigmas, mean(data.contrast), sigma_int.values())
-    predicted = array([mean(confidence[data.noise_sigma.values==ns]) for ns in sort(sigma_int.keys())])
+    confidence = predict_confidence(w, c, data.mc, sigmas, mean(data.contrast), list(sigma_int.values()))
+    predicted = array([mean(confidence[data.noise_sigma.values==ns]) for ns in sort(list(sigma_int.keys()))])
     return predicted
 
 
@@ -111,7 +111,7 @@ def explicit(confidence, choice, trial_contrast, threshold,
 
     def object_func(w, c):
         confidence = predict_confidence(w, c, trial_contrast, sigmas,
-                                        threshold, sigma_int.values())
+                                        threshold, list(sigma_int.values()))
         predicted = array([mean(confidence[trial_sigma.values==ns]) for ns in p_e.index.values])
         return sum((target-predicted)**2)
 
@@ -121,7 +121,7 @@ def explicit(confidence, choice, trial_contrast, threshold,
     res = array(res).reshape(w.shape)
     m = argmin(res)
     conf = predict_confidence(w.ravel()[m], s.ravel()[m], trial_contrast, sigmas,
-                                    threshold, sigma_int.values())
+                                    threshold, list(sigma_int.values()))
     predicted = array([mean(conf[trial_sigma.values==ns]) for ns in p_e.index.values])
     return w, s, res, target, predicted, p_e
 
@@ -139,7 +139,7 @@ def grid2D(data):
     target = conf_vs_noise(data).values.ravel()
 
     def object_func(w, c):
-        confidence = predict_confidence(w, c, data.mc-.5, sigmas, mean(data.contrast), sigma_int.values())
+        confidence = predict_confidence(w, c, data.mc-.5, sigmas, mean(data.contrast), list(sigma_int.values()))
         predicted = array([mean(confidence[data.noise_sigma.values==ns]) for ns in p_e.index.values])
         return sum((target-predicted)**2)
     res = []

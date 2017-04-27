@@ -1,13 +1,13 @@
 import numpy as np
-import cPickle
-import metadata
+import pickle
+from . import metadata
 import os
 
 
 mapname = os.path.join(metadata.project, 'key_map.pickle')
 
 try:
-  cache = cPickle.load(open(mapname))
+  cache = pickle.load(open(mapname))
 except IOError:
   cache = {'start':0}
 
@@ -20,4 +20,4 @@ def hash(x):
         return cache[x]
 
 def save():
-    cPickle.dump(cache, open(mapname, 'w'), protocol=2)
+    pickle.dump(cache, open(mapname, 'w'), protocol=2)
