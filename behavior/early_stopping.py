@@ -17,7 +17,7 @@ def decide_trial(lpr, dcut=2.5, ccut=4, alpha=None, offset=None):
     '''
     responses = lpr[:,0]*0
     first_passage_times = np.zeros((lpr.shape[0], ))+9
-    for k in xrange(len(lpr)):
+    for k in range(len(lpr)):
         l = lpr[k, :]
         for i in range(len(l)):
             if l[i]>dcut:
@@ -51,7 +51,7 @@ def decide_trial_prob(lpr, dcut=2.5, alpha=None, offset=None):
     responses = lpr[:,0]*0
     first_passage_times = np.zeros((lpr.shape[0], ))+9
     p_resp = lpr[:, 0]*0 + 0.5
-    for k in xrange(len(lpr)):
+    for k in range(len(lpr)):
         l = lpr[k, :]
         for i in range(len(l)):
             if l[i]>dcut:

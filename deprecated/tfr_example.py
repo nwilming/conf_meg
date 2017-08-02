@@ -1,7 +1,7 @@
 import mne, locale
 import numpy as np
 import json
-import cPickle
+import pickle
 
 locale.setlocale(locale.LC_ALL, "en_US")
 
@@ -13,15 +13,15 @@ def describe_taper(foi=None, cycles=None, time_bandwidth=None, **kwargs):
     cycles = np.atleast_1d(cycles)
     time = cycles/foi
     f_smooth = time_bandwidth/time
-    data = zip(list(foi), list(cycles), list(time), list(f_smooth))
-    print tabulate(data,   headers=['Freq', 'Cycles', 't. window', 'F. smooth'])
+    data = list(zip(list(foi), list(cycles), list(time), list(f_smooth)))
+    print(tabulate(data,   headers=['Freq', 'Cycles', 't. window', 'F. smooth']))
 
 
 def params_from_json(filename):
     params = json.load(open(filename))
-    assert('foi' in params.keys())
-    assert('cycles' in params.keys())
-    assert('time_bandwidth' in params.keys())
+    assert('foi' in list(params.keys()))
+    assert('cycles' in list(params.keys()))
+    assert('time_bandwidth' in list(params.keys()))
     return params
 
 
@@ -31,8 +31,8 @@ def tfr(filename, outstr='tfr.pickle', foi=None, cycles=None, time_bandwidth=Non
     power = mne.time_frequency.tfr_multitaper(epochs, foi, cycles,
         decim=decim, time_bandwidth=time_bandwidth, average=False, return_itc=False,
         n_jobs=12)
-    print filename, '-->', outname
-    cPickle.dump({'power': power,
+    print(filename, '-->', outname)
+    pickle.dump({'power': power,
                   'foi': foi,
                   'cycles': cycles,
                   'time_bandwidth': time_bandwidth,
@@ -62,6 +62,6 @@ params = params_from_json(args.tfrdef)
 if args.describe:
     describe_taper(**params)
 
-print args.dry
+print(args.dry)
 if not args.dry:
     tfr(args.epoch, args.outstr, **params)

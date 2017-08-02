@@ -53,11 +53,11 @@ def get_localizer(snum, reject=dict(mag=4e-12)):
 
 @memory.cache
 def get_localizer_power(snum, reject=dict(mag=4e-12), params=params):
-    print 'Getting localizer'
+    print('Getting localizer')
     epochs = get_localizer(snum, reject=reject)
     epochs.pick_channels([ch for ch in epochs.ch_names if ch.startswith('M')])
     epochs.resample(450)
-    print 'Doing power calculation'
+    print('Doing power calculation')
     power = get_power(epochs, params=params)
     return power
 

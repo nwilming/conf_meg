@@ -104,7 +104,7 @@ def get_epoch_filename(snum, session, block, period, data_type):
         type : str
     One of 'fif', 'artifcats', 'meta'
     '''
-    assert(data_type in file_type_map.keys())
+    assert(data_type in list(file_type_map.keys()))
     path = os.path.join(preprocessed, 'S%i'%snum)
     if period is None:
         fname = 'SUB%i_S%i_B%i'%(snum, session, block) + file_type_map[data_type]
@@ -194,7 +194,7 @@ val2field = {
 
 
 def fname2session(filename):
-    print filename
+    print(filename)
     #'/Volumes/dump/conf_data/raw/s04-04_Confidence_20151217_02.ds'
     return int(filename.split('/')[-1].split('_')[-2])
 
@@ -205,7 +205,7 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject):
         trigs = events[trig_idx, :]
         trial = {}
         stim_state = ['stim', 'ref']
-        cc_state = range(10)[::-1]
+        cc_state = list(range(10))[::-1]
         for i, (v, t) in enumerate(zip(trigs[:, 2], trigs[:, 0])):
             fname = val2field[v]
             if v == 64:

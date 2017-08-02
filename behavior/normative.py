@@ -172,7 +172,7 @@ class NrmModel(IdealObserver):
             else:
                 import lcmaes
                 import lcmaes_interface as lci
-                print 'Start:', err_function(start)
+                print('Start:', err_function(start))
                 ffunc = lci.to_fitfunc(err_function)
                 lbounds = [-np.inf, 0, -np.inf] + 3*[0]
 
@@ -184,7 +184,7 @@ class NrmModel(IdealObserver):
 
                 res = lci.pcmaes(ffunc, fopt)
                 bcand = res.best_candidate()
-                print 'End:', bcand.get_fvalue()
+                print('End:', bcand.get_fvalue())
                 x = lcmaes.get_candidate_x(bcand)
             return self.set_params(bias=x[0], conf_threshold=x[1], mu0=x[2], kappa0=x[3], alpha0=x[4], beta0=x[5])
         return self
@@ -218,9 +218,9 @@ class NrmModel(IdealObserver):
         return self
 
 def fit_one_sub(data):
-    import cPickle
+    import pickle
     fitted_obs, bias, cutoff, prior, x, _, _ = fit_single(data)
-    cPickle.dump(
+    pickle.dump(
         {'bias':bias, 'conf_threshold':cutoff, 'prior': prior, 'snum':snum},
         open('nrm_fit_parameters_s%i.pickle'%snum)
     )

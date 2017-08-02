@@ -2,19 +2,16 @@
 '''
 Load EDFs and prepare data frames.
 '''
-import collections
 import pandas as pd
 from scipy import signal
-from scipy.io import loadmat
-from pylab import *
+import numpy as np
+#from pylab import *
 import sympy
 import patsy
 import seaborn as sns
 sns.set_style('ticks')
 
-from pyedfread import edf
-import patsy_transforms as pt
-from scipy.interpolate import interp1d
+from . import patsy_transforms as pt
 from scipy import interpolate as ipt
 
 EDF_HZ = 1000.0
@@ -35,27 +32,27 @@ def cleanup(events):
     #events['pac'] = (filtered - events.pa.mean())/events.pa.std()
     return events
 
-def interp_blinks(events, err_source, pre, post, offset=10, field='left_pa'):
+def interp_blinks(events, err_source, pre, post, offset=10, field='pa'):
     '''
     Linearly interpolate blinks
     '''
-    d = diff(err_source)
-    blinks = where(d)[0].tolist()
+    d = np.diff(err_source)
+    blinks = np.where(d)[0].tolist()
     if err_source[0] == 1:
         #Starts with a blink that is missing in blinks. Add it
         blinks.insert(0, 0)
     if err_source[-1] == 1:
         #Ends with blink that will not be detected. Add it
-        blinks.append(len(events.blink.values))
+        blinks.append(len(err_source))
 
-    if not (mod(len(blinks), 2)==0):
+    if not (np.mod(len(blinks), 2)==0):
         raise RuntimeError('Number of errs not even')
     filtered = events[field].copy()
     for start, end in zip(blinks[0::2], blinks[1::2]):
-        filtered.values[start-pre:end+post] = nan
+        filtered.values[start-pre:end+post] = np.nan
 
-    idx = arange(len(filtered))
-    idnan = isnan(filtered.values)
+    idx = np.arange(len(filtered))
+    idnan = np.isnan(filtered.values)
     filtered = ipt.splev(idx, ipt.splrep(idx[~idnan], filtered.values[~idnan], k=1) )
     return filtered
 
@@ -110,23 +107,22 @@ def filter_pupil(pupil, sampling_rate, highcut = 10., lowcut = 0.1, order=3):
     return pupil - (filt_pupil+above), filt_pupil, above
 
 def eval_model(model, data, summary=True):
-    import patsy_transforms as pt
     from sklearn import linear_model
     import statsmodels.api as sm
 
-    if len(unique(data.left_gx[~isnan(data.left_gx)])) == 1:
+    if len(np.unique(data.left_gx[~np.isnan(data.left_gx)])) == 1:
         model = model.replace('left', 'right')
     y,X = patsy.dmatrices(model, data=data.copy(), eval_env=1)
 
     m = linear_model.LinearRegression()
-    idnan = isnan(y.ravel())
+    idnan = np.isnan(y.ravel())
     mod = sm.OLS(y[~idnan, :], X[~idnan, :])
     res = mod.fit()
     #print res.summary(xname=X.design_info.column_names)
     m.fit(X[~idnan,:],y[~idnan,:])
     yh = m.predict(X)
     if summary:
-        print 'R**2:', corrcoef(y.ravel(), yh.ravel())[0,1]**2
+        print('R**2:', np.corrcoef(y.ravel(), yh.ravel())[0,1]**2)
     return m, yh, y, X, res
 
 
@@ -146,7 +142,7 @@ def IRF_pupil(fs=100, dur=4, s=1.0/(10**26), n=10.1, tmax=.930):
     t = sympy.Symbol('t')
 
     # function:
-    y = ( (s) * (t**n) * (math.e**((-n*t)/tmax)) )
+    y = ( (s) * (t**n) * (np.math.e**((-n*t)/tmax)) )
 
     # derivative:
     y_dt = y.diff(t)
@@ -162,7 +158,7 @@ def IRF_pupil(fs=100, dur=4, s=1.0/(10**26), n=10.1, tmax=.930):
     y_dt = y_dt/np.std(y_dt)
 
     # dispersion:
-    y_dn = ( (s) * (timepoints**(n-0.01)) * (math.e**((-(n-0.01)*timepoints)/tmax)) )
+    y_dn = ( (s) * (timepoints**(n-0.01)) * (np.math.e**((-(n-0.01)*timepoints)/tmax)) )
     y_dn = y_dn / np.std(y_dn)
     y_dn = y - y_dn
     y_dn = y_dn / np.std(y_dn)
@@ -173,8 +169,8 @@ def IRF_pupil(fs=100, dur=4, s=1.0/(10**26), n=10.1, tmax=.930):
 def prepare_glm_regressors(events, messages):
     events.sortlevel(level='subject', inplace=True, axis=1)
     messages.sortlevel(level='subject', inplace=True, axis=1)
-    print messages.index.names
-    print events.index.names
+    print(messages.index.names)
+    print(events.index.names)
 
     def make_index(field):
         md = field.reset_index()
@@ -204,22 +200,22 @@ def prepare_glm_regressors(events, messages):
 
     # Add events for feedback
 
-    fde = make_index(messages.feedback_time[(~isnan(messages.feedback_time)) & (messages.feedback.values==-1)])
+    fde = make_index(messages.feedback_time[(~np.isnan(messages.feedback_time)) & (messages.feedback.values==-1)])
     events['feedback_offset_neg'] =  pt.event_ramp().transform(events.feedback, start=fde, end=fde,
                                                           pre=0, post=0, ramp='boxcar')
-    fde = make_index(messages.feedback_time[(~isnan(messages.feedback_time)) & (messages.feedback.values==1)])
+    fde = make_index(messages.feedback_time[(~np.isnan(messages.feedback_time)) & (messages.feedback.values==1)])
     events['feedback_offset_pos'] =  pt.event_ramp().transform(events.feedback, start=fde, end=fde,
                                                           pre=0, post=0, ramp='boxcar')
-    events.feedback_offset_neg.ix[isnan(events['feedback_offset_neg'])] = 0
-    events.feedback_offset_pos.ix[isnan(events['feedback_offset_pos'])] = 0
+    events.feedback_offset_neg.ix[np.isnan(events['feedback_offset_neg'])] = 0
+    events.feedback_offset_pos.ix[np.isnan(events['feedback_offset_pos'])] = 0
     return events, messages
 
 
 def fasta2(events, messages, field='decision_time', pre=1., post=1, Hz=100):
     # Only create the necessary index in a separate dataframe.
-    number = nan*ones((len(events),))
-    time = nan*ones((len(events),))
-    time_t = linspace(-pre, post, pre*Hz + post*Hz)
+    number = np.nan*np.ones((len(events),))
+    time = np.nan*np.ones((len(events),))
+    time_t = np.linspace(-pre, post, pre*Hz + post*Hz)
     positions = get_locations(events, messages, field)
     for i, p in enumerate(positions):
         start = p-pre*Hz
@@ -233,22 +229,22 @@ def fasta2(events, messages, field='decision_time', pre=1., post=1, Hz=100):
 
 def expand_field(events, messages, values, start, end):
     # Expand a field in messages
-    field = nan*ones((len(events),))
+    field = np.nan*np.ones((len(events),))
     start_positions = get_locations(events, messages, start)
     end_positions = get_locations(events, messages, end)
     assert len(start_positions) == len(end_positions) == len(values)
-    print len(start_positions), len(end_positions), len(values)
+    print(len(start_positions), len(end_positions), len(values))
     for i, (s, e, v) in enumerate(zip(start_positions, end_positions, values)):
         if not s<e:
-            print i, s, e, v
+            print(i, s, e, v)
             return None
         field[s:e] = v
-    print s, e, v
+    print(s, e, v)
     return field
 
 def find_closest_index(sample_times, idx, offset):
     sample_times = sample_times.values[offset:]
-    pos = argmin(abs(sample_times-idx[-1]))
+    pos = np.argmin(abs(sample_times-idx[-1]))
     return offset+pos
 
 
@@ -264,7 +260,7 @@ def get_locations(events, messages, field='decision_time'):
     for (session, block, subject), ev in events.groupby(level=['session', 'block', 'subject']):
         index = [(session, block, subject, int(time))
                             for (session, block, subject, _), time in
-                                    messages.loc[idx[session, block, subject, :], field].iteritems()]
+                                    messages.loc[idx[session, block, subject, :], field].items()]
         st = ev.index.get_level_values('sample_time')
         pos.extend([offset + find_closest_index(st, i, 0) for i in index])
         offset += len(ev)

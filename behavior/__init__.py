@@ -1,8 +1,8 @@
 import locale
 locale.setlocale(locale.LC_NUMERIC, 'C')
-import normative, metadata, keymap, fstnrm, datadef, variance_misperception, empirical
-import early_stopping, ideal_obs
-import non_linear_contrast
+from . import normative, metadata, keymap, fstnrm, datadef, variance_misperception, empirical
+from . import early_stopping, ideal_obs
+from . import non_linear_contrast
 
 colors = '''
 *** Primary color:
@@ -94,3 +94,4 @@ def parse(colors):
 
 
 color_palette = parse(colors)
+color_palette2 = parse(colors2)

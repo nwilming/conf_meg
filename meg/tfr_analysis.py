@@ -5,11 +5,12 @@ from conf_analysis.behavior import metadata
 import mne
 import pandas as pd
 import numpy as np
-import cPickle
+import pickle
 import pylab as plt
 import seaborn as sns
 from pymeg import tfr
 sns.set_style('ticks')
+
 from joblib import Memory
 memory = Memory(cachedir=metadata.cachedir)
 
@@ -99,11 +100,11 @@ def avg_contrast_resp(avg, meta, edges=np.linspace(0.2, 0.8, 7),
 
 
 def plot_by_freq(resp, **kwargs):
-    if 'vmin' not in kwargs.keys():
+    if 'vmin' not in list(kwargs.keys()):
         kwargs['vmin'] = -0.5
-    if 'vmax' not in kwargs.keys():
+    if 'vmax' not in list(kwargs.keys()):
         kwargs['vmax'] = 0.5
-    if 'cmap' not in kwargs.keys():
+    if 'cmap' not in list(kwargs.keys()):
         kwargs['cmap'] = 'RdBu_r'
 
     n_groups = len(np.unique(resp.index.get_level_values('cgroup')))
@@ -175,7 +176,7 @@ def response_specific_cr(avg, meta, edges=6, dt=slice(0,10)):
         mc = np.mean(cvals.ravel())
         t = np.min(np.abs(np.percentile(cvals.ravel(), [1, 99])-0.5))
         spec_edges = np.linspace(mc-t, mc+t, edges)
-        print mc, np.mean(m.contrast), spec_edges
+        print(mc, np.mean(m.contrast), spec_edges)
         c = contrast_response(avg.loc[(index,),:], m, spec_edges, dt=dt)
         c.loc[:, 'side'] = mr
         c.set_index('side', append=True, inplace=True)

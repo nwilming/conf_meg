@@ -1,7 +1,7 @@
 import mne, locale
 import numpy as np
 import json
-import cPickle
+import pickle
 import os
 import datetime
 
@@ -52,7 +52,7 @@ def list_tasks(older_than='now'):
 
 
 def execute(filename):
-    print 'Starting TFR for ', filename
-    print params
+    print('Starting TFR for ', filename)
+    print(params)
     tfr.tfr(filename, outstr, **params)
-    print 'Done with TFR for ', filename
+    print('Done with TFR for ', filename)

@@ -1,7 +1,7 @@
 from numpy import asarray, iscomplexobj, zeros, newaxis, zeros_like, real
 import multiprocessing
 import os
-import cPickle
+import pickle
 import socket
 import warnings
 import logging
@@ -18,10 +18,10 @@ pyfftw.interfaces.cache.enable()
 hostname = socket.gethostname()
 cache =  os.path.join(metadata.home, '%s_fftw.wisdom.pickle'%hostname)
 try:
-    wisdom = cPickle.load(open(cache))
+    wisdom = pickle.load(open(cache))
     pyfftw.import_wisdom(wisdom)
 except IOError:
-    print 'Did not load wisdom cache'
+    print('Did not load wisdom cache')
     pass
 
 
@@ -90,7 +90,7 @@ def hilbert(x, N=None):
 
     x = ifft(Xf*h)
     del Xf
-    cPickle.dump(pyfftw.export_wisdom(), open(cache, 'w'))
+    pickle.dump(pyfftw.export_wisdom(), open(cache, 'w'))
     return x
 
 

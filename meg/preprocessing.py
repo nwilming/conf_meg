@@ -28,7 +28,7 @@ from os.path import basename, join, isfile
 from conf_analysis.meg.tools import hilbert
 import logging
 from joblib import Memory
-import cPickle
+import pickle
 import os
 
 from pymeg import preprocessing as pymegprepr
@@ -72,9 +72,9 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         logging.info('Loading block of data: %s; block: %i'%(filename, block_in_experiment))
         r, r_id = load_block(raw, trials, block_in_raw)
         r_id['filnemae'] = filename
-        print 'Working on:', filename, block_in_experiment, block_in_raw
+        print('Working on:', filename, block_in_experiment, block_in_raw)
         logging.info('Starting artifact detection')
-        print 'Notch filtering'
+        print('Notch filtering')
         r, ants, artdefs = pymegprepr.preprocess_block(r)
         r.notch_filter(np.arange(50, 251, 50))
         logging.info('Aligning meta data')
@@ -103,10 +103,10 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
                 m.to_hdf(epo_metaname, 'meta')
                 r_id[epoch] = len(s)
                 filenames.append(epo_fname)
-        cPickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
+        pickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
 
     except MemoryError:
-        print snum, session, block_in_raw, block_in_experiment
+        print(snum, session, block_in_raw, block_in_experiment)
         raise RuntimeError('MemoryError caught in one block ' + str(snum) + ' ' + str(session) + ' ' + str(block_in_raw) + ' ' + str(block_in_experiment) )
     return 'Finished', snum, session, block_in_experiment, filenames
 
@@ -201,10 +201,10 @@ def get_epochs_for_subject(snum, epoch):
     from itertools import product
 
     metas = [metadata.get_epoch_filename(snum, session, block, epoch, 'meta')
-                for session, block in product(range(4), range(5))
+                for session, block in product(list(range(4)), list(range(5)))
                     if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'meta'))]
     data = [metadata.get_epoch_filename(snum, session, block, epoch, 'fif')
-                for session, block in product(range(4), range(5))
+                for session, block in product(list(range(4)), list(range(5)))
                     if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'fif'))]
     assert len(metas)==len(data)
     meta = pymegprepr.load_meta(metas)

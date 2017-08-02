@@ -11,7 +11,7 @@ import patsy
 import time
 from scipy.stats import norm
 from os.path import join
-import metadata, keymap
+from . import metadata, keymap
 
 from joblib import Memory
 from os.path import basename, join
@@ -22,17 +22,22 @@ memory = Memory(cachedir=metadata.cachedir, verbose=0)
 
 def load_jw():
     df = pd.read_csv('/Users/nwilming/u/conf_analysis/jw_yes_no_task_data.csv')
-    df.columns = [u'Unnamed: 0', u'blinks_nr', u'confidence', u'contrast', u'correct',
-       u'noise_redraw', u'present', u'pupil_b', u'pupil_d', u'choice_rt', u'block_num',
-       u'sacs_nr', u'session_num', u'staircase', u'snum', u'trial', u'response']
+    df.columns = ['Unnamed: 0', 'blinks_nr', 'confidence', 'contrast', 'correct',
+       'noise_redraw', 'present', 'pupil_b', 'pupil_d', 'choice_rt', 'block_num',
+       'sacs_nr', 'session_num', 'staircase', 'snum', 'trial', 'response']
     sub_map = dict((k, v) for v, k in enumerate(unique(df.snum)))
     df.loc[:, 'snum'] = df.snum.replace(sub_map)
     #def foo(x):
     #    x.loc[:, 'trial'] = arange(len(x))+1
     #    return x
     #df = df.groupby(['session_num', 'block_num', 'snum']).apply(foo)
-    return df.drop(u'Unnamed: 0', axis=1)
+    return df.drop('Unnamed: 0', axis=1)
 
+def contrast_block_mean(data, center=0.5):
+    con = abs(vstack(data.contrast_probe)-center)
+    m = mean(con)
+    data.loc[:, 'contrast_block_mean'] = m
+    return data
 
 @memory.cache
 def load_data():
@@ -82,13 +87,6 @@ def load_data():
         data.block_num = data.block_num.replace(lt)
         return data
 
-    def contrast_block_mean(data):
-        con = abs(vstack(data.contrast_probe)-0.5)
-        m = mean(con)
-        data.loc[:, 'contrast_block_mean'] = m
-        return data
-
-
     data = data.groupby('snum').apply(session_num)
     data = data.groupby(['snum', 'session_num']).apply(block_num)
     data = data.groupby(['snum', 'session_num', 'block_num']).apply(contrast_block_mean)
@@ -96,6 +94,24 @@ def load_data():
     data.loc[:, 'hash'] =  [keymap.hash(x) for x in data.loc[:, ('day', 'snum', 'block_num', 'trial')].values]
     assert len(np.unique(data.loc[:, 'hash'])) == len(data.loc[:, 'hash'])
     return data
+
+
+def get_dz(data):
+    def zscore_contrast(data):
+        con = vstack(data.contrast_probe)
+        m = mean(con)
+        s = abs(con-mean(con)).std()
+        idx = where(data.columns=='contrast_probe')[0][0]
+        for i in range(len(data)):
+            data['contrast_probe'].values[i] = (data.iloc[i, idx]-m)/s
+        #data['contrast_block_mean'] = m
+        data.loc[:, 'contrast'] = (data.loc[:, 'contrast']+0.5-m)/s
+        return data
+    dz = data.copy().groupby(['snum', 'session_num', 'block_num']).apply(zscore_contrast)
+    dz['mc'] = array([mean(k) for k in dz.contrast_probe.values])
+    dz['stdc'] = array([std(k) for k in dz.contrast_probe.values])
+    return (dz.groupby(['snum', 'session_num', 'block_num'])
+              .apply(lambda x: contrast_block_mean(x, center=0)))
 
 
 def data_cleanup(data):
@@ -256,7 +272,7 @@ def fit_logistic(df, formula, summary=True):
     log_res = sm.GLM(y, X, family=sm.families.Binomial())
     results = log_res.fit(disp=False)
     if summary:
-        print results.summary()
+        print(results.summary())
     return log_res, results
 
 
@@ -266,7 +282,7 @@ def fit_pmetric(df, features=['contrast'], targetname='response'):
     target = df[targetname].values
     log_res.fit(features, target)
     accuracy = log_res.score(features, target)
-    print accuracy
+    print(accuracy)
     log_res.featnames = features
     log_res.targetname = target
     return log_res
