@@ -188,7 +188,7 @@ def bootstrap(v, n, N, func=nanmean, alpha=.05):
     for i in range(N):
         id_rs = np.random.randint(0, len(v), size = (n,))
         r.append(func(v[id_rs]))
-    return prctile(r, [(alpha*100)/2, 50, 100 - (alpha*100)/2])
+    return np.prctile(r, [(alpha*100)/2, 50, 100 - (alpha*100)/2])
 
 
 def conf_kernels(df, alpha=1, rm_mean=False, label=True, err_band=False):
@@ -220,12 +220,12 @@ def conf_kernels(df, alpha=1, rm_mean=False, label=True, err_band=False):
     #legend()
 
 
-def asfuncof(xval, data, bins=linspace(1, 99, 12), aggregate=np.mean, remove_outlier=True):
-    low, high = prctile(xval, [1, 99])
+def asfuncof(xval, data, bins=np.linspace(1, 99, 12), aggregate=np.mean, remove_outlier=True):
+    low, high = np.percentile(xval, [1, 99])
     idx = (low<xval) & (xval<high)
     xval = xval[idx]
     data = data[idx]
-    edges = prctile(xval, bins)
+    edges = np.percentile(xval, bins)
     cfrac = []
     centers = []
     frac = []
@@ -238,6 +238,18 @@ def asfuncof(xval, data, bins=linspace(1, 99, 12), aggregate=np.mean, remove_out
         centers.append(nanmean([low, high]))
     return centers, frac
 
+
+def asfuncof_lin(xval, data, edges=np.linspace(-.5, .5, 7), aggregate=np.mean):
+    centers = []
+    frac = []
+    for low, high in zip(edges[:-1], edges[1:]):
+        d = data[(low<xval) & (xval<=high)]
+        if len(d) < 5:
+            frac.append(np.nan)
+        else:
+            frac.append(aggregate(d))
+        centers.append(np.nanmean([low, high]))
+    return centers, frac
 
 def fit_logistic(df, formula, summary=True):
     y,X = patsy.dmatrices(formula, df, return_type='dataframe')
