@@ -1,5 +1,4 @@
 import pandas as pd
-from numpy import *
 import numpy as np
 import seaborn as sns
 sns.set_style('ticks')
@@ -18,6 +17,9 @@ from os.path import basename, join
 
 import matplotlib
 
+import pylab as plt
+
+
 memory = Memory(cachedir=metadata.cachedir, verbose=0)
 
 def load_jw():
@@ -25,7 +27,7 @@ def load_jw():
     df.columns = ['Unnamed: 0', 'blinks_nr', 'confidence', 'contrast', 'correct',
        'noise_redraw', 'present', 'pupil_b', 'pupil_d', 'choice_rt', 'block_num',
        'sacs_nr', 'session_num', 'staircase', 'snum', 'trial', 'response']
-    sub_map = dict((k, v) for v, k in enumerate(unique(df.snum)))
+    sub_map = dict((k, v) for v, k in enumerate(np.unique(df.snum)))
     df.loc[:, 'snum'] = df.snum.replace(sub_map)
     #def foo(x):
     #    x.loc[:, 'trial'] = arange(len(x))+1
@@ -34,8 +36,8 @@ def load_jw():
     return df.drop('Unnamed: 0', axis=1)
 
 def contrast_block_mean(data, center=0.5):
-    con = abs(vstack(data.contrast_probe)-center)
-    m = mean(con)
+    con = abs(np.vstack(data.contrast_probe)-center)
+    m = np.mean(con)
     data.loc[:, 'contrast_block_mean'] = m
     return data
 
@@ -50,7 +52,7 @@ def load_data():
     files += glob.glob(join(metadata.behavioral_path, 's*/s*.mat'))
     files += glob.glob(join(metadata.behavioral_path, 's*/S*.mat'))
     files += glob.glob(join(metadata.behavioral_path, 'S*/S*.mat'))
-    files = unique(files)
+    files = np.unique(files)
 
     dfs = []
     def unbox(l):
@@ -65,24 +67,24 @@ def load_data():
         df = pd.DataFrame([dict((k, unbox(i[k].ravel())) for k in m.dtype.fields) for i in m])
         subject = int(f.split('/')[5][1:3])
         df['snum'] = subject
-        df['trial'] = arange(len(df))
+        df['trial'] = np.arange(len(df))
         dfs.append(df)
     data = pd.concat(dfs).reset_index()
     day = [int(time.strftime('%Y%m%d', time.strptime(k, '%Y%m%dT%H%M%S'))) for k in data.session.values]
     data['day'] = day
-    data['mc'] = array([mean(k) for k in data.contrast_probe.values])
-    data['stdc'] = array([std(k) for k in data.contrast_probe.values])
+    data['mc'] = np.array([np.mean(k) for k in data.contrast_probe.values])
+    data['stdc'] = np.array([np.std(k) for k in data.contrast_probe.values])
     data['R'] = data.response.copy()
     data.loc[data.response==-1, 'R'] = 0
 
     def session_num(data):
-        lt = dict((k, i) for i,k in enumerate(sort(unique(data.day))))
+        lt = dict((k, i) for i,k in enumerate(np.sort(np.unique(data.day))))
         data.loc[:, 'session_num'] = data.day
         data.session_num = data.session_num.replace(lt)
         return data
 
     def block_num(data):
-        lt = dict((k, i) for i,k in enumerate(sort(unique(data.session.astype('str')))))
+        lt = dict((k, i) for i,k in enumerate(np.sort(np.unique(data.session.astype('str')))))
         data.loc[:, 'block_num'] = data.session.astype('str')
         data.block_num = data.block_num.replace(lt)
         return data
@@ -98,18 +100,18 @@ def load_data():
 
 def get_dz(data):
     def zscore_contrast(data):
-        con = vstack(data.contrast_probe)
-        m = mean(con)
-        s = abs(con-mean(con)).std()
-        idx = where(data.columns=='contrast_probe')[0][0]
+        con = np.vstack(data.contrast_probe)
+        m = np.mean(con)
+        s = np.abs(con-np.mean(con)).std()
+        idx = np.where(data.columns=='contrast_probe')[0][0]
         for i in range(len(data)):
             data['contrast_probe'].values[i] = (data.iloc[i, idx]-m)/s
         #data['contrast_block_mean'] = m
         data.loc[:, 'contrast'] = (data.loc[:, 'contrast']+0.5-m)/s
         return data
     dz = data.copy().groupby(['snum', 'session_num', 'block_num']).apply(zscore_contrast)
-    dz['mc'] = array([mean(k) for k in dz.contrast_probe.values])
-    dz['stdc'] = array([std(k) for k in dz.contrast_probe.values])
+    dz['mc'] = np.array([np.mean(k) for k in dz.contrast_probe.values])
+    dz['stdc'] = np.array([np.std(k) for k in dz.contrast_probe.values])
     return (dz.groupby(['snum', 'session_num', 'block_num'])
               .apply(lambda x: contrast_block_mean(x, center=0)))
 
@@ -176,26 +178,26 @@ def acc(data, field='correct'):
 
 
 def pk(df, gs=matplotlib.gridspec.GridSpec(1,3), row=0):
-    subplot(gs[row,0])
+    plt.subplot(gs[row,0])
     conf_kernels(df)
-    plot([0.5, 9.5], [0.5, 0.5], 'k--')
-    ylabel('Contrast of 2nd grating')
-    subplot(gs[row, 1])
+    plt.plot([0.5, 9.5], [0.5, 0.5], 'k--')
+    plt.ylabel('Contrast of 2nd grating')
+    plt.subplot(gs[row, 1])
     conf_kernels(df[df.correct==1])
-    plot([0.5, 9.5], [0.5, 0.5], 'k--')
-    xticks([])
-    yticks([])
-    xlabel('')
-    subplot(gs[row, 2])
+    plt.plot([0.5, 9.5], [0.5, 0.5], 'k--')
+    plt.xticks([])
+    plt.yticks([])
+    plt.xlabel('')
+    plt.subplot(gs[row, 2])
     conf_kernels(df[df.correct==0])
-    plot([0.5, 9.5], [0.5, 0.5], 'k--')
-    xticks([])
-    yticks([])
-    xlabel('')
-    legend(bbox_to_anchor=(1.001, 1), loc=2, borderaxespad=0.)
+    plt.plot([0.5, 9.5], [0.5, 0.5], 'k--')
+    plt.xticks([])
+    plt.yticks([])
+    plt.xlabel('')
+    plt.legend(bbox_to_anchor=(1.001, 1), loc=2, borderaxespad=0.)
 
 
-def bootstrap(v, n, N, func=nanmean, alpha=.05):
+def bootstrap(v, n, N, func=np.nanmean, alpha=.05):
     '''
     Bootstrap values in func(v[samples]), by drawing n samples N times.
     Returns CI whose width is specified by alpha.
@@ -213,35 +215,35 @@ def conf_kernels(df, alpha=1, rm_mean=False, label=True, err_band=False):
     colors = dict((k, c) for k,c in zip(((-1., 2.), (-1., 1.), ( 1., 2.), (1., 1.)), sns.color_palette(n_colors=4)))
 
     for cond, group in df.groupby(['response', 'confidence']):
-        kernel = vstack(group['contrast_probe'].values)
+        kernel = np.vstack(group['contrast_probe'].values)
         # trials x time
-        x = arange(0.5, 9.6, 1)
+        x = np.arange(0.5, 9.6, 1)
         if rm_mean:
             tmean = kernel.mean(1)
             kernel = kernel - tmean[:, np.newaxis]
         if err_band:
-            band = array(
+            band = np.array(
                         [bootstrap(kernel[:, i], kernel.shape[0], 1000)
                             for i in range(kernel.shape[1])])
-            fill_between(x, band[:, 0], band[:, 2], color=colors[cond], alpha=alpha)
+            plt.fill_between(x, band[:, 0], band[:, 2], color=colors[cond], alpha=alpha)
         if label:
-            plot(x, kernel.mean(0), label=legend_labels[cond], color=colors[cond], alpha=alpha)
+            plt.plot(x, kernel.mean(0), label=legend_labels[cond], color=colors[cond], alpha=alpha)
         else:
-            plot(x, kernel.mean(0), color=colors[cond], alpha=alpha)
+            plt.plot(x, kernel.mean(0), color=colors[cond], alpha=alpha)
 
     #ylim([0.35, .65])
     #yticks([0.35, 0.5, 0.65])
-    xlabel('time')
+    plt.xlabel('time')
     sns.despine()
     #legend()
 
 
-def asfuncof(xval, data, bins=linspace(1, 99, 12), aggregate=np.mean, remove_outlier=True):
+def asfuncof(xval, data, bins=np.linspace(1, 99, 12), aggregate=np.mean, remove_outlier=True):
     low, high = np.percentile(xval, [1, 99])
     idx = (low<xval) & (xval<high)
     xval = xval[idx]
     data = data[idx]
-    edges = np.percentile(xval, bins)
+    edges = bins#np.percentile(xval, bins)
     cfrac = []
     centers = []
     frac = []
@@ -251,7 +253,7 @@ def asfuncof(xval, data, bins=linspace(1, 99, 12), aggregate=np.mean, remove_out
             frac.append(np.nan)
         else:
             frac.append(aggregate(d))
-        centers.append(nanmean([low, high]))
+        centers.append(np.nanmean([low, high]))
     return centers, frac
 
 
@@ -266,7 +268,7 @@ def fit_logistic(df, formula, summary=True):
 
 def fit_pmetric(df, features=['contrast'], targetname='response'):
     log_res = linear_model.LogisticRegression()
-    features = vstack([df[f].values for f in features]).T
+    features = np.vstack([df[f].values for f in features]).T
     target = df[targetname].values
     log_res.fit(features, target)
     accuracy = log_res.score(features, target)
@@ -276,32 +278,33 @@ def fit_pmetric(df, features=['contrast'], targetname='response'):
     return log_res
 
 
-def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)],
+def plot_model(df, model, bins=[np.linspace(0,.25,100), np.linspace(0,1,100)],
             hyperplane_only=False, alpha=1, cmap=None):
-    C, M = meshgrid(*bins)
-    resp1 = histogram2d(df[df.response==1].stdc.values, df[df.response==1].mc.values,
+    C, M = np.meshgrid(*bins)
+    resp1 = plt.histogram2d(df[df.response==1].stdc.values, df[df.response==1].mc.values,
         bins=bins)[0] +1
-    resp1[resp1==1] = nan
-    resp2 = histogram2d(df[df.response==-1].stdc.values, df[df.response==-1].mc.values,
+    resp1[resp1==1] = np.nan
+    resp2 = plt.histogram2d(df[df.response==-1].stdc.values, df[df.response==-1].mc.values,
         bins=bins)[0] +1
-    resp2[resp2==1] = nan
-    resp1 = resp1.astype(float)/nansum(resp1)
-    resp2 = resp2.astype(float)/nansum(resp2)
+    resp2[resp2==1] = np.nan
+    resp1 = resp1.astype(float)/np.nansum(resp1)
+    resp2 = resp2.astype(float)/np.nansum(resp2)
 
-    p = model.predict(vstack([M.ravel(), C.ravel(), 0*ones(M.shape).ravel()]).T)
+    p = model.predict(np.vstack([M.ravel(), C.ravel(), 0*np.ones(M.shape).ravel()]).T)
     p = p.reshape(M.shape)
 
     decision = lambda x: -(model.params.mc*x+ model.params.Intercept)/model.params.stdc
     if not hyperplane_only:
-        plane = log(resp1/resp2)
-        plane[plane==1] = nan
-        pcolormesh(bins[1], bins[0], np.ma.masked_invalid(plane), cmap=cmap, vmin=-2.4, vmax=2.4)
+        plane = np.log(resp1/resp2)
+        plane[plane==1] = np.nan
+        pcol=plt.pcolormesh(bins[1], bins[0], np.ma.masked_invalid(plane), cmap=cmap, vmin=-2.4, vmax=2.4, rasterized=True, linewidth=0)
+        pcol.set_edgecolor('face')
 
-    mind, maxd = xlim()
-    ylim(bins[0][0], bins[0][-1])
-    xlim(bins[1][0], bins[1][-1])
-    plot([mind, maxd], [decision(mind), decision(maxd)], 'k', lw=2, alpha=alpha)
-    plot([0, 0], [bins[0][0], bins[0][-1]], 'k--', lw=2)
+    mind, maxd = plt.xlim()
+    plt.ylim(bins[0][0], bins[0][-1])
+    plt.xlim(bins[1][0], bins[1][-1])
+    plt.plot([mind, maxd], [decision(mind), decision(maxd)], 'k', lw=2, alpha=alpha)
+    plt.plot([0, 0], [bins[0][0], bins[0][-1]], 'k--', lw=2)
     #ylim([0, 0.25])
     #xlim([0, 1])
     #contour(bins[1], bins[0], p.T, [0.5])
@@ -319,13 +322,13 @@ def get_pk(data, contrast_mean=0.5, response_field='response'):
     dr2 = data.query('%s==-1'%response_field)
 
     # Subtract QUEST mean from trials.
-    con_select2nd = (vstack(dr1.contrast_probe) - contrast_mean
-                        - (dr1.contrast_block_mean * dr1.side)[:, newaxis])
-    con_select1st = (vstack(dr2.contrast_probe) - contrast_mean
-                        - (dr2.contrast_block_mean * dr2.side)[:, newaxis])
+    con_select2nd = (np.vstack(dr1.contrast_probe) - contrast_mean
+                        - (dr1.contrast_block_mean * dr1.side)[:, np.newaxis])
+    con_select1st = (np.vstack(dr2.contrast_probe) - contrast_mean
+                        - (dr2.contrast_block_mean * dr2.side)[:, np.newaxis])
 
-    sel = vstack((con_select2nd, 0*con_select1st))
-    nsel = vstack((con_select1st, 0*con_select2nd))
+    sel = np.vstack((con_select2nd, 0*con_select1st))
+    nsel = np.vstack((con_select1st, 0*con_select2nd))
 
 
     sel = pd.DataFrame(sel)
@@ -412,9 +415,9 @@ def plot_kernel(kernel, colors, legend=True, trim=True):
     g = sns.tsplot(time='time', unit='snum', value='contrast', condition='Kernel',
                data=kernel, ci=95, color=colors, legend=legend)
 
-    plot([0, 9], [0, 0], lw=1, color='k', alpha=0.5)
-    yticks([-0.2, 0, 0.2])
-    xlim([-0.5, 9.25])
-    xlabel('Sample #')
-    sns.despine(trim=True, ax=gca())
+    plt.plot([0, 9], [0, 0], lw=1, color='k', alpha=0.5)
+    plt.yticks([-0.2, 0, 0.2])
+    plt.xlim([-0.5, 9.25])
+    plt.xlabel('Sample #')
+    sns.despine(trim=True, ax=plt.gca())
     return g
