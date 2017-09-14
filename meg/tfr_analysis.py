@@ -15,37 +15,12 @@ from joblib import Memory
 memory = Memory(cachedir=metadata.cachedir)
 
 
-def plot_contrast(df):
-    '''
-    Make a plot that shows the dependence of gamma and contrast for a specific contrast
-    sample over time. In detail: plot contrast vs gamma.
-    '''
-    pass
-
-
-def contrast_dependence(df, contrast, edges=np.linspace(0.1, 0.9, 15)):
-    '''
-    Compute contrast vs. power in a freq band.
-
-    df is a data frame with time in columns and indexed by trial, channel and freq.
-    Data in df is assumed to be baseline corrected.
-    '''
-    # Bring data frame into trial x time form.
-    df = df.groupby(level='trial').mean()
-    #df = df.join(contrast)
-    centers = [low+(high-low)/2. for low, high in zip(edges[:-1], edges[1:])]
-    #print df.columns
-    return df.groupby(pd.cut(contrast, bins=edges, labels=centers)).mean()
-
-def get_all_tfr():
-    pass
-
 
 def get_subject(snum, freq, channel, tmin, tmax,
-                epoch='stimulus'):
+                epoch='stimulus', baseline=None):
     filenames = glob.glob('/home/nwilming/conf_meg/S%i/*%stfr.hdf5'%(snum, epoch))
     metafiles = glob.glob('/home/nwilming/conf_meg/S%i/*%s.meta'%(snum, epoch))
-    avg = tfr.get_tfrs(filenames, freq=freq, channel=channel, tmin=tmin, tmax=tmax)
+    avg = tfr.get_tfrs(filenames, freq=freq, channel=channel, tmin=tmin, tmax=tmax, baseline=baseline)
     avg.loc[:, 'snum'] = snum
     avg.set_index('snum', append=True, inplace=True)
     avg.sort_index(inplace=True)
@@ -62,7 +37,7 @@ def baseline(avg, id_base):
     return avg
 
 
-def avg_baseline(avg, baseline):
+def avg_baseline(avg, baseline=(-0.4, 0)):
     '''
     Baseline correction by dividing by average baseline
     '''
@@ -168,13 +143,13 @@ def plot_avg_freq(resp, freqs=slice(60, 90)):
 
 
 @memory.cache
-def get_gamma_specific_data(snum, df):
-    loc = pickle.load(open('localizer_results/lr_%i_gamma.pickle'%snum))
+def get_gamma_specific_data(snum, df, baseline=None):
+    loc = cPickle.load(open('/home/nwilming/conf_analysis/localizer_results/lr_%i_gamma.pickle'%snum))
     id_cluster = np.argmin([len(loc[0]['ch_names']), len(loc[1]['ch_names'])])
     channels= loc[id_cluster]['ch_names']
     froi = loc[id_cluster]['froi']
     freqs = [froi+df[0], froi+df[1]]
-    avg, meta = get_subject(snum, freqs, channels, tmin=-0.4, tmax=1.1)
+    avg, meta = get_subject(snum, freqs, channels, tmin=-0.4, tmax=1.5, baseline=baseline)
     return avg, meta
 
 
@@ -245,6 +220,14 @@ def fit_sigmoid(x, y):
     return popt, rss_sigmoid, plin, rss_lin
 
 
+def closest(x, a):
+    '''
+    Return column of a closest in time to x.
+    '''
+    id_t = np.argmin(abs(a.columns.values.astype(float)-x))
+    return a.iloc[:, id_t]
+
+
 def correlation_analysis(snum, df=(-10, 30)):
     avg, meta = get_gamma_specific_data(snum, df)
     avg = avg_baseline(avg, (-0.4, 0))
@@ -252,14 +235,6 @@ def correlation_analysis(snum, df=(-10, 30)):
     index = avg.index.get_level_values('trial')
     meta = meta.loc[index, :]
     cvals = np.vstack(meta.contrast_probe)
-
-    def closest(x, a):
-        '''
-        Return column of a closest in time to x.
-        '''
-        id_t = np.argmin(abs(a.columns.values.astype(float)-x))
-        return a.iloc[:, id_t]
-
     times = avg.columns.values.astype(float)
     df = []
     for t in times:
@@ -268,15 +243,16 @@ def correlation_analysis(snum, df=(-10, 30)):
             results = {}
             x = cvals[:, stim_time]
             results['correlation'] = np.corrcoef(x, y)[0,1]
-            popt, rss_sig, plin, rss_lin = fit_sigmoid(x, y)
-            results['p_sig'] = popt
-            results['rss_sig'] = rss_sig
-            results['p_lin'] = plin
-            results['rss_lin'] = rss_lin
+            #popt, rss_sig, plin, rss_lin = fit_sigmoid(x, y)
+            #results['p_sig'] = popt
+            #results['rss_sig'] = rss_sig
+            #results['p_lin'] = plin
+            #results['rss_lin'] = rss_lin
             results['time'] = t
             results['sample'] = stim_time
             df.append(results)
-    return df
+    return pd.DataFrame(df)
+
 
 def do_rm_anova(responses):
     groups = [cd.values for cg, cd in responses.groupby(level='cgroup')]
@@ -296,3 +272,50 @@ def draw_significance(ps, times, y=0, dy=0.1, alphas=[0.05, 0.01, 0.001],
             for l in np.where(hs)[0]:
                 plt.plot([times[l]-dt/2., times[l]+dt/2.], [y, y], **kwargs)
             y+=dy
+
+
+def encoding_choice_meg(avg, meta, delay):
+    '''
+    Set up a regression that predicts choice based on actual contrast values
+    and as an interaction with MEG gamma band power.
+    '''
+    avg = avg_baseline(avg, (-0.4, 0))
+    avg = avg.groupby(level=['trial', 'snum']).mean()
+    index = avg.index.get_level_values('trial')
+    meta = meta.loc[index, :]
+    cvals = np.vstack(meta.contrast_probe)-0.5
+    sample_onsets = np.arange(0, 1, 0.1) + delay
+    meg = [closest(so, avg) for so in sample_onsets]
+    meg = pd.concat(meg, axis=1) # Contains gamma band power values for each contrast sample.
+    cvals = pd.DataFrame(cvals, index=meg.index)
+
+    meg = pd.melt(meg.reset_index(), id_vars=['trial', 'snum'], var_name='time', value_name='power')
+    cvals = pd.melt(cvals.reset_index(), id_vars=['trial', 'snum'], var_name='time', value_name='contrast')
+    meg.loc[:, 'contrast'] = cvals.contrast
+    return meta.R.values, meg
+
+
+def contrast_vs_power(meg, edges=np.linspace(-0.5, 0.5, 7)):
+    '''
+    meg is DataFrame that contains power and contrast.
+    use encoding_choice_meg to get this.
+
+    (baseline corrected gamma band power and 0 mean contrast)
+    '''
+    centers = np.mean([edges[:-1], edges[1:]], axis=0)
+    cutter = pd.cut(meg['contrast'], edges, labels=centers).astype(float)
+    cutter.name = 'contrast_center'
+    return meg.groupby(['time', cutter]).mean()
+
+
+
+def get_contrast_vs_power(subjects=np.arange(1, 16)):
+    yrs = []
+    for sub in subjects:
+        avg, meta = get_gamma_specific_data(sub, (-10, 40), baseline=avg_baseline)
+        y, m = encoding_choice_meg(avg, meta, .18)
+        low, high = np.percentile(m['contrast'].values, [5, 95])
+        low, high = min(low, -high), max(-low, high)
+        binned = contrast_vs_power(m, edges=np.linspace(low, high, 7))
+        yrs.append(binned)
+    return pd.concat(yrs, axis=0)

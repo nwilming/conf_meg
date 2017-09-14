@@ -257,6 +257,18 @@ def asfuncof(xval, data, bins=np.linspace(1, 99, 12), aggregate=np.mean, remove_
     return centers, frac
 
 
+def asfuncof_lin(xval, data, edges=np.linspace(-.5, .5, 7), aggregate=np.mean):
+    centers = []
+    frac = []
+    for low, high in zip(edges[:-1], edges[1:]):
+        d = data[(low<xval) & (xval<=high)]
+        if len(d) < 5:
+            frac.append(np.nan)
+        else:
+            frac.append(aggregate(d))
+        centers.append(np.nanmean([low, high]))
+    return centers, frac
+
 def fit_logistic(df, formula, summary=True):
     y,X = patsy.dmatrices(formula, df, return_type='dataframe')
     log_res = sm.GLM(y, X, family=sm.families.Binomial())
