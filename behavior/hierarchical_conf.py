@@ -42,7 +42,7 @@ def fit_model(formula, data=None, edges=np.arange(-2.25,2.5, .5), iter=2000):
     return fit, y, X, subject
 
 
-def hierarchical_logistic(data, formula, subject, iter=2000):
+def hierarchical_logistic(data, formula, iter=2000):
 
     try:
         sm = pickle.load(open('hmm.stan.pickle'))
@@ -50,13 +50,13 @@ def hierarchical_logistic(data, formula, subject, iter=2000):
         sm = pystan.StanModel(file='hmm.stan')
         pickle.dump(sm, open('hmm.stan.pickle', 'w'))
     y, X = patsy.dmatrices(formula, data=data)
-
-    assert(len(y) == len(X))
+    subject = np.asarray(patsy.dmatrix('snum -1', data=data)).astype(int).ravel()
+    assert(len(y) == len(X) == len(subject))
     datadict = {'x':np.asarray(X), 'y':np.asarray(y).astype(int).ravel(),
         'll':subject.astype(int), 'D':X.shape[1],
         'L':len(np.unique(subject)), 'N':len(y)}
 
-    fit = sm.sampling(data=datadict, iter=iter)
+    fit = sm.sampling(data=datadict, iter=iter, chains=2)
     return fit, y, X, subject
 
 
