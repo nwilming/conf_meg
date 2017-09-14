@@ -2,10 +2,11 @@ import sys
 sys.path.append('/home/nwilming/')
 import glob
 from conf_analysis.behavior import metadata
+
 import mne
 import pandas as pd
 import numpy as np
-import pickle
+import cPickle
 import pylab as plt
 import seaborn as sns
 from pymeg import tfr
@@ -14,7 +15,18 @@ sns.set_style('ticks')
 from joblib import Memory
 memory = Memory(cachedir=metadata.cachedir)
 
+sensors = dict(
+        all= lambda x: [ch for ch in x if ch.startswith('M')],
+        occipital= lambda x:[ch for ch in x if ch.startswith('MLO') or ch.startswith('MRO')],
+        posterior= lambda x:[ch for ch in x if ch.startswith('MLP') or ch.startswith('MRP')],
+        central= lambda x:[ch for ch in x if ch.startswith('MLC')
+            or ch.startswith('MRC') or ch.startswith('MZC')],
+        frontal= lambda x:[ch for ch in x if ch.startswith('MLF')
+            or ch.startswith('MRF') or ch.startswith('MZF')],
+        temporal= lambda x:[ch for ch in x if ch.startswith('MLT') or ch.startswith('MRT')])
 
+def channel_filter(x, name):
+    return sensors[name](x)
 
 def get_subject(snum, freq, channel, tmin, tmax,
                 epoch='stimulus', baseline=None):
@@ -143,13 +155,21 @@ def plot_avg_freq(resp, freqs=slice(60, 90)):
 
 
 @memory.cache
-def get_gamma_specific_data(snum, df, baseline=None):
-    loc = cPickle.load(open('/home/nwilming/conf_analysis/localizer_results/lr_%i_gamma.pickle'%snum))
-    id_cluster = np.argmin([len(loc[0]['ch_names']), len(loc[1]['ch_names'])])
-    channels= loc[id_cluster]['ch_names']
-    froi = loc[id_cluster]['froi']
-    freqs = [froi+df[0], froi+df[1]]
-    avg, meta = get_subject(snum, freqs, channels, tmin=-0.4, tmax=1.5, baseline=baseline)
+def get_gamma_specific_data(snum, df, cluster, baseline=None, freqs=None):
+    if isinstance(cluster, list):
+        loc = cPickle.load(open('/home/nwilming/conf_analysis/localizer_results/lrbg_%i_gamma.pickle'%snum))
+        channels = []
+        froi = []
+        for C in cluster:
+            channels.extend(loc[1][C])
+            froi.append(loc[2][C])
+        channels = np.unique(channels)
+        froi = np.nanmean(froi)
+        if freqs is None:
+            freqs = [froi+df[0], froi+df[1]]
+        avg, meta = get_subject(snum, freqs, channels, tmin=-0.4, tmax=1.5, baseline=baseline)
+    else:
+        avg, meta = get_subject(snum, freqs, sensors[cluster], tmin=-0.4, tmax=1.5, baseline=baseline)
     return avg, meta
 
 
@@ -228,12 +248,12 @@ def closest(x, a):
     return a.iloc[:, id_t]
 
 
-def correlation_analysis(snum, df=(-10, 30)):
-    avg, meta = get_gamma_specific_data(snum, df)
+def correlation_analysis(snum, cluster, df=(-10, 30), freq_limit=None):
+    avg, meta = get_gamma_specific_data(snum, df, cluster, freqs=freq_limit)
     avg = avg_baseline(avg, (-0.4, 0))
-    avg = avg.groupby(level=['trial', 'snum']).mean()
     index = avg.index.get_level_values('trial')
-    meta = meta.loc[index, :]
+    meta = meta.loc[index, :] #.dropna(subset=['response'])
+    #avg = avg.loc[(meta.index.get_level_values('hash'),slice(None)),:]
     cvals = np.vstack(meta.contrast_probe)
     times = avg.columns.values.astype(float)
     df = []
@@ -308,11 +328,10 @@ def contrast_vs_power(meg, edges=np.linspace(-0.5, 0.5, 7)):
     return meg.groupby(['time', cutter]).mean()
 
 
-
-def get_contrast_vs_power(subjects=np.arange(1, 16)):
+def get_contrast_vs_power(subjects=np.arange(1, 16), cluster=None):
     yrs = []
     for sub in subjects:
-        avg, meta = get_gamma_specific_data(sub, (-10, 40), baseline=avg_baseline)
+        avg, meta = get_gamma_specific_data(sub, (-10, 40), cluster[sub], baseline=avg_baseline)
         y, m = encoding_choice_meg(avg, meta, .18)
         low, high = np.percentile(m['contrast'].values, [5, 95])
         low, high = min(low, -high), max(-low, high)

@@ -307,8 +307,8 @@ def plot_model(df, model, bins=[linspace(0,.25,100), linspace(0,1,100)],
     if not hyperplane_only:
         plane = log(resp1/resp2)
         plane[plane==1] = nan
-        pcolormesh(bins[1], bins[0], np.ma.masked_invalid(plane), cmap=cmap, vmin=-2.4, vmax=2.4)
-
+        pcol=pcolormesh(bins[1], bins[0], np.ma.masked_invalid(plane), cmap=cmap, vmin=-2.4, vmax=2.4, rasterized=True, linewidth=0)
+        pcol.set_edgecolor('face')
     mind, maxd = xlim()
     ylim(bins[0][0], bins[0][-1])
     xlim(bins[1][0], bins[1][-1])

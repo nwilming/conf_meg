@@ -74,23 +74,28 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         r_id['filnemae'] = filename
         print('Working on:', filename, block_in_experiment, block_in_raw)
         logging.info('Starting artifact detection')
-        print('Notch filtering')
+
         r, ants, artdefs = pymegprepr.preprocess_block(r)
+        print('Notch filtering')
         r.notch_filter(np.arange(50, 251, 50))
         logging.info('Aligning meta data')
         meta, timing = get_meta(data, r, snum, block_in_experiment, filename)
-
+        idx = np.isnan(meta.response.values)
+        meta = meta.loc[~idx, :]
+        timing = timing.loc[~idx, :]
         artdefs['id'] = r_id
         filenames = []
-        for epoch, event, (tmin, tmax) in zip(
+        for epoch, event, (tmin, tmax), (rmin, rmax) in zip(
                                              ['stimulus', 'response', 'feedback'],
                                              ['stim_onset_t', 'button_t', 'meg_feedback_t'],
-                                             [(-.75, 1.5), (-1.5, 1), (-1, 1)]
+                                             [(-.75, 1.5), (-1.5, 1), (-1, 1)],
+                                             [(0, 1), (-1, 0.5), (-0.5, 0.5)]
                                              ):
 
             logging.info('Processing epoch: %s' %epoch)
             m, s = pymegprepr.get_epoch(r, meta, timing,
                                            event=event, epoch_time=(tmin, tmax),
+                                           reject_time=(rmin, rmax),
                                            base_event='stim_onset_t', base_time=(-.2, 0))
 
             if len(s)>0:
@@ -209,4 +214,8 @@ def get_epochs_for_subject(snum, epoch):
     assert len(metas)==len(data)
     meta = pymegprepr.load_meta(metas)
     data = pymegprepr.load_epochs(data)
+    channels = [set(e.ch_names) for e in data]
+    channels = list(channels[0].intersection(*channels[1:]))
+    data = [e.drop_channels([x for x in e.ch_names if x not in channels])
+            for e in data]
     return pymegprepr.concatenate_epochs(data, meta)
