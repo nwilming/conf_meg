@@ -12,7 +12,7 @@ import pylab as plt
 from scipy.stats import norm
 from scipy.special import expit, logit, erf, erfinv
 from scipy.optimize import minimize
-import cma
+#import cma
 import pymc3 as pm
 import theano.tensor as T
 
