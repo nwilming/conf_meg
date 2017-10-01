@@ -546,8 +546,11 @@ def get_all_subs(d, models=[True, False], iter=5000):
                 GR = pm.diagnostics.gelman_rubin(trace)
 
                 fname = 's%i_var%s_modeltrace.pickle' % (s, var)
-                pickle.dump({'trace': trace, 'model': model, 'dic': dic,
-                             'waic': waic, 'bpic': bpic, 'gelman_rubin': GR})
+                cPickle.dump({'trace': trace, 'model': model, 'dic': dic,
+                             'waic': waic.WAIC, 'waic_se': waic.WAIC_se, 
+                             'p_waic': waic.p_WAIC, 'bpic': bpic, 
+                             'gelman_rubin': GR},
+                             open(fname, 'w'))
             dd = {'snum': s, 'var': var}
 
             for var in trace.varnames:

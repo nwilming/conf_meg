@@ -19,11 +19,11 @@ def modification_date(filename):
 locale.setlocale(locale.LC_ALL, "en_US")
 
 outstr = 'tfr.hdf5'
-params = tfr.params_from_json('all_tfr150_parameters.json')
+params = tfr.params_from_json('/home/nwilming/conf_analysis/required/all_tfr150_parameters.json')
 #tfr.describe_taper(**params)
 
 
-def list_tasks(older_than='now'):
+def list_tasks(older_than='now', filter=None):
     import glob
     filenames = glob.glob('/home/nwilming/conf_meg/*/*stimulus-epo.fif.gz')
     filenames += glob.glob('/home/nwilming/conf_meg/*/*response-epo.fif.gz')

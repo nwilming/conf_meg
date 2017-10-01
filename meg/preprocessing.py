@@ -35,6 +35,7 @@ from pymeg import preprocessing as pymegprepr
 
 memory = Memory(cachedir=metadata.cachedir)
 
+
 def one_block(snum, session, block_in_raw, block_in_experiment):
     '''
     Preprocess a single block and save results.
@@ -46,17 +47,19 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         raw : mne.io.Raw object
     Raw data for an entire session of a subject.
         block_in_raw, block_in_experiment : int
-    Each succesfull session consists out of five blocks, yet a sessions MEG data
-    file sometimes contains more. This happens, for example, when a block is
-    restarted. 'block_in_raw' refers to the actual block in a raw file, and
-    block_in_experiment to the block in the metadata that block_in_raw should be
-    mapped to. block_in_experiment will be used for saving.
+    Each succesfull session consists out of five blocks, yet a sessions MEG
+    data file sometimes contains more. This happens, for example, when a block
+    is restarted. 'block_in_raw' refers to the actual block in a raw file, and
+    block_in_experiment to the block in the metadata that block_in_raw should
+    be mapped to. block_in_experiment will be used for saving.
     '''
 
     try:
 
-        art_fname = metadata.get_epoch_filename(snum, session,
-            block_in_experiment, None, 'artifacts')
+        art_fname = metadata.get_epoch_filename(
+            snum, session,
+            block_in_experiment,
+            None, 'artifacts')
 
         data = empirical.load_data()
         data = empirical.data_cleanup(data)
@@ -64,12 +67,14 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         filename = metadata.get_raw_filename(snum, session)
         raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
         trials = blocks(raw)
-        if  not (block_in_raw in unique(trials['block'])):
-            err_msg = 'Error when processing %i, %i, %i, %i, data file = %s'%(snum, session, block_in_raw, block_in_experiment, filename)
+        if not (block_in_raw in unique(trials['block'])):
+            err_msg = 'Error when processing %i, %i, %i, %i, data file = %s' % (
+                snum, session, block_in_raw, block_in_experiment, filename)
             raise RuntimeError(err_msg)
 
         # Load data and preprocess it.
-        logging.info('Loading block of data: %s; block: %i'%(filename, block_in_experiment))
+        logging.info('Loading block of data: %s; block: %i' %
+                     (filename, block_in_experiment))
         r, r_id = load_block(raw, trials, block_in_raw)
         r_id['filnemae'] = filename
         print('Working on:', filename, block_in_experiment, block_in_raw)
@@ -86,23 +91,23 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         artdefs['id'] = r_id
         filenames = []
         for epoch, event, (tmin, tmax), (rmin, rmax) in zip(
-                                             ['stimulus', 'response', 'feedback'],
-                                             ['stim_onset_t', 'button_t', 'meg_feedback_t'],
-                                             [(-.75, 1.5), (-1.5, 1), (-1, 1)],
-                                             [(0, 1), (-1, 0.5), (-0.5, 0.5)]
-                                             ):
+                ['stimulus', 'response', 'feedback'],
+                ['stim_onset_t', 'button_t',
+                 'meg_feedback_t'],
+                [(-.75, 1.5), (-1.5, 1), (-1, 1)],
+                [(0, 1), (-1, 0.5), (-0.5, 0.5)]):
 
-            logging.info('Processing epoch: %s' %epoch)
+            logging.info('Processing epoch: %s' % epoch)
             m, s = pymegprepr.get_epoch(r, meta, timing,
-                                           event=event, epoch_time=(tmin, tmax),
-                                           reject_time=(rmin, rmax),
-                                           base_event='stim_onset_t', base_time=(-.2, 0))
+                                        event=event, epoch_time=(tmin, tmax),
+                                        reject_time=(rmin, rmax),
+                                        base_event='stim_onset_t', base_time=(-.2, 0))
 
-            if len(s)>0:
+            if len(s) > 0:
                 epo_fname = metadata.get_epoch_filename(snum, session,
-                                            block_in_experiment, epoch, 'fif')
+                                                        block_in_experiment, epoch, 'fif')
                 epo_metaname = metadata.get_epoch_filename(snum, session,
-                                            block_in_experiment, epoch, 'meta')
+                                                           block_in_experiment, epoch, 'meta')
                 s = s.resample(600, npad='auto')
                 s.save(epo_fname)
                 m.to_hdf(epo_metaname, 'meta')
@@ -112,7 +117,8 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
 
     except MemoryError:
         print(snum, session, block_in_raw, block_in_experiment)
-        raise RuntimeError('MemoryError caught in one block ' + str(snum) + ' ' + str(session) + ' ' + str(block_in_raw) + ' ' + str(block_in_experiment) )
+        raise RuntimeError('MemoryError caught in one block ' + str(snum) + ' ' + str(
+            session) + ' ' + str(block_in_raw) + ' ' + str(block_in_experiment))
     return 'Finished', snum, session, block_in_experiment, filenames
 
 
@@ -122,8 +128,9 @@ def get_block_meta(snum, session, block_in_raw, block_in_experiment):
     filename = metadata.get_raw_filename(snum, session)
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
     trials = blocks(raw)
-    if  not (block_in_raw in unique(trials['block'])):
-        err_msg = 'Error when processing %i, %i, %i, %i, data file = %s'%(snum, session, block_in_raw, block_in_experiment, filename)
+    if not (block_in_raw in unique(trials['block'])):
+        err_msg = 'Error when processing %i, %i, %i, %i, data file = %s' % (
+            snum, session, block_in_raw, block_in_experiment, filename)
         raise RuntimeError(err_msg)
     r, _ = load_block(raw, trials, block_in_raw)
     meta, timing = get_meta(data, r, snum, block_in_experiment, filename)
@@ -139,17 +146,18 @@ def blocks(raw, full_file_cache=False):
     else:
         trigs, buts = pymegprepr.get_events(raw)
     es, ee, trl, bl = metadata.define_blocks(trigs)
-    return {'start':es, 'end':ee, 'trial':trl, 'block':bl}
+    return {'start': es, 'end': ee, 'trial': trl, 'block': bl}
 
 
 def load_block(raw, trials, block):
     '''
     Crop a block of trials from raw file.
     '''
-    start = trials['start'][trials['block']==block].min()
-    end = trials['end'][trials['block']==block].max()
-    r = raw.copy().crop(max(0, raw.times[start]-5), min(raw.times[-1], raw.times[end]+5))
-    r_id = {'first_samp':r.first_samp}
+    start = trials['start'][trials['block'] == block].min()
+    end = trials['end'][trials['block'] == block].max()
+    r = raw.copy().crop(
+        max(0, raw.times[start] - 5), min(raw.times[-1], raw.times[end] + 5))
+    r_id = {'first_samp': r.first_samp}
     r.load_data()
     return r, r_id
 
@@ -179,11 +187,12 @@ def get_meta(data, raw, snum, block, filename):
 
     megmeta = metadata.get_meta(trigs, es, ee, trl, bl,
                                 metadata.fname2session(filename), snum)
-    assert len(unique(megmeta.snum)==1)
-    assert len(unique(megmeta.day)==1)
-    assert len(unique(megmeta.block_num)==1)
+    assert len(unique(megmeta.snum) == 1)
+    assert len(unique(megmeta.day) == 1)
+    assert len(unique(megmeta.block_num) == 1)
 
-    dq = data.query('snum==%i & day==%i & block_num==%i'%(megmeta.snum.ix[0], megmeta.day.ix[0], block))
+    dq = data.query('snum==%i & day==%i & block_num==%i' %
+                    (megmeta.snum.ix[0], megmeta.day.ix[0], block))
     #dq.loc[:, 'trial'] = data.loc[:, 'trial']
     trial_idx = np.in1d(dq.trial, unique(megmeta.trial))
     dq = dq.iloc[trial_idx, :]
@@ -194,11 +203,10 @@ def get_meta(data, raw, snum, block, filename):
     megmeta = megmeta.set_index(['day', 'block_num', 'trial'])
     del megmeta['snum']
     meta = pd.concat([megmeta, dq], axis=1)
-    meta = metadata.cleanup(meta) # Performs some alignment checks
+    meta = metadata.cleanup(meta)  # Performs some alignment checks
     cols = [x for x in meta.columns if x[-2:] == '_t']
     timing = meta.loc[:, cols]
     return meta.drop(cols, axis=1), timing
-
 
 
 @memory.cache
@@ -206,12 +214,12 @@ def get_epochs_for_subject(snum, epoch):
     from itertools import product
 
     metas = [metadata.get_epoch_filename(snum, session, block, epoch, 'meta')
-                for session, block in product(list(range(4)), list(range(5)))
-                    if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'meta'))]
+             for session, block in product(list(range(4)), list(range(5)))
+             if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'meta'))]
     data = [metadata.get_epoch_filename(snum, session, block, epoch, 'fif')
-                for session, block in product(list(range(4)), list(range(5)))
-                    if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'fif'))]
-    assert len(metas)==len(data)
+            for session, block in product(list(range(4)), list(range(5)))
+            if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'fif'))]
+    assert len(metas) == len(data)
     meta = pymegprepr.load_meta(metas)
     data = pymegprepr.load_epochs(data)
     channels = [set(e.ch_names) for e in data]
@@ -219,3 +227,13 @@ def get_epochs_for_subject(snum, epoch):
     data = [e.drop_channels([x for x in e.ch_names if x not in channels])
             for e in data]
     return pymegprepr.concatenate_epochs(data, meta)
+
+
+def get_meta_for_subject(snum, epoch):
+    metas = [metadata.get_epoch_filename(snum, session, block, epoch, 'meta')
+             for session, block in product(list(range(4)), list(range(5)))
+             if os.path.isfile(
+                 metadata.get_epoch_filename(
+                     snum, session, block, epoch, 'meta'))]
+    meta = pymegprepr.load_meta(metas)
+    return pd.concat(meta)

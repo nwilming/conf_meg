@@ -11,7 +11,7 @@ def execute(x):
     ism.get_all_subs(d, models=[var])
 
 
-def list_tasks(older_than='now'):
-    for snum in range(1, 16):
-        for var in [True, False]:
+def list_tasks(older_than='now', filter=None):
+    for snum in [3, 7, 12, 13, 14]:
+        for var in [True]:
             yield (snum, var)
