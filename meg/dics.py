@@ -12,15 +12,17 @@ from mne.beamformer._lcmv import (_prepare_beamformer_input, _setup_picks,
 from mne.externals import six
 
 
-def get_tfr(subject):
+def get_tfr(subject, n_blocks=None):
     from glob import glob
     from mne.time_frequency.tfr import read_tfrs
     from mne.time_frequency import EpochsTFR
     files = glob('/home/nwilming/conf_meg/S%i/SUB%i*stimulus*-tfr.h5' %
                  (subject, subject))
+    if n_blocks is not None:
+        files = files[:n_blocks]
     etfr = [read_tfrs(files.pop())[0]]
     for fname in files:
-        etfr.append(read_tfrs(fname)[0])    
+        etfr.append(read_tfrs(fname)[0])
     data = np.concatenate([e.data for e in etfr], 0)
     return EpochsTFR(etfr[0].info, data, etfr[0].times, etfr[0].freqs)
 
@@ -37,6 +39,11 @@ def dics(epochs, tfr, f, times, f_smooth, t_smooth, subject):
 
     forward, bem, source, trans = sr.get_leadfield(subject)
 
+    id_freq = np.argmin(np.abs(tfr.freqs - f))
+
+    idx = ((times[0] + t_smooth) < times) & (times < (times[-1] - t_smooth))
+    print 'Using following time points:', times[idx]
+    
     noise_csd = csd_epochs(epochs, 'multitaper', fmin, fmax,
                            fsum=True, tmin=0.75 - 2 * t_smooth,
                            tmax=0.75)
@@ -45,9 +52,7 @@ def dics(epochs, tfr, f, times, f_smooth, t_smooth, subject):
                                    tfr.data.shape[0],
                                    tfr.data.shape[3]))
 
-    id_freq = np.argmin(np.abs(tfr.freqs - f))
 
-    idx = ((times[0]+t_smooth) < times) & (times < (times[1]-t_smooth))
     for i, t in enumerate(times[idx]):
         # Construct filter
         data_csd = csd_epochs(epochs, 'multitaper', fmin, fmax,
