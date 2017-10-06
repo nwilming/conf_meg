@@ -1,46 +1,57 @@
-    import sys
-    sys.path.append('/home/nwilming/')
-    import glob
+import sys
+sys.path.append('/home/nwilming/')
+import glob
+from pymeg import tfr
+from conf_analysis.meg import source_recon as sr, preprocessing, dics
 
 
-def execute(x):
-    subjid = x
-    print('Starting task:', x)
-    from conf_analysis.meg import source_recon as sr, preprocessing, dics
-    from pymeg import tfr
-
+def make_filters(subjid):
+    print('Starting task:', subjid)
     params = tfr.params_from_json(
         '/home/nwilming/conf_analysis/required/all_tfr150_parameters.json')
 
-    epochs, meta = preprocessing.get_epochs_for_subject(x, 'stimulus')
+    epochs, meta = preprocessing.get_epochs_for_subject(subjid, 'stimulus')
     epochs.times = epochs.times - 0.75
     epochs = epochs.apply_baseline((-0.25, 0))
-    
-    tfrepochs = dics.get_tfr(x)
-    F, t_smooth, f_smooth = tfr.get_smoothing(60, **params)
 
-    forward, bem, source, trans, source_pow = dics.dics(epochs,
-                                                        tfrepochs,
-                                                        F,
-                                                        tfrepochs.times,
-                                                        f_smooth,
-                                                        t_smooth,
-                                                        x)
+    tfrepochs = dics.get_tfr(subjid, n_blocks=1)
+    F, t_smooth, f_smooth = tfr.get_smoothing(60, **params)
+    filters = dics.make_dics_filter(epochs, tfrepochs.freqs, F,
+                                    tfrepochs.times, f_smooth,
+                                    t_smooth, subjid,
+                                    n_jobs=12)
     import cPickle
-    import h5py
-    fname = '/home/nwilming/conf_data/S%02i-src-power-params.pickle' % x
-    cPickle.dump({'forward': forward, 'bem': bem, 'source': source,
-                  'trans': trans}, open(fname, 'w'))
-    fname = '/home/nwilming/conf_data/S%02i-src-power-%fHx-params.hdf5' % (
-        x, F)
-    hdf5 = h5py.File(fname, 'w')
-    dset = hdf5.create_dataset('source_pow', data=source_pow)
-    hdf5.close()
+    filename = '/home/nwilming/conf_meg/S%i-%3.2iHz-dics-filters.pickle' % (
+        subjid, F)
+    cPickle.dump(
+        filters, open(filename, 'w'))
+
+
+def apply_filter(subjid):
+    params = tfr.params_from_json(
+        '/home/nwilming/conf_analysis/required/all_tfr150_parameters.json')
+    F, t_smooth, f_smooth = tfr.get_smoothing(60, **params)
+    tfrepochs = dics.get_tfr(subjid)
+    import cPickle
+    filters = cPickle.load(
+        open('/home/nwilming/conf_meg/S%i-%3.2iHz-dics-filters.pickle' %
+             (subjid, F)))
+    filename = '/home/nwilming/conf_meg/S%i-%3.2iHz-power.memmap' % (subjid, F)
+    power = dics.apply_dics_filter(filters, F, tfrepochs, filename, n_jobs=12)
+
+
+def execute(x):
+    subjid, task = x
+    if (task is None) or (task == 'make'):
+        make_filters(subjid)
+    if (task is None) or (task == 'apply'):
+        apply_filter(subjid)
 
 
 def list_tasks(older_than='now', filter=None):
     for f in range(1, 2):
-        yield f
+        print f, filter
+        yield f, filter
 
 
 if __name__ == '__main__':
