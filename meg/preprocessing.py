@@ -16,20 +16,17 @@ This leads to the following design:
     3. Data is epoched. Sync with meta data is guaranteed by a unique key for
        each trial that is stored along with the epoched data.
 '''
-
-import mne
-from numpy import *
-import numpy as np
-import pandas as pd
-import glob
-from itertools import product
-from conf_analysis.behavior import metadata, empirical
-from os.path import basename, join, isfile
-from conf_analysis.meg.tools import hilbert
 import logging
-from joblib import Memory
-import pickle
+import mne
+import numpy as np
 import os
+import pandas as pd
+import pickle
+
+from conf_analysis.behavior import empirical
+from conf_analysis.behavior import metadata
+from itertools import product
+from joblib import Memory
 
 from pymeg import preprocessing as pymegprepr
 
@@ -67,7 +64,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         filename = metadata.get_raw_filename(snum, session)
         raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
         trials = blocks(raw)
-        if not (block_in_raw in unique(trials['block'])):
+        if not (block_in_raw in np.unique(trials['block'])):
             err_msg = 'Error when processing %i, %i, %i, %i, data file = %s' % (
                 snum, session, block_in_raw, block_in_experiment, filename)
             raise RuntimeError(err_msg)
@@ -187,14 +184,14 @@ def get_meta(data, raw, snum, block, filename):
 
     megmeta = metadata.get_meta(trigs, es, ee, trl, bl,
                                 metadata.fname2session(filename), snum)
-    assert len(unique(megmeta.snum) == 1)
-    assert len(unique(megmeta.day) == 1)
-    assert len(unique(megmeta.block_num) == 1)
+    assert len(np.unique(megmeta.snum) == 1)
+    assert len(np.unique(megmeta.day) == 1)
+    assert len(np.unique(megmeta.block_num) == 1)
 
     dq = data.query('snum==%i & day==%i & block_num==%i' %
                     (megmeta.snum.ix[0], megmeta.day.ix[0], block))
     #dq.loc[:, 'trial'] = data.loc[:, 'trial']
-    trial_idx = np.in1d(dq.trial, unique(megmeta.trial))
+    trial_idx = np.in1d(dq.trial, np.unique(megmeta.trial))
     dq = dq.iloc[trial_idx, :]
     dq = dq.set_index(['day', 'block_num', 'trial'])
     megmeta = metadata.correct_recording_errors(megmeta)

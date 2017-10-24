@@ -105,9 +105,9 @@ def get_leadfield(subject):
         eeg=False,
         mindist=5.0,
         n_jobs=2)
-    fwd_fixed = mne.convert_forward_solution(fwd, surf_ori=True,
-                                             force_fixed=True)
-    return fwd_fixed, bem, fwd_fixed['src'], trans
+    #fwd_fixed = mne.convert_forward_solution(fwd, surf_ori=True,
+    #                                         force_fixed=True)
+    return fwd, bem, fwd['src'], trans
 
 
 @memory.cache
@@ -125,16 +125,6 @@ def get_eccen_labels(subject):
     subject_dir = join(subjects_dir, subject)
     labels = glob.glob(join(subject_dir, 'label', '*eccen11*'))
     return [mne.read_label(label, subject) for label in labels]
-
-
-def beamform_stimulus_epochs(subject):
-    from conf_analysis.meg import preprocessing
-    epochs, meta = preprocessing.get_epochs_for_subject(subject, 'stimulus')
-    epochs = epochs.apply_baseline((0.5, 0.75))
-    forward, bem, source, trans = get_leadfield(subject)
-    labels = get_labels(subject)
-    data = beamform_epochs(epochs, forward, labels)
-    return data, forward, source, trans
 
 
 def save_source_power(data, subject, filename):
@@ -158,47 +148,6 @@ def get_stimulus_csd(epochs, noise_t=(0.25, 0.75), data_t=(0.75, 1.75),
                           mode='multitaper', tmin=data_t[0], tmax=data_t[1],
                           fmin=freq[0], fmax=freq[1], fsum=True)
     return noise_csd, data_csd
-
-
-def beamform_epochs(epochs, forward, labels):
-    from mne.beamformer import dics_epochs
-
-    noise_csd, data_csd = get_stimulus_csd(epochs)
-
-    time_courses = []
-    for i, source_epoch in enumerate(dics_epochs(epochs, forward,
-                                                 noise_csd, data_csd,
-                                                 return_generator=True)):
-        data = {}
-        for label in labels:
-            name = (label.name
-                         .replace('lh.wang2015atlas.', '')
-                         .replace('rh.wang2015atlas.', ''))
-            try:
-                data['mf-' + name] = source_epoch.extract_label_time_course(
-                    label, forward['src'], mode='mean_flip')
-                data['m-' + name] = source_epoch.extract_label_time_course(
-                    label, forward['src'], mode='mean')
-                data['max-' + name] = source_epoch.extract_label_time_course(
-                    label, forward['src'], mode='max')
-                data['pca-' + name] = source_epoch.extract_label_time_course(
-                    label, forward['src'], mode='pca_flip')
-            except ValueError as e:
-                if not 'source space does not contain any' in e.message:
-                    raise e
-
-        data['trial'] = epochs.events[i, 2]
-        data['time'] = source_epoch.times
-        time_courses.append(data)
-    return time_courses
-
-
-def beamform_raw_label(epochs, forward, labels, noise_csd, data_csd):
-    from mne.beamformer import dics_epochs
-    for i, source_epoch in enumerate(dics_epochs(epochs, forward,
-                                                 noise_csd, data_csd,
-                                                 return_generator=True)):
-        yield source_epoch, labels, i, epochs.events
 
 
 def foo(source_epoch, labels, i, events):
