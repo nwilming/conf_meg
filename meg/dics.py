@@ -20,6 +20,8 @@ import time as clock
 from glob import glob
 import pandas as pd
 
+from sklearn import linear_model
+
 memory = Memory(cachedir=metadata.cachedir)
 
 
@@ -109,60 +111,32 @@ def get_tfr_array(meta, freq=(0, 100), channel=None, tmin=None, tmax=None,
 
 
 @memory.cache
-def make_csds(epochs, freqs, f, times, f_smooth, t_smooth, subject,
-              n_jobs=10):
+def make_csds(epochs,  f, times, t_noise, f_smooth, subject):
     '''
     Compute Beamformer filters for time-points in TFR.
     '''
-    id_freq = np.argmin(np.abs(freqs - f))
-    f = freqs[id_freq]
     fmin, fmax = f - f_smooth, f + f_smooth
-    forward, bem, source, trans = sr.get_leadfield(subject)
-    idx = ((times[0] + t_smooth) < times) & (times < (times[-1] - t_smooth))
+    print "Computing noise csd"
+    noise_csd = get_noise_csd(epochs, fmin, fmax, t_noise)
 
-    print "Computing noise csd with t_smooth:", t_smooth
-    noise_csd = get_noise_csd(epochs, fmin, fmax, t_smooth)
-
-    data_csds = []
-    with Parallel(n_jobs=n_jobs) as parallel:
-        filters = parallel(
-            delayed(one_csd)(i, epochs, forward, noise_csd, time,
-                             fmin, fmax, t_smooth)
-            for i, time in enumerate(times[idx]))
-
-        print 'Done with CSDds'
-    return f, filters
-
-
-def one_csd(i, epochs, forward, noise_csd, time, fmin, fmax,
-            t_smooth):
-
-    start = clock.time()
-    tmin = time - t_smooth
-    tmax = time + t_smooth
-    epochs.crop(tmin, tmax)
+    print "Computing data csd with"
     data_csd = mne_csd_epochs(epochs, 'multitaper',
                               fmin=fmin,
                               fmax=fmax,
                               fsum=True,
-                              tmin=time - t_smooth,
-                              tmax=time + t_smooth)
-    print i, 'CSD - Filter took', np.around(clock.time() - start, 3)
-    del epochs._data
-    info = epochs.info
-    t = (tmax + tmin) / 2.
-    print i, 'CSD + Filter took', np.around(clock.time() - start, 3)
-    return time, data_csd
+                              tmin=times[0],
+                              tmax=times[1])
+    return f, noise_csd, data_csd
 
 
 @memory.cache
-def get_noise_csd(epochs, fmin, fmax, t_smooth):
+def get_noise_csd(epochs, fmin, fmax, times):
     return mne_csd_epochs(epochs, 'multitaper', fmin, fmax,
-                          fsum=True, tmin=0.75 - 2 * t_smooth,
-                          tmax=0.75)
+                          fsum=True, tmin=times[0],
+                          tmax=times[1])
 
 
-def apply_dics_filter(filters, F, meta, filename, subject, n_jobs=1):
+def apply_dics_filter(data_csd, F, meta, filename, subject, n_jobs=1):
     '''
     Apply beamformer to TFR data
 
@@ -172,64 +146,101 @@ def apply_dics_filter(filters, F, meta, filename, subject, n_jobs=1):
     filename indicates which memmap file to use for storing source info
 
     '''
+    meta = meta.copy()
     num_epochs = meta.shape[0]
     forward, bem, source, trans = sr.get_leadfield(subject)
     n_source = np.sum([s['nuse'] for s in source])
-    sp_shape = (n_source, len(filters.keys()), num_epochs)
+    sp_shape = output_shape(subject, meta, (-0.75, 1.4), (F, F))
+
     # memmap results
     source_pow = np.memmap(filename, dtype='float32', mode='w+',
                            shape=sp_shape)
+    A = dics_filter(forward, data_csd)
     del forward, bem, source, trans
 
     print 'Applying in parallel'
 
+    meta.loc[:, 'linear_index'] = np.arange(num_epochs)
+
     def get_jobs():
-        time = np.sort(filters.keys())
-        for tidx, t in enumerate(time):
-            csd = filters[t]
-            args = (source_pow, meta, (F, F),
-                    (t, t), csd, subject, 0, tidx)
+        for (b, s), m in meta.groupby(['session_num', 'block_num']):
+            assert(np.unique(np.diff(m.linear_index.values)) == [1])
+            epoch_offset = m.loc[:, 'linear_index'].min()
+            args = (source_pow, m, (F, F),
+                    (-0.75, 1.4), A, epoch_offset, 0)
             yield delayed(apply_one_filter)(*args)
 
     epoch_order = Parallel(n_jobs=n_jobs)(get_jobs())
-
     return source_pow, epoch_order
 
 
-def apply_one_filter(source_pow, meta, freq, time, csd, subject, offset, tidx):
-    forward, bem, source, trans = sr.get_leadfield(subject)
+def apply_one_filter(source_pow, meta, freq, time, A, offset, t_offset):
+    '''
+    Apply a CSD to some time frequency data that is loaded within the function.
+
+    source_pow: Array (epchs, num_sources, time)
+        Array into which to save source-recon (can be memmapped)
+    meta: metadata that defines which epochs to load from tfr
+    freq: (F_low, F_high) which frequencies to load (will be averaged over)
+    time: (t_low, t_high) which time_points to load
+    A: beam forming filter
+    offset: int
+        This function will load TFR data for different epochs and time points.
+        This offset determines where in source_pow epochs will be stored.
+        >>> source_pow[offset+epoch, :, time] = srdata
+        Where epoch is a linear index throug meta (e.g. not the unique trial identifiers)
+    t_offset: int
+        Same as offset but for time points:
+        >>> source_pow[epoch, :, toffset+time] = srdata 
+    '''
+
     # Load source data
     freqs, times, epochs, tfrdata = get_tfr_array(meta, freq=freq,
                                                   tmin=time[0],
                                                   tmax=time[1])
-    tfrdata = tfrdata.squeeze() # now num_epochs x channels
 
-    A = dics_filter(forward, csd)
+    # tfrdata is num_epochs x channels x F x time
+    tfrdata = tfrdata.mean(2)  # now num_epochs x channels x time
+    n_time = tfrdata.shape[-1]
     epochs_order = []
     indices = []
+
     for i, (epoch, Xsensor) in enumerate(zip(epochs, tfrdata), offset):
-        Xsource = np.dot(A, Xsensor)  # 8k = (8k x 269) * (269,)
-        source_pow[:, tidx, i] = Xsource * np.conj(Xsource)
+        # Iterate over epochs, Xsensor = 269 channels x time
+        Xsource = np.dot(A, Xsensor)  # 8k = (8k x 269) * (269, time)
+        source_pow[i, :, t_offset:t_offset +
+                   n_time] = Xsource * np.conj(Xsource)
         epochs_order.append(epoch)
         indices.append(i)
-    print 'Done with %f'%time[0]
-    return indices, epochs_order
+    return indices, epochs_order, list(times)
 
 
-@memory.cache
-def single_trial_memmap_shape(subject, shape):
+def apply_tfr(A, source_pow, tfrdata, epochs):
+    indices, epochs_order = [], []
+    for i, (epoch, Xsensor) in enumerate(zip(epochs, tfrdata)):
+        # Iterate over epochs, Xsensor = 269 channels x time
+        Xsource = np.dot(A, Xsensor)  # 8k = (8k x 269) * (269, time)
+        source_pow[i, :, :] = Xsource * np.conj(Xsource)
+        epochs_order.append(epoch)
+        indices.append(i)
+    return np.array(indices), np.array(epochs_order)
+
+
+def output_shape(subject, meta, time, freq):
     '''
     Return the shape of the memmap array that is used for saving the single
     trial power estimates.
     Shape is: Number of sources, number of time points, number of epochs
     '''
-    tfrepochs = get_tfr(subject, n_blocks=1)
-    print(tfrepochs.data.shape)
-    n_time = tfrepochs.data.shape[3]
+    freqs, times, epochs, tfrdata = get_tfr_array(meta.iloc[0:1, :],
+                                                  freq=freq,
+                                                  tmin=time[0],
+                                                  tmax=time[1])
+    n_epochs = len(meta)
+    n_time = tfrdata.shape[-1]
     forward, bem, source, trans = sr.get_leadfield(subject)
     n_source = np.sum([s['nuse'] for s in source])
-    n_epochs = shape / (n_time * n_source)
-    return n_source, n_epochs, n_time
+    return n_epochs, n_source, n_time
 
 
 def stc_from_memmap(data, subject):
@@ -244,22 +255,73 @@ def stc_from_memmap(data, subject):
 
 def extract_label(data, source, label):
     verts = np.concatenate([source[0]['vertno'], source[1]['vertno']])
-    assert(len(verts) == data.shape[0])
+    assert(len(verts) == data.shape[1])
     idx = np.in1d(verts, label.vertices)
-    return data[idx, :, :].mean(0)
+    if sum(idx) == 0:
+        raise RuntimeError('Label not in source space')
+    
+    return verts[idx], data[:, idx, :]
 
 
-def get_label_dataframe(meta, data, source, times, labels):
+def get_label_dataframe(meta, data, index, times, source, labels,
+                        baseline=None, norm='mean'):
     '''
-    Extract a set of labels from memmapped sources and align with meta.    
+    Extract a set of labels from memmapped sources and align
+    with meta
+
+    meta: DataFrame
+        Trial metadata that is indexed by unique trial hash
+    data: array, (#epochs x #sources x #times)
+        Source reconstructed epochs
+    index: dict
+        maps unique trial hash to index in data
+    times: list
+        list of time points that map to last dim in data
+    source: mne source space
+        Source space used for the source reconstruction
+    labels: list of mne labels
+    baseline: func
+        A function that performs baseline correction. Will be called with:
+            >>> func(meta, data, epochs, times)
     '''
+    times = np.asarray(times)
     frames = []
     trials = meta.index.values
+    idx_array = [index[trial_hash] for trial_hash in meta.index.values]
     for label in labels:
-        d_label = extract_label(data, source, label)
-        df = pd.DataFrame(d_label, index=trials, columns=times).stack()
-        df.name = label.name
-        frames.append(df)
+        try:
+            vertices, d_label = extract_label(data, source, label)
+            print d_label.shape
+            d_label = d_label[idx_array, :, :]
+            if baseline is not None:
+                d_label = baseline(meta, d_label, meta.index.values, times)
+            # Find voxel with max change
+            if norm == 'max':
+                idx = np.argmax(np.abs(d_label))
+                e, vx, t = np.unravel_index(idx, d_label.shape)
+                d_label = d_label[:, vx, :]
+                df = pd.DataFrame(d_label, index=meta.index.values,
+                                  columns=times).stack()
+                #print df.head()
+                df.name = label.name
+                frames.append(df)
+            elif norm == 'none':
+                for i, vertex in enumerate(vertices):
+                    df = pd.DataFrame(d_label[:, i, :],
+                                      index=meta.index.values,
+                                      columns=times).stack().reset_index()
+                    df.columns = ['trial', 'time', label.name]                    
+                    df.loc[:, 'vertex'] = vertex
+                    df = df.set_index(['trial', 'time', 'vertex'])
+                    frames.append(df)
+            else:
+                d_label = d_label.mean(1)
+                df = pd.DataFrame(d_label, index=meta.index.values,
+                                  columns=times).stack()
+                df.name = label.name
+                frames.append(df)
+        except RuntimeError as e:
+            pass
     frames = pd.concat(frames, axis=1)
     frames.columns = [f.replace('lh.wang2015atlas.', '')
                        .replace('rh.wang2015atlas.', '')
@@ -267,21 +329,26 @@ def get_label_dataframe(meta, data, source, times, labels):
     return frames
 
 
-def power_to_label_dataframe(subject, filename):
+def selector(data, meta, epochs, times):
     '''
-    Convert source power estimates from a subject to a datframe
+    Predict contrast with a bunch from voxels
     '''
-    data = np.memmap(filename, dtype='float32', mode='r')
-    s = single_trial_memmap_shape(subject, data.shape[0])
-    data = np.memmap(filename, dtype='float32', mode='r', shape=s)
-    forward, bem, source, trans = sr.get_leadfield(subject)
-    meta = get_metas_for_tfr(subject)
-    tfrepochs = get_tfr(subject, n_blocks=1)
-    times = tfrepochs.times
-    labels = sr.get_labels(subject)
-    frame = get_label_dataframe(meta, data, source, times, labels)
-    outname = filename.replace('memmap', 'labeled.hdf5')
-    frame.to_hdf(outname, 'df')
+    cvals = np.stack(meta.loc[epochs, 'contrast_probe'])
+    reg = linear_model.LinearRegression()
+    out = np.nan * np.ones((data.shape[0], data.shape[-1]))
+    for sample in range(10):
+        for ti, time_point in enumerate(times):
+            y = cvals[:, sample]
+            X = data[:, :, ti]
+            fit = reg.fit(X, y)
+            out[:, ti] = np.dot(X, fit.coef_)
+    return out
+
+
+def baseline(meta, data, epochs, times):
+    idx = (-0.5 < times) & (times < -0.1)
+    base = data[:, :, idx].mean(-1).mean(0)[np.newaxis, :, np.newaxis]
+    return (data - base) / base
 
 
 @memory.cache
@@ -293,7 +360,7 @@ def dics_filter(forward, data_csd, reg=0.05):
     Assume free orientation lead field.
     '''
     Cm = data_csd.data.copy()
-    Cm = Cm.real
+    #Cm = Cm.real
     #Cm_inv, _ = _reg_pinv(Cm, reg)
     Cm_inv = np.linalg.pinv(Cm + reg * np.eye(Cm.shape[0]))
 

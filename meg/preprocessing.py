@@ -79,7 +79,8 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
 
         r, ants, artdefs = pymegprepr.preprocess_block(r)
         print('Notch filtering')
-        r.notch_filter(np.arange(50, 251, 50))
+        midx = np.where([x.startswith('M') for x in r.ch_names])[0]
+        r.notch_filter(np.arange(50, 251, 50), picks=midx)
         logging.info('Aligning meta data')
         meta, timing = get_meta(data, r, snum, block_in_experiment, filename)
         idx = np.isnan(meta.response.values)
@@ -150,8 +151,9 @@ def load_block(raw, trials, block):
     '''
     Crop a block of trials from raw file.
     '''
-    start = trials['start'][trials['block'] == block].min()
-    end = trials['end'][trials['block'] == block].max()
+    start = int(trials['start'][trials['block'] == block].min())
+    end = int(trials['end'][trials['block'] == block].max())
+    print start, end
     r = raw.copy().crop(
         max(0, raw.times[start] - 5), min(raw.times[-1], raw.times[end] + 5))
     r_id = {'first_samp': r.first_samp}
@@ -190,7 +192,7 @@ def get_meta(data, raw, snum, block, filename):
 
     dq = data.query('snum==%i & day==%i & block_num==%i' %
                     (megmeta.snum.ix[0], megmeta.day.ix[0], block))
-    #dq.loc[:, 'trial'] = data.loc[:, 'trial']
+    # dq.loc[:, 'trial'] = data.loc[:, 'trial']
     trial_idx = np.in1d(dq.trial, np.unique(megmeta.trial))
     dq = dq.iloc[trial_idx, :]
     dq = dq.set_index(['day', 'block_num', 'trial'])
@@ -207,22 +209,21 @@ def get_meta(data, raw, snum, block, filename):
 
 
 @memory.cache
-def get_epochs_for_subject(snum, epoch):
+def get_epochs_for_subject(snum, epoch, sessions=None):
     from itertools import product
 
+    if sessions is None:
+        sessions = range(5)
+
     metas = [metadata.get_epoch_filename(snum, session, block, epoch, 'meta')
-             for session, block in product(list(range(4)), list(range(5)))
+             for session, block in product(list(range(4)), ensure_iter(sessions))
              if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'meta'))]
     data = [metadata.get_epoch_filename(snum, session, block, epoch, 'fif')
-            for session, block in product(list(range(4)), list(range(5)))
+            for session, block in product(list(range(4)), ensure_iter(sessions))
             if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'fif'))]
     assert len(metas) == len(data)
     meta = pymegprepr.load_meta(metas)
     data = pymegprepr.load_epochs(data)
-    channels = [set(e.ch_names) for e in data]
-    channels = list(channels[0].intersection(*channels[1:]))
-    data = [e.drop_channels([x for x in e.ch_names if x not in channels])
-            for e in data]
     return pymegprepr.concatenate_epochs(data, meta)
 
 
@@ -234,3 +235,208 @@ def get_meta_for_subject(snum, epoch):
                      snum, session, block, epoch, 'meta'))]
     meta = pymegprepr.load_meta(metas)
     return pd.concat(meta)
+
+
+@memory.cache
+def get_head_correct_info(subject, session):
+    filename = metadata.get_raw_filename(subject, session)
+    trans = get_ctf_trans(filename)
+    fiducials = get_ref_head_pos(subject, session, trans)
+    raw = mne.io.ctf.read_raw_ctf(filename)
+    info = replace_fiducials(raw.info, fiducials)
+    return trans, fiducials, info
+
+
+def make_trans(subject, session):
+    trans, fiducials, info = get_head_correct_info(subject, session)
+    hs_ref = '/home/nwilming/conf_meg/trans/S%i-SESS%i.fif' % (
+        subject, session)
+    mne.io.meas_info.write_info(hs_ref, info)
+    print('Please save trans file as:')
+    print('/home/nwilming/conf_meg/trans/S%i-SESS%i-trans.fif' %
+          (subject, session))
+    mne.gui.coregistration(inst=hs_ref, subject='S%02i' % subject,
+                           subjects_dir='/home/nwilming/fs_subject_dir')
+
+
+@memory.cache
+def get_ref_head_pos(subject, session,  trans, N=10):
+    from mne.transforms import apply_trans
+    data = metadata.get_epoch_filename(subject, session, 0, 'stimulus', 'fif')
+    data = pymegprepr.load_epochs([data])[0]
+    cc = head_loc(data.decimate(10))
+    nasion = np.stack([c[0] for c in cc[:N]]).mean(0)
+    lpa = np.stack([c[1] for c in cc[:N]]).mean(0)
+    rpa = np.stack([c[2] for c in cc[:N]]).mean(0)
+    nasion, lpa, rpa = nasion.mean(-1), lpa.mean(-1), rpa.mean(-1)
+
+    return {'nasion': apply_trans(trans['t_ctf_dev_dev'], np.array(nasion)),
+            'lpa': apply_trans(trans['t_ctf_dev_dev'], np.array(lpa)),
+            'rpa': apply_trans(trans['t_ctf_dev_dev'], np.array(rpa))}
+
+
+def replace_fiducials(info, fiducials):
+    from mne.io import meas_info
+    fids = meas_info._make_dig_points(**fiducials)
+    info = info.copy()
+    dig = info['dig']
+    for i, d in enumerate(dig):
+        if d['kind'] == 3:
+            if d['ident'] == 3:
+
+                dig[i]['r'] = fids[2]['r']
+            elif d['ident'] == 2:
+                dig[i]['r'] = fids[1]['r']
+            elif d['ident'] == 1:
+                dig[i]['r'] = fids[0]['r']
+    info['dig'] = dig
+    return info
+
+
+def head_movement(epochs):
+    ch_names = np.array(epochs.ch_names)
+    channels = {'x': ['HLC0011', 'HLC0012', 'HLC0013'],
+                'y': ['HLC0021', 'HLC0022', 'HLC0023'],
+                'z': ['HLC0031', 'HLC0032', 'HLC0033']}
+    channel_ids = {}
+    for key, names in channels.iteritems():
+        ids = [np.where([n in ch for ch in ch_names])[0][0] for n in names]
+        channel_ids[key] = ids
+
+    data = epochs._data
+    ccs = []
+    for e in range(epochs._data.shape[0]):
+        x = np.stack([data[e, i, :] for i in channel_ids['x']])
+        y = np.stack([data[e, i, :] for i in channel_ids['y']])
+        z = np.stack([data[e, i, :] for i in channel_ids['z']])
+        cc = circumcenter(x, y, z)
+        ccs.append(cc)
+    return np.stack(ccs)
+
+
+def head_loc(epochs):
+    ch_names = np.array(epochs.ch_names)
+    channels = {'x': ['HLC0011', 'HLC0012', 'HLC0013'],
+                'y': ['HLC0021', 'HLC0022', 'HLC0023'],
+                'z': ['HLC0031', 'HLC0032', 'HLC0033']}
+    channel_ids = {}
+    for key, names in channels.iteritems():
+        ids = [np.where([n in ch for ch in ch_names])[0][0] for n in names]
+        channel_ids[key] = ids
+
+    data = epochs._data
+    ccs = []
+    if len(epochs._data.shape) > 2:
+        for e in range(epochs._data.shape[0]):
+            x = np.stack([data[e, i, :] for i in channel_ids['x']])
+            y = np.stack([data[e, i, :] for i in channel_ids['y']])
+            z = np.stack([data[e, i, :] for i in channel_ids['z']])
+            ccs.append((x, y, z))
+    else:
+        x = np.stack([data[i, :] for i in channel_ids['x']])
+        y = np.stack([data[i, :] for i in channel_ids['y']])
+        z = np.stack([data[i, :] for i in channel_ids['z']])
+        ccs.append((x, y, z))
+    return ccs
+
+
+def get_ctf_trans(directory):
+    from mne.io.ctf.res4 import _read_res4
+    from mne.io.ctf.hc import _read_hc
+    from mne.io.ctf.trans import _make_ctf_coord_trans_set
+
+    res4 = _read_res4(directory)  # Read the magical res4 file
+    coils = _read_hc(directory)  # Read the coil locations
+
+    # Investigate the coil location data to get the coordinate trans
+    coord_trans = _make_ctf_coord_trans_set(res4, coils)
+    return coord_trans
+
+
+def circumcenter(coil1, coil2, coil3):
+    # Adapted from:
+    #    http://www.fieldtriptoolbox.org/example/how_to_incorporate_head_movements_in_meg_analysis
+    # CIRCUMCENTER determines the position and orientation of the circumcenter
+    # of the three fiducial markers (MEG headposition coils).
+    #
+    # Input: X,y,z-coordinates of the 3 coils [3 X N],[3 X N],[3 X N] where N
+    # is timesamples/trials.
+    #
+    # Output: X,y,z-coordinates of the circumcenter [1-3 X N], and the
+    # orientations to the x,y,z-axes [4-6 X N].
+    #
+    # A. Stolk, 2012
+
+    # number of timesamples/trials
+    N = coil1.shape[1]
+    cc = np.zeros((6, N)) * np.nan
+    # x-, y-, and z-coordinates of the circumcenter
+    # use coordinates relative to point `a' of the triangle
+    xba = coil2[0, :] - coil1[0, :]
+    yba = coil2[1, :] - coil1[1, :]
+    zba = coil2[2, :] - coil1[2, :]
+    xca = coil3[0, :] - coil1[0, :]
+    yca = coil3[1, :] - coil1[1, :]
+    zca = coil3[2, :] - coil1[2, :]
+
+    # squares of lengths of the edges incident to `a'
+    balength = xba * xba + yba * yba + zba * zba
+    calength = xca * xca + yca * yca + zca * zca
+
+    # cross product of these edges
+    xcrossbc = yba * zca - yca * zba
+    ycrossbc = zba * xca - zca * xba
+    zcrossbc = xba * yca - xca * yba
+
+    # calculate the denominator of the formulae
+    denominator = 0.5 / (xcrossbc * xcrossbc + ycrossbc * ycrossbc
+                         + zcrossbc * zcrossbc)
+
+    # calculate offset (from `a') of circumcenter
+    xcirca = ((balength * yca - calength * yba) * zcrossbc -
+              (balength * zca - calength * zba) * ycrossbc) * denominator
+    ycirca = ((balength * zca - calength * zba) * xcrossbc -
+              (balength * xca - calength * xba) * zcrossbc) * denominator
+    zcirca = ((balength * xca - calength * xba) * ycrossbc -
+              (balength * yca - calength * yba) * xcrossbc) * denominator
+
+    cc[0, :] = xcirca + coil1[0, :]
+    cc[1, :] = ycirca + coil1[1, :]
+    cc[2, :] = zcirca + coil1[2, :]
+    # orientation of the circumcenter with respect to the x-, y-, and z-axis
+    # coordinates
+    v = np.stack([cc[0, :].T, cc[1, :].T, cc[2, :].T]).T
+    vx = np.stack([np.zeros((N,)).T, cc[1, :].T, cc[2, :].T]).T
+    # on the x - axis
+    vy = np.stack([cc[0, :].T, np.zeros((N,)).T, cc[2, :].T]).T
+    # on the y - axis
+    vz = np.stack([cc[0, :].T, cc[1, :].T, np.zeros((N,)).T]).T
+    # on the z - axis
+    thetax, thetay = np.zeros((N,)) * np.nan, np.zeros((N,)) * np.nan
+    thetaz = np.zeros((N,)) * np.nan
+    for j in range(N):
+
+        # find the angles of two vectors opposing the axes
+        thetax[j] = np.arccos(np.dot(v[j, :], vx[j, :]) /
+                              (np.linalg.norm(v[j, :]) * np.linalg.norm(vx[j, :])))
+        thetay[j] = np.arccos(np.dot(v[j, :], vy[j, :]) /
+                              (np.linalg.norm(v[j, :]) * np.linalg.norm(vy[j, :])))
+        thetaz[j] = np.arccos(np.dot(v[j, :], vz[j, :]) /
+                              (np.linalg.norm(v[j, :]) * np.linalg.norm(vz[j, :])))
+
+        # convert to degrees
+        cc[3, j] = (thetax[j] * (180 / np.pi))
+        cc[4, j] = (thetay[j] * (180 / np.pi))
+        cc[5, j] = (thetaz[j] * (180 / np.pi))
+    return cc
+
+
+def ensure_iter(input):
+    if isinstance(input, basestring):
+        yield input
+    else:
+        try:
+            for item in input:
+                yield item
+        except TypeError:
+            yield input

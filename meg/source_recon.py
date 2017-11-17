@@ -27,10 +27,13 @@ import pandas as pd
 
 from joblib import Memory
 from conf_analysis.behavior import metadata
+from conf_analysis.meg import preprocessing
+
 memory = Memory(cachedir=metadata.cachedir, verbose=0)
 
 
 subjects_dir = '/home/nwilming/fs_subject_dir'
+trans_dir = '/home/nwilming/conf_meg/trans'
 plot_dir = '/home/nwilming/conf_analysis/plots/source'
 
 
@@ -57,22 +60,22 @@ def get_source_space(subject):
                                   add_dist=False)
 
 
-def get_trans(subject):
+def get_trans(subject, session):
     '''
     Return filename of transformation for a subject
     '''
-    subject = 'S%02i' % subject
-    return join(subjects_dir, subject + '-trans.fif')
+    file_ident = 'S%i-SESS%i' % (subject, session)
+    return join(trans_dir, file_ident + '-trans.fif')
 
 
 @memory.cache
-def get_info(subject):
+def get_info(subject, session):
     '''
     Return an info dict for a measurement from this subject.
     '''
-    subject = 'S%02i' % subject
-    filename = join(subjects_dir, subject + '-raw.fif')
-    return mne.io.read_raw_fif(filename).info
+    trans, fiducials, info = preprocessing.get_head_correct_info(
+        subject, session)
+    return info
 
 
 @memory.cache
@@ -88,16 +91,17 @@ def get_bem(subject):
 
 
 @memory.cache
-def get_leadfield(subject):
+def get_leadfield(subject, session):
     '''
     Compute leadfield with presets for this subject
     '''
     src = get_source_space(subject)
     bem = get_bem(subject)
-    trans = get_trans(subject)
+    trans = get_trans(subject, session)
+    info = get_info(subject, session)
 
     fwd = mne.make_forward_solution(
-        get_info(subject),
+        info,
         trans=trans,
         src=src,
         bem=bem,
@@ -105,8 +109,6 @@ def get_leadfield(subject):
         eeg=False,
         mindist=5.0,
         n_jobs=2)
-    #fwd_fixed = mne.convert_forward_solution(fwd, surf_ori=True,
-    #                                         force_fixed=True)
     return fwd, bem, fwd['src'], trans
 
 

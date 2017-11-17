@@ -11,31 +11,33 @@ from joblib import Memory
 
 
 sensors = dict(
-        all= lambda x: [ch for ch in x if ch.startswith('M')],
-        occipital= lambda x:[ch for ch in x if ch.startswith('MLO') or ch.startswith('MRO')],
-        posterior= lambda x:[ch for ch in x if ch.startswith('MLP') or ch.startswith('MRP')],
-        central= lambda x:[ch for ch in x if ch.startswith('MLC')
-            or ch.startswith('MRC') or ch.startswith('MZC')],
-        frontal= lambda x:[ch for ch in x if ch.startswith('MLF')
-            or ch.startswith('MRF') or ch.startswith('MZF')],
-        temporal= lambda x:[ch for ch in x if ch.startswith('MLT') or ch.startswith('MRT')])
+    all=lambda x: [ch for ch in x if ch.startswith('M')],
+    occipital=lambda x: [ch for ch in x if ch.startswith(
+        'MLO') or ch.startswith('MRO')],
+    posterior=lambda x: [ch for ch in x if ch.startswith(
+        'MLP') or ch.startswith('MRP')],
+    central=lambda x: [ch for ch in x if ch.startswith('MLC')
+                       or ch.startswith('MRC') or ch.startswith('MZC')],
+    frontal=lambda x: [ch for ch in x if ch.startswith('MLF')
+                       or ch.startswith('MRF') or ch.startswith('MZF')],
+    temporal=lambda x: [ch for ch in x if ch.startswith('MLT') or ch.startswith('MRT')])
 
 
 def clf():
     return pipeline.Pipeline([
-            ('scale', skpre.StandardScaler()),
-            ('PCA', decomposition.PCA(n_components=.99)),
-            ('SVM', svm.LinearSVC())])
+        ('scale', skpre.StandardScaler()),
+        ('PCA', decomposition.PCA(n_components=.99)),
+        ('SVM', svm.LinearSVC())])
+
 
 def cv(x):
     return cross_validation.StratifiedShuffleSplit(x, n_iter=2, test_size=0.2)
 
 
-
 def decode(classifier, data, labels, train_time, predict_times,
-        cv=cross_validation.StratifiedKFold, collapse=np.mean,
-        relabel_times=False,
-        obs_average=None):
+           cv=cross_validation.StratifiedKFold, collapse=np.mean,
+           relabel_times=False,
+           obs_average=None):
     '''
     Apply a classifier to data [epochs x channels xtime] and predict labels with cross validation.
     Train classifier from data at data[:, :, train_time] and apply to all
@@ -71,21 +73,21 @@ def decode(classifier, data, labels, train_time, predict_times,
     # With only one label no decoding is possible.
     if len(np.unique(labels)) == 1:
         return pd.DataFrame({
-            'fold':[np.nan],
-            'train_time':[np.nan],
-            'predict_time':[np.nan],
-            'accuracy':[np.nan]
-            })
+            'fold': [np.nan],
+            'train_time': [np.nan],
+            'predict_time': [np.nan],
+            'accuracy': [np.nan]
+        })
 
     # Need at least two samples per class
     for label in np.unique(labels):
-        if sum(labels==label)<2:
+        if sum(labels == label) < 2:
             return pd.DataFrame({
-                'fold':[np.nan],
-                'train_time':[np.nan],
-                'predict_time':[np.nan],
-                'accuracy':[np.nan]
-                })
+                'fold': [np.nan],
+                'train_time': [np.nan],
+                'predict_time': [np.nan],
+                'accuracy': [np.nan]
+            })
 
     for i, (train_indices, test_indices) in enumerate(cv(labels)):
         np.random.shuffle(train_indices)
@@ -93,9 +95,9 @@ def decode(classifier, data, labels, train_time, predict_times,
         clf = classifier()
         if len(np.unique(labels)) == 2:
             l1, l2 = np.unique(labels)
-            l1 = train_indices[labels[train_indices]==l1]
-            l2 = train_indices[labels[train_indices]==l2]
-            if len(l1)>len(l2):
+            l1 = train_indices[labels[train_indices] == l1]
+            l2 = train_indices[labels[train_indices] == l2]
+            if len(l1) > len(l2):
                 l1 = l1[:len(l2)]
             else:
                 l2 = l2[:len(l1)]
@@ -105,40 +107,44 @@ def decode(classifier, data, labels, train_time, predict_times,
         train_time_marker = train_time
         if len(train.shape) == 3:
             if collapse == 'reshape':
-                train = train.copy().reshape((train.shape[0], np.prod(train.shape[1:])))
+                train = train.copy().reshape(
+                    (train.shape[0], np.prod(train.shape[1:])))
             else:
                 train = collapse(train, axis=2)
-            train_time_marker = train_time.stop-1
+            train_time_marker = train_time.stop - 1
 
         train_labels = labels[train_indices]
         if obs_average is not None:
             train, train_labels = obs_average(train, train_labels)
 
-        clf=clf.fit(train, train_labels)
+        clf = clf.fit(train, train_labels)
 
         for pt in predict_times:
-            #print pt
+            # print pt
             fold_result = {}
             test = data[test_indices, :, pt]
             if len(test.shape) == 3:
                 if collapse == 'reshape':
-                    test = test.reshape((test.shape[0], np.prod(test.shape[1:])))
+                    test = test.reshape(
+                        (test.shape[0], np.prod(test.shape[1:])))
                 else:
                     test = collapse(test, axis=2)
-                fold_result['predict_time'] = pt.stop-1
+                fold_result['predict_time'] = pt.stop - 1
             else:
                 fold_result['predict_time'] = pt
             fold_result['train_time'] = train_time_marker
 
             if relabel_times is not False:
-                fold_result['train_time'] = relabel_times[fold_result['train_time']]
-                fold_result['predict_time'] = relabel_times[fold_result['predict_time']]
-            #print 'Test:', test.shape
+                fold_result['train_time'] = relabel_times[
+                    fold_result['train_time']]
+                fold_result['predict_time'] = relabel_times[
+                    fold_result['predict_time']]
+            # print 'Test:', test.shape
             test_labels = labels[test_indices]
             if obs_average is not None:
                 test, test_labels = obs_average(test, test_labels)
             fold_result.update({
-                'fold':i,
+                'fold': i,
                 'accuracy': clf.score(test, test_labels)})
             results.append(fold_result)
     return pd.DataFrame(results)
@@ -151,21 +157,22 @@ def observation_average(train, labels, N=5):
     Works only for 2 classes at the moment.
     '''
     a, b = np.unique(labels)
+
     def foo(train, label, N):
         acc, lbl = [], []
         index = np.arange(train.shape[0])
-        for idx in np.unique(index//N):
-            acc.append(train[index==idx,:].mean(0))
-            lbl.append(label[index==idx].mean())
+        for idx in np.unique(index // N):
+            acc.append(train[index == idx, :].mean(0))
+            lbl.append(label[index == idx].mean())
         return np.vstack(acc), np.array(lbl)
 
-    ta, la = foo(train[labels==a,:], labels[labels==a], N)
-    tb, lb = foo(train[labels==b,:], labels[labels==b], N)
+    ta, la = foo(train[labels == a, :], labels[labels == a], N)
+    tb, lb = foo(train[labels == b, :], labels[labels == b], N)
     return np.vstack([ta, tb]), np.concatenate((la, lb))
 
 
 def generalization_matrix(epochs, labels, dt, slicelen=None,
-    classifier=clf, cv=cv, slices=False, baseline=None, obs_average=None):
+                          classifier=clf, cv=cv, slices=False, baseline=None, obs_average=None):
     '''
     Get data for a generalization across time matrix.
 
@@ -188,26 +195,27 @@ def generalization_matrix(epochs, labels, dt, slicelen=None,
     data = epochs._data
     sfreq = epochs.info['sfreq']
 
-    tlen = data.shape[-1]/(float(sfreq)/1000.)
-    nsteps = np.around(float(tlen)/dt)
-    stepsize= max(1, int(data.shape[-1]/nsteps))
+    tlen = data.shape[-1] / (float(sfreq) / 1000.)
+    nsteps = np.around(float(tlen) / dt)
+    stepsize = max(1, int(data.shape[-1] / nsteps))
     steps = np.arange(0, data.shape[-1], stepsize)
 
     relabel_times = dict((k, v) for k, v in enumerate(epochs.times))
 
     if slices:
-        slicelen = int(round(slicelen/(1000./sfreq)))
-        steps = [slice(s, s+slicelen) for s in steps if (s+slicelen) < data.shape[-1]]
+        slicelen = int(round(slicelen / (1000. / sfreq)))
+        steps = [slice(s, s + slicelen)
+                 for s in steps if (s + slicelen) < data.shape[-1]]
         decoder = lambda x: decode(clf, data, labels, x, steps, cv=cv,
-                collapse=slices, relabel_times=relabel_times, obs_average=obs_average)
+                                   collapse=slices, relabel_times=relabel_times, obs_average=obs_average)
     else:
         decoder = lambda x: decode(clf, data, labels, x, steps, cv=cv,
-                relabel_times=relabel_times, obs_average=obs_average)
+                                   relabel_times=relabel_times, obs_average=obs_average)
     return pd.concat([decoder(tt) for tt in steps])
 
 
 def apply_decoder(func, snum, epoch, label, channels=sensors['all'],
-    label_func=None):
+                  label_func=None):
     '''
     Apply a decoder function to epochs from a subject and decode 'label'.
 
@@ -227,11 +235,12 @@ def apply_decoder(func, snum, epoch, label, channels=sensors['all'],
     Which column in the metadata to use for decoding. Labels will recoded to
     0-(num_classes-1).
     '''
-    s, m = preprocessing.get_epochs_for_subject(snum, epoch) #This will cache.
+    s, m = preprocessing.get_epochs_for_subject(
+        snum, epoch)  # This will cache.
     s = s.pick_channels(channels(s.ch_names))
     times = s.times
     # Add confidence labels
-    idx = m.response==1
+    idx = m.response == 1
     r1c = m.confidence.copy()
     r1c[~idx] = np.nan
     rm1c = m.confidence.copy()
@@ -256,7 +265,8 @@ def apply_decoder(func, snum, epoch, label, channels=sensors['all'],
     # Sort order index to align epochs with labels.
     m = m.loc[s.events[:, 2]]
     if not all(s.events[:, 2] == m.index.values):
-        raise RuntimeError('Indices of epochs and meta do not match! Task: ' + str(snum) + ' ' + epoch + ' ' + label)
+        raise RuntimeError('Indices of epochs and meta do not match! Task: ' +
+                           str(snum) + ' ' + epoch + ' ' + label)
     # Recode labels to 0-(n-1)
 
     labels = m.loc[:, label]
@@ -264,7 +274,6 @@ def apply_decoder(func, snum, epoch, label, channels=sensors['all'],
         labels = label_func(labels)
     labels = skpre.LabelEncoder().fit(labels).transform(labels)
     return func(s, labels)
-
 
 
 def to4d(a):
@@ -284,8 +293,8 @@ def toindex(x):
 
 
 def tfr_apply_decoder(func, snum, epoch, label,
-    channels=sensors['all'], freq=(0, 150),
-    label_func=lambda x:x, time=(-0.5, 1.25), baseline=(-0.5, 0)):
+                      channels=sensors['all'], freq=(0, 150),
+                      label_func=lambda x: x, time=(-0.5, 1.25), baseline=(-0.5, 0)):
     '''
     Apply a decoder function to TFR from a subject and decode 'label'.
 
@@ -294,9 +303,9 @@ def tfr_apply_decoder(func, snum, epoch, label,
         See apply_decoder
     '''
     s, m = tfr_analysis.get_subject(snum, freq, channels, time[0],  time[1],
-                    epoch=epoch)
-    s = s.groupby(level='channel').apply(lambda x: tfr_analysis.avg_baseline(x, baseline=baseline))
-
+                                    epoch=epoch)
+    s = s.groupby(level='channel').apply(
+        lambda x: tfr_analysis.avg_baseline(x, baseline=baseline))
 
     m = m.loc[~np.isnan(label_func(m[label])), :].sort_index()
     label_index = list(np.sort(m.index.values))
@@ -324,13 +333,13 @@ def tfr_apply_decoder(func, snum, epoch, label,
     labels = skpre.LabelEncoder().fit(labels).transform(labels)
     #s[labels==1, :, :, :] = np.random.randn(*s[labels==1, :, :, :].shape) + 1
     #s[labels==0, :, :, :] = np.random.randn(*s[labels==0, :, :, :].shape) - 1
-    #return s, indices, labels
+    # return s, indices, labels
     return func((s, indices), labels)
 
 
 def tfr_generalization_matrix(epochs, labels,
-    classifier=clf, cv=cv, dt = 1, slices='reshape', baseline=None,
-    relabel_times=False):
+                              classifier=clf, cv=cv, dt=1, slices='reshape', baseline=None,
+                              relabel_times=False):
     '''
     Get data for a generalization across time matrix.
 
@@ -342,11 +351,11 @@ def tfr_generalization_matrix(epochs, labels,
     data = epochs[0]
     h, c, f, t = data.shape
 
-    data = data.reshape((h, c*f, t))
-    steps = [slice(t, t+dt) for t in range(data.shape[-1]-dt)]
+    data = data.reshape((h, c * f, t))
+    steps = [slice(t, t + dt) for t in range(data.shape[-1] - dt)]
     print(data.shape)
     print(steps)
-    relabel_times = dict((v, k) for k,v in indexers[-1].items())
+    relabel_times = dict((v, k) for k, v in indexers[-1].items())
     decoder = lambda x: decode(clf, data, labels, x, [x], cv=cv,
-        relabel_times=relabel_times)
+                               relabel_times=relabel_times)
     return pd.concat([decoder(tt) for tt in steps])

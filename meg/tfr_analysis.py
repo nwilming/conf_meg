@@ -2,6 +2,7 @@ import sys
 sys.path.append('/home/nwilming/')
 import glob
 from conf_analysis.behavior import metadata
+from conf_analysis.meg import preprocessing
 
 import mne
 import pandas as pd
@@ -45,6 +46,20 @@ def get_subject(snum, freq, channel, tmin, tmax,
     avg.sort_index(inplace=True)
     meta = pd.concat([pd.read_hdf(f) for f in metafiles])
     return avg, meta
+
+
+def get_sub_sess_object(snum, session, freq, channel, tmin, tmax,
+                        epoch='stimulus'):
+    filenames = glob.glob(
+        '/home/nwilming/conf_meg/S%i/S*S%i*_%stfr.hdf5' % (snum,
+                                                           session,
+                                                           epoch))
+
+    info = preprocessing.get_head_correct_info(snum, session)
+
+    avg = tfr.get_tfr_object(info, filenames, freq=freq, channel=channel,
+                             tmin=tmin, tmax=tmax)
+    return avg
 
 
 def baseline(avg, id_base):

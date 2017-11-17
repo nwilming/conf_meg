@@ -6,6 +6,29 @@ from conf_analysis.meg import source_recon as sr, preprocessing, dics
 import zlib
 import cPickle as pickle
 from joblib import dump, load
+import numpy as np
+import json
+
+def get_subject(subjid, F):
+    '''
+    Fetches all available data for a subject.
+    '''
+    F, _, _ = get_smoothing(F)
+
+    filename = '/home/nwilming/conf_meg/S%i-%03.2iHz-power.memmap' % (
+        subjid, F)
+    meta = dics.get_metas_for_tfr(subjid)
+    sp_shape = dics.output_shape(subjid, meta, (-0.75, 1.4), (F, F))
+    source_pow = np.memmap(filename, dtype='float32', mode='r',
+                           shape=sp_shape)
+    forward, bem, source, trans = sr.get_leadfield(subjid)
+    verts = [source[0]['vertno'], source[1]['vertno']]
+    # Also load sidecar
+    sidecar = json.load(open(filename.replace('memmap', 'sidecar.json')))
+    times = sidecar['times']
+    index = sidecar['index']
+    index = dict((int(e), i) for e, i in index.iteritems())
+    return F, meta, source_pow, forward, verts, times, index
 
 
 def csdfilename(subject, hz, compression='.z'):
@@ -20,7 +43,7 @@ def get_smoothing(F):
     return tfr.get_smoothing(F, **params)
 
 
-def make_csds(subjid, F):
+def make_csd(subjid, F):
     print('Starting task:', subjid)
     epochs, meta = preprocessing.get_epochs_for_subject(subjid, 'stimulus')
     epochs.times = epochs.times - 0.75
@@ -29,26 +52,37 @@ def make_csds(subjid, F):
     tfrepochs = dics.get_tfr(subjid, n_blocks=1)
     F, t_smooth, f_smooth = get_smoothing(F)
 
-    f, filters = dics.make_csds(epochs, tfrepochs.freqs, F,
-                                tfrepochs.times, f_smooth,
-                                t_smooth, subjid,
-                                n_jobs=8)
-    filters = dict((f, filt) for f, filt in filters)
+    f, noise, data = dics.make_csds(epochs, F,
+                                    [0, 1], [-0.5, 0], f_smooth, subjid)
 
     filename = csdfilename(subjid, F)
-    dump(filters, filename)
+    dump({f: (noise, data)}, filename)
 
 
 def apply_filter(subjid, F):
     F, t_smooth, f_smooth = get_smoothing(F)
     #tfrepochs = dics.get_tfr(subjid)
     meta = dics.get_metas_for_tfr(subjid)
-    filtername = csd_filename(subjid, F)
+    filtername = csdfilename(subjid, F)
     filters = load(filtername)
+    noise_csd, data_csd = filters[F]
+
     filename = '/home/nwilming/conf_meg/S%i-%03.2iHz-power.memmap' % (
         subjid, F)
-    power = dics.apply_dics_filter(
-        filters, F, meta, filename, subjid, n_jobs=12)
+
+    sp, epoch_order = dics.apply_dics_filter(
+        data_csd, F, meta, filename, subjid, n_jobs=12)
+    # epoch order is a list of (index, epoch) tuples
+    
+    index = np.concatenate([i for i, e, t in epoch_order])
+    epochs = np.concatenate([e for i, e, t in epoch_order])
+
+    times = epoch_order[0][-1]
+    epoch_order = dict((e, i) for e, i in zip(epochs, index))
+    epoch_order = {'index':epoch_order, 'times':times}
+    import json
+    sidecar = filename.replace('memmap', 'sidecar.json')
+    json.dump(epoch_order, open(sidecar, 'w'))
 
 
 def convert_to_df(sujid, F):
@@ -61,7 +95,7 @@ def convert_to_df(sujid, F):
 def execute(x):
     subjid, F, task = x
     if (task is None) or (task == 'make'):
-        make_csds(subjid, F)
+        make_csd(subjid, F)
     if (task is None) or (task == 'apply'):
         apply_filter(subjid, F)
 
