@@ -2,7 +2,7 @@ import mne
 import numpy as np
 import matplotlib
 import pylab as plt
-
+from glob import glob
 from conf_analysis.behavior import metadata
 from conf_analysis.meg import preprocessing, localizer
 from conf_analysis.meg import tfr_analysis as ta
@@ -33,29 +33,27 @@ def overview_figure(avg):
     avg.plot([chan], axes=plt.gca())
 
 
-def plot_stcs(stcs, view=['med'], vmin=1, vmax=7.5):
+def plot_stcs(stcs, subject, view=['med'], vmin=1, vmax=7.5):
     gs = matplotlib.gridspec.GridSpec(len(stcs), 2)
     lim = {'kind': 'value', 'pos_lims': np.linspace(vmin, vmax, 3)}
+    left, right = [], []
     for i, s in enumerate(stcs):
-        brain2 = s.plot(subject='S02',
+        brain2 = s.plot(subject=subject,
                         subjects_dir='/Users/nwilming/u/freesurfer_subjects/',
                         hemi='lh',
                         views=view, clim=lim, size=(500, 250))
-        m = brain2.screenshot_single()
-        plt.subplot(gs[i, 0])
-        plt.imshow(m)
-        plt.xticks([])
-        plt.yticks([])
+        left.append(brain2.screenshot_single())
+
     for i, s in enumerate(stcs):
-        brain2 = s.plot(subject='S02',
+        print i, s
+        brain2 = s.plot(subject=subject,
                         subjects_dir='/Users/nwilming/u/freesurfer_subjects/',
                         hemi='rh',
                         views=view, clim=lim, size=(500, 250))
-        m = brain2.screenshot_single()
-        plt.subplot(gs[i, 1])
-        plt.imshow(m)
-        plt.xticks([])
-        plt.yticks([])
+        right.append(brain2.screenshot_single())
+
+    return np.concatenate(
+        (np.concatenate(left), np.concatenate(right)), 1)
 
 
 def get_stcs(subject):
@@ -65,7 +63,7 @@ def get_stcs(subject):
         s = zscore(s)
         s = avg(s)
         stcs.append(s)
-    return s
+    return stcs
 
 
 def get(subject, session):
@@ -76,7 +74,7 @@ def get(subject, session):
     if stcs.times[0] <= -1.5:
         times = stcs.times + 0.75
         stcs = mne.SourceEstimate(
-            stcs.data, stcs.vertices, times[0], diff(times)[0])
+            stcs.data, stcs.vertices, times[0], np.diff(times)[0])
     return stcs
 
 
@@ -87,11 +85,11 @@ def zscore(stc, baseline=(-0.25, 0)):
     s = data[:, idbase].std(1)[:, np.newaxis]
     data = (data - m) / s
     stc.data = data
-
-
- def avg(stc):
-    id_t = (0.1<stc.times) & (stc.times <.5)
-    d = stc.data[:, id_t].mean(1)[:, newaxis]
-    stc = mne.SourceEstimate(d, stc.vertices, tmin=0, tstep=1)
     return stc
+
+
+def avg(stc):
+    id_t = (0.1 < stc.times) & (stc.times < .5)
+    d = stc.data[:, id_t].mean(1)[:, np.newaxis]
+    stc = mne.SourceEstimate(d, stc.vertices, tmin=0, tstep=1)
     return stc
