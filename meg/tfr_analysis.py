@@ -55,7 +55,7 @@ def get_sub_sess_object(snum, session, freq, channel, tmin, tmax,
                                                            session,
                                                            epoch))
 
-    info = preprocessing.get_head_correct_info(snum, session)
+    trans, fiducials, info = preprocessing.get_head_correct_info(snum, session)
 
     avg = tfr.get_tfr_object(info, filenames, freq=freq, channel=channel,
                              tmin=tmin, tmax=tmax)

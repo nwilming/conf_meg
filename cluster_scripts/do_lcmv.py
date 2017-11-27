@@ -2,31 +2,91 @@ import sys
 sys.path.append('/home/nwilming/')
 from conf_analysis.meg import lcmv
 import numpy as np
+import datetime
+import os
+from pymeg import tfr
 
-
-def lcmvfilename(subject, session):
-    filename = '/home/nwilming/conf_meg/S%i-SESS%i-lcmv.hdf' % (
-        subject, session)
+def lcmvfilename(subject, session, F=None):
+    if F is None:
+        filename = '/home/nwilming/conf_meg/S%i-SESS%i-lcmv.hdf' % (
+            subject, session)
+    else:
+        filename = '/home/nwilming/conf_meg/S%i-SESS%i-F%f-lcmv.hdf' % (
+            subject, session, np.around(F, 2))
     return filename
+
+
+def modification_date(filename):
+    t = os.path.getmtime(filename)
+    return datetime.datetime.fromtimestamp(t)
 
 
 def execute(subjid, session, kws):
     if 'lowest_freq' not in kws.keys():
         kws['lowest_freq'] = None
-    epochs, estcs, localizer, lstcs = lcmv.extract(subjid, session, **kws)
-    filename = lcmvfilename(subjid, session)
+    p = None
+    F = None
+    if 'F' in kws.keys() and kws['F'] == 'determine':
+        cycles, tb = 8., 2.
+        avg = lcmv.load_tfr(subjid, session)
+        idx = lcmv.select_channels_by_gamma(avg)
+        F_base = lcmv.freq_from_tfr(avg, idx)
+        for F in [F_base - 5., F_base, F_base + 5.]:
+            p = lcmv.get_power_estimator(F, cycles, tb, sf=600.)
+            _, _, ts, fs = tfr.taper_data(
+                F, cycles=cycles, time_bandwidth=tb)[0]
+            lowest_freq = F - 1.5 * fs
+            run(subjid, session, p, lowest_freq, F)
+    elif 'F' in kws.keys():
+        params = tfr.params_from_json(
+            '/home/nwilming/conf_analysis/required/all_tfr150_parameters.json')
+        F = float(kws['F'])
+        foi, cycles, tb = params['foi'], params[
+            'cycles'], params['time_bandwidth']
+        fidx = np.argmin(np.abs(np.array(foi) - F))
+        F = foi[fidx]
+        c = cycles[fidx]
+        print('Constructing TFR filter with F=',
+              F, 'cycles', c, 'time_bandwidth', tb)
+        p = lcmv.get_power_estimator(F, c, tb, sf=600.)
+        del kws['F']
+        run(subjid, session, p, kws['lowest_freq'], F)
+    else:
+        run(subjid, session, None, kws['lowest_freq'], F)
+    return epochs
+
+
+def run(subjid, session, p, lowest_freq, F):
+    accum = lcmv.AccumSR(subjid, session,
+                         lowest_freq, F, prefix='')
+    epochs = lcmv.extract(
+        subjid, session, func=p, accumulator=accum, lowest_freq=lowest_freq)
+    filename = lcmvfilename(subjid, session, F=F)
     if epochs is not None:
         epochs.to_hdf(filename, 'epochs')
-    #if localizer is not None:
-    #    localizer.to_hdf(filename, 'localizer')
-    print estcs
-    lcmv.make_averaged_sr(estcs, subjid, session, kws['lowest_freq'], prefix='')
-    #lcmv.make_averaged_sr(lstcs, subjid, session, kws['lowest_freq'], prefix='loc')
+    accum.save_averaged_sr()
+    return epochs
 
 
 def list_tasks(**kws):
-    for f in [1, 2]:  #, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
-        for session in [0,1,2,3]:
+    for f in [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
+        for session in [0, 1, 2, 3]:
+            if 'older_than' in kws.keys():
+                older_than = kws['older_than']
+                del kws['older_than']
+                filename = lcmvfilename(f, session)
+                if len(older_than) == 8:
+                    older_than = datetime.datetime.strptime(
+                        older_than, '%Y%m%d')
+                else:
+                    older_than = datetime.datetime.strptime(
+                        older_than, '%Y%m%d%H%M')
+                try:
+                    mod_date = modification_date(filename)
+                    if mod_date > older_than:
+                        continue
+                except OSError:
+                    pass
             yield f, session, kws
 
 

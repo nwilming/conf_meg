@@ -27,6 +27,7 @@ from conf_analysis.behavior import empirical
 from conf_analysis.behavior import metadata
 from itertools import product
 from joblib import Memory
+from mne.transforms import apply_trans
 
 from pymeg import preprocessing as pymegprepr
 
@@ -213,54 +214,73 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
     from itertools import product
 
     if sessions is None:
-        sessions = range(5)
-
-    metas = [metadata.get_epoch_filename(snum, session, block, epoch, 'meta')
-             for session, block in product(list(range(4)), ensure_iter(sessions))
-             if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'meta'))]
-    data = [metadata.get_epoch_filename(snum, session, block, epoch, 'fif')
-            for session, block in product(list(range(4)), ensure_iter(sessions))
-            if os.path.isfile(metadata.get_epoch_filename(snum, session, block, epoch, 'fif'))]
-    assert len(metas) == len(data)
-    meta = pymegprepr.load_meta(metas)
+        sessions = range(4)
+    data = []
+    meta = get_meta_for_subject(snum, epoch, sessions=sessions)
+    for session, block in product(ensure_iter(sessions), list(range(5))):
+        filename = metadata.get_epoch_filename(
+            snum, session, block, epoch, 'fif')
+        if os.path.isfile(filename):
+            data.append(filename)
+    assert len(data) == len(list(ensure_iter(sessions)))*5
     data = pymegprepr.load_epochs(data)
-    return pymegprepr.concatenate_epochs(data, meta)
+
+    assert len(meta) == sum([d._data.shape[0] for d in data])
+    return pymegprepr.concatenate_epochs(data, [meta])
 
 
-def get_meta_for_subject(snum, epoch):
-    metas = [metadata.get_epoch_filename(snum, session, block, epoch, 'meta')
-             for session, block in product(list(range(4)), list(range(5)))
-             if os.path.isfile(
-                 metadata.get_epoch_filename(
-                     snum, session, block, epoch, 'meta'))]
+def get_meta_for_subject(snum, epoch, sessions=None):
+    if sessions is None:
+        sessions = range(5)
+    metas = []
+    for session, block in product(ensure_iter(sessions), list(range(5))):
+        filename = metadata.get_epoch_filename(
+            snum, session, block, epoch, 'meta')
+
+        if os.path.isfile(filename):
+            metas.append(filename)
+
     meta = pymegprepr.load_meta(metas)
     return pd.concat(meta)
 
 
 @memory.cache
-def get_head_correct_info(subject, session):
+def get_head_correct_info(subject, session, N=-1):
     filename = metadata.get_raw_filename(subject, session)
     trans = get_ctf_trans(filename)
-    fiducials = get_ref_head_pos(subject, session, trans)
+    fiducials = get_ref_head_pos(subject, session, trans, N=N)
     raw = mne.io.ctf.read_raw_ctf(filename)
     info = replace_fiducials(raw.info, fiducials)
     return trans, fiducials, info
 
 
 def make_trans(subject, session):
+    import os
+    import time
     trans, fiducials, info = get_head_correct_info(subject, session)
     hs_ref = '/home/nwilming/conf_meg/trans/S%i-SESS%i.fif' % (
         subject, session)
     mne.io.meas_info.write_info(hs_ref, info)
+    trans_name = ('/home/nwilming/conf_meg/trans/S%i-SESS%i-trans.fif' %
+                  (subject, session))
+    if os.path.isfile(trans_name):
+        print('Removing previous trans file')
+        os.remove(trans_name)
+    print '--------------------------------'
     print('Please save trans file as:')
-    print('/home/nwilming/conf_meg/trans/S%i-SESS%i-trans.fif' %
-          (subject, session))
-    mne.gui.coregistration(inst=hs_ref, subject='S%02i' % subject,
-                           subjects_dir='/home/nwilming/fs_subject_dir')
+    print(trans_name)
+    cmd = 'mne coreg --high-res-head -d %s -s %s -f %s' % (
+        '/home/nwilming/fs_subject_dir', 'S%02i' % subject, hs_ref)
+    print cmd
+    os.system(cmd)
+    # mne.gui.coregistration(inst=hs_ref, subject='S%02i' % subject,
+    #                       subjects_dir='/home/nwilming/fs_subject_dir')
+    while not os.path.isfile(trans_name):
+        time.sleep(1)
 
 
 @memory.cache
-def get_ref_head_pos(subject, session,  trans, N=10):
+def get_ref_head_pos(subject, session,  trans, N=-1):
     from mne.transforms import apply_trans
     data = metadata.get_epoch_filename(subject, session, 0, 'stimulus', 'fif')
     data = pymegprepr.load_epochs([data])[0]
@@ -312,6 +332,25 @@ def head_movement(epochs):
         cc = circumcenter(x, y, z)
         ccs.append(cc)
     return np.stack(ccs)
+
+
+@memory.cache
+def get_head_loc(subject, session):
+    epochs, meta = get_epochs_for_subject(
+        subject, 'stimulus', sessions=[session])
+    cc = head_loc(epochs)
+    trans, fiducials, info = get_head_correct_info(subject, session)
+    nose_coil = np.concatenate([c[0] for c in cc], -1)
+    left_coil = np.concatenate([c[1] for c in cc], -1)
+    right_coil = np.concatenate([c[2] for c in cc], -1)
+    nose_coil = apply_trans(trans['t_ctf_dev_dev'], nose_coil.T)
+    left_coil = apply_trans(trans['t_ctf_dev_dev'], left_coil.T)
+    right_coil = apply_trans(trans['t_ctf_dev_dev'], right_coil.T)
+
+    nose_coil = (nose_coil**2).sum(1)**.5
+    left_coil = (left_coil**2).sum(1)**.5
+    right_coil = (right_coil**2).sum(1)**.5
+    return nose_coil, left_coil, right_coil
 
 
 def head_loc(epochs):

@@ -7,16 +7,29 @@ import seaborn as sns
 from joblib import Parallel, delayed
 from scipy.ndimage import gaussian_filter
 from joblib import Memory
+from glob import glob
+from sklearn import cluster, neighbors
+from sklearn.metrics import pairwise
+from conf_analysis.meg import tfr_analysis as ta
 
 memory = Memory(cachedir=metadata.cachedir)
 
 
-def get_power(subject, F):
-    df = pd.read_hdf(
-        '/home/nwilming/conf_meg/S%i-%03iHz-power.labeled.hdf5' % (subject, F))
-    df = df.reset_index()
-    df.columns = ['trial', 'time'] + list(df.columns[2:])
-    df = df.set_index(['time', 'trial'])
+def get_power(subject, F, decim=3):
+    files = glob('/home/nwilming/conf_meg/S%i-SESS*-F%i*-lcmv.hdf' %
+                 (subject, F))
+    df = pd.concat([pd.read_hdf(f) for f in files])
+
+    if decim is not None:
+        def decim_func(df, x):
+            df = df.reset_index().set_index('time')
+            df = df.sort_index()
+            return df.loc[slice(0, len(df), x)]
+        df = df.groupby('trial').apply(lambda x: decim_func(x, decim))
+        del df['trial']
+    df = df.reset_index().set_index(['time', 'trial'])
+    df = combine_areas(df, hemi=True)
+
     meta = preprocessing.get_meta_for_subject(subject, 'stimulus')
     return df, meta
 
@@ -109,8 +122,9 @@ def sample_aligned_power(df, meta, area):
     Create a dataframe that has contrast as index and time in the colums.
     time is aligned to sample onset.
     '''
-    darea = pd.pivot_table(df, values=area,
+    darea = pd.pivot_table(df.reset_index(), values=area,
                            index='trial', columns='time')
+    #darea = np.log10(darea)
     darea = darea.subtract(darea.loc[:, -0.25:0].mean(1), 'index')
     darea = darea.subtract(darea.mean(0))
     cvals = np.vstack(meta.loc[darea.index.values, 'contrast_probe'])
@@ -140,17 +154,15 @@ def plot_sample_aligned_power(stuff, edges=[0, 0.5, 1], ax=None):
 def plot_sample_aligned_power_all_areas(df, meta, edges):
     import matplotlib
     gs = matplotlib.gridspec.GridSpec(5, 4)
-    areas = ['V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d',
-             'hV4', 'VO2', 'PHC1', 'PHC2',
-             'TO1', 'LO1', 'LO2', 'V3A', 'IPS0', 'IPS1', 'IPS3',
-             'IPS4', 'IPS5', 'FEF']
+    areas = df.columns
     for i, area in enumerate(areas):
         row, col = np.mod(i, 5), i // 5
         plt.subplot(gs[row, col])
         s = sample_aligned_power(df, meta, area)
         plot_sample_aligned_power(s, edges, ax=plt.gca())
-        # plt.title(area)
+        plt.title(area)
         plt.axvline(0, color='k', alpha=0.5)
+        # plt.set_yscale('log')
         if row == 4:
             plt.xticks([0, 0.2, 0.4])
             plt.xlabel('')
@@ -159,11 +171,11 @@ def plot_sample_aligned_power_all_areas(df, meta, edges):
             plt.xlabel('time')
         if col == 0:
             plt.ylabel('Power')
-            plt.yticks([-5, 0, 5])
+            #plt.yticks([-5, 0, 5])
         else:
             plt.ylabel('')
-            plt.yticks([-5, 0, 5], [])
-        plt.ylim([-10, 10])
+            #plt.yticks([-5, 0, 5], [])
+        #plt.ylim([-10, 10])
         plt.legend([])
         plt.text(0, 7.5, area)
     plt.legend(bbox_to_anchor=(1.0, 1.0))
@@ -172,17 +184,30 @@ def plot_sample_aligned_power_all_areas(df, meta, edges):
     return gs
 
 
-def combine_areas(df):
+def combine_areas(df, hemi=False):
     areas = ['V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d',
              'hV4', 'VO2', 'PHC1', 'PHC2',
              'TO1', 'LO1', 'LO2', 'V3A', 'IPS0', 'IPS1', 'IPS3',
              'IPS4', 'IPS5', 'FEF']
     res = []
-    for area in areas:
-        cols = [c for c in df.columns if area in c]
-        col = df.loc[:, cols].mean(1)
-        col.name = area
-        res.append(col)
+
+    def foo(df, areas, hemi=''):
+        res = []
+        for area in areas:
+            cols = [c for c in df.columns if (area in c)]
+            name = area + hemi
+            if len(cols) >= 1:
+                col = df.loc[:, cols].mean(1)
+                col.name = name
+                res.append(col)
+        return res
+    if hemi:
+        res.extend(
+            foo(df.loc[:, [x for x in df.columns if 'rh' in x]], areas, hemi='rh'))
+        res.extend(
+            foo(df.loc[:, [x for x in df.columns if 'lh' in x]], areas, hemi='lh'))
+    else:
+        res.extend(foo(df, areas))
 
     return pd.concat(res, axis=1)
 
@@ -202,3 +227,28 @@ def get_dfp_for_all_subs():
             saligned.loc[:, 'area'] = area
             frames.append(saligned)
     return frames
+
+
+def make_fir_row(times,
+                 event_times=np.arange(0, 1, 0.1),
+                 event_length=0.4,
+                 Hz=600):
+    ets = np.linspace(0, event_length, event_length * Hz)
+    # Make a single row for a FIR deconvolution
+    # Design matrix is #times x #event_length*Hz
+    dm = np.zeros((len(times), int(event_length * Hz)))
+    for i, t in enumerate(times):
+        for st in event_times:
+            if (st < t) or (t < st + event_length):
+                idx = np.argmin(abs(t - st - ets))
+                dm[i, idx] = 1
+    return dm
+
+
+def make_fir_dm(times):
+    template = make_fir_row(np.unique(times))
+    dm = np.zeros((len(times), template.shape[1]))
+    for i, t in enumerate(times):
+        idx = np.argmin(abs(times - t))
+        dm[i, :] = template[idx, :]
+    return dm

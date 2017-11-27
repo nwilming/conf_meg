@@ -260,7 +260,9 @@ def make_selection_plot2(power, clusters, ch_names, f_roi, freq_resp, dists, all
     plt.tight_layout()
 
 
-def plot_tfr(averages, picks):
+def plot_tfr(averages, picks, cmap='RdBu_r', vmin=-12, vmax=12,
+             mark_max=True, max_tmin=0.2):
+    vext = abs(vmin) if abs(vmin) > vmax else vmax
     import pylab as plt
     freq = averages.freqs
     times = averages.times
@@ -272,8 +274,19 @@ def plot_tfr(averages, picks):
     time_diff = np.diff(times) / 2. if len(times) > 1 else [0.0005]
     time_lims = np.concatenate([[times[0] - time_diff[0]], times[:-1] +
                                 time_diff, [times[-1] + time_diff[-1]]])
+
     time_mesh, freq_mesh = np.meshgrid(time_lims, freq_lims)
-    plt.pcolormesh(time_mesh, freq_mesh, averages.data[picks, :].mean(0))
+    data = averages.data[picks, :].mean(0)
+
+    plt.pcolormesh(time_mesh, freq_mesh, data,
+                   cmap=cmap, vmin=-vext, vmax=vext)
+    if mark_max:
+        idx = times > max_tmin
+        mx = freq[np.argmax(data, 0)]
+        plt.plot(times[idx], mx[idx], 'k')
+        mmx = np.around(np.mean(mx[idx]), 2)
+        plt.text(max_tmin, mmx+10, 'Mean Hz: %3.2f' % mmx)
+
     plt.xlim([time_lims[0], time_lims[-1]])
     plt.ylim([freq_lims[0], freq_lims[-1]])
 
