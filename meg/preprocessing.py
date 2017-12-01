@@ -222,7 +222,7 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
             snum, session, block, epoch, 'fif')
         if os.path.isfile(filename):
             data.append(filename)
-    assert len(data) == len(list(ensure_iter(sessions)))*5
+    #assert len(data) == len(list(ensure_iter(sessions)))*5
     data = pymegprepr.load_epochs(data)
 
     assert len(meta) == sum([d._data.shape[0] for d in data])

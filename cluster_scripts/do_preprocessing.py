@@ -15,10 +15,9 @@ def modification_date(filename):
     return datetime.datetime.fromtimestamp(t)
 
 
-def list_tasks(older_than='now', filter=None):
-    print(older_than)
-    if older_than == 'now':
-        print('Now')
+def list_tasks(**kws):
+
+    if 'older_than' not in kws.keys() or kws['older_than'] == 'now':        
         older_than = datetime.datetime.today()
     else:
         if len(older_than) == 8:
@@ -28,7 +27,7 @@ def list_tasks(older_than='now', filter=None):
 
     block_map = pickle.load(
         open('/home/nwilming/conf_analysis/meg/blockmap.pickle'))
-    for snum in range(1, 16):
+    for snum in range(1, 16):            
         for session in range(0, 4):
             map_blocks = dict((v, k)
                               for k, v in block_map[snum][session].items())
@@ -42,24 +41,24 @@ def list_tasks(older_than='now', filter=None):
                                  '/home/nwilming/conf_meg/S%i/SUB%i_S%i_B%i_response-epo.fif.gz' % (
                                      snum, snum, session, block_in_experiment),
                                  '/home/nwilming/conf_meg/S%i/SUB%i_S%i_B%i_feedback-epo.fif.gz' % (snum, snum, session, block_in_experiment)]
+                    if 'filter' in kws:
+                        if not any([kws['filter'] in f for f in filenames]):
+                            #print kws['filter'], filenames
+                            continue
                     try:
                         mod_dates = [modification_date(
                             filename) for filename in filenames]
 
                         if all([mod_date > older_than for mod_date in mod_dates]):
                             continue
-                        
+
                     except OSError as e:
                         print(e)
                         pass
                     yield (snum, session, block_in_raw, block_in_experiment)
 
 
-def execute(x):
+def execute(*x):
     print('Starting task:', x)
     res = preprocessing.one_block(*x)
     print('Ended task:', x)
-    # print 'Now doing TFR'
-    # for file in res[-1]:
-    #    do_tfr.execute(file)
-    # print 'Done with TFR'

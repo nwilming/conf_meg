@@ -6,13 +6,14 @@ import datetime
 import os
 from pymeg import tfr
 
-def lcmvfilename(subject, session, F=None):
-    if F is None:
-        filename = '/home/nwilming/conf_meg/S%i-SESS%i-lcmv.hdf' % (
-            subject, session)
-    else:
+
+def lcmvfilename(subject, session, F, tuning=None):
+    if tuning is None:
         filename = '/home/nwilming/conf_meg/S%i-SESS%i-F%f-lcmv.hdf' % (
             subject, session, np.around(F, 2))
+    else:
+        filename = '/home/nwilming/conf_meg/S%i-SESS%i-F%f-tune%i-lcmv.hdf' % (
+            subject, session, np.around(F, 2), tuning)
     return filename
 
 
@@ -30,13 +31,16 @@ def execute(subjid, session, kws):
         cycles, tb = 8., 2.
         avg = lcmv.load_tfr(subjid, session)
         idx = lcmv.select_channels_by_gamma(avg)
-        F_base = lcmv.freq_from_tfr(avg, idx)
-        for F in [F_base - 5., F_base, F_base + 5.]:
-            p = lcmv.get_power_estimator(F, cycles, tb, sf=600.)
+        F_base = np.around(lcmv.freq_from_tfr(avg, idx), 0)
+        tds = [-7.5, -5., -2.5, 0, 2.5, 5, 7.5]
+        for i, Fdelta in enumerate(tds):
+            Fact = F + Fdelta
+            print('F determined to be', Fact)
+            p = lcmv.get_power_estimator(Fact, cycles, tb, sf=600.)
             _, _, ts, fs = tfr.taper_data(
-                F, cycles=cycles, time_bandwidth=tb)[0]
-            lowest_freq = F - 1.5 * fs
-            run(subjid, session, p, lowest_freq, F)
+                Fact, cycles=cycles, time_bandwidth=tb)[0]
+            lowest_freq = Fact - 1.5 * fs
+            run(subjid, session, p, lowest_freq, Fact, tuning=i)
     elif 'F' in kws.keys():
         params = tfr.params_from_json(
             '/home/nwilming/conf_analysis/required/all_tfr150_parameters.json')
@@ -53,15 +57,14 @@ def execute(subjid, session, kws):
         run(subjid, session, p, kws['lowest_freq'], F)
     else:
         run(subjid, session, None, kws['lowest_freq'], F)
-    return epochs
 
 
-def run(subjid, session, p, lowest_freq, F):
+def run(subjid, session, p, lowest_freq, F, tuning=None):
     accum = lcmv.AccumSR(subjid, session,
                          lowest_freq, F, prefix='')
     epochs = lcmv.extract(
         subjid, session, func=p, accumulator=accum, lowest_freq=lowest_freq)
-    filename = lcmvfilename(subjid, session, F=F)
+    filename = lcmvfilename(subjid, session, F, tuning=tuning)
     if epochs is not None:
         epochs.to_hdf(filename, 'epochs')
     accum.save_averaged_sr()
