@@ -21,16 +21,16 @@ def get_freq_tuning(subject, tuning=1):
     stc_files = []
     frequencies = {}
     for sess in range(4):
-        fs = glob('/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-F*-lcmv.hdf' %
-                  (subject, sess))
+        fs = glob('/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-F*-tune%i-lcmv.hdf' %
+                  (subject, sess, tuning))
 
         def key(x):
             y = parse(x, ['F'])['F'][0]
             return int(y)
 
         fs.sort(key=key)
-        power_files += [fs[tuning]]
-        frequencies[sess] = key(fs[tuning])
+        power_files += fs
+        frequencies[sess] = key(fs[0])
         sstring = ('/home/nwilming/conf_meg/source_recon/SR_S%i_SESS%i_lF*_F%i*.stc' %
                    (subject, sess, frequencies[sess]))
         s = glob(sstring)
@@ -38,29 +38,19 @@ def get_freq_tuning(subject, tuning=1):
     return frequencies, power_files, stc_files
 
 
-def get_power(subject, session=None, decim=3, tuning=None, F=None):
+def get_power(subject, decim=3):
     '''
     Tuning determines which frequency to load
     '''
-    if (tuning is None) and (F is None):
-        raise RuntimeError(
-            'Either tuning or F must be set, but both are None.')
-    if tuning is not None:
-        freqs, files, _ = get_freq_tuning(subject, tuning=tuning)
-        if session is not None:
-            files = files[session]
-        print files
-    else:
-        files = []
-        for sess in range(4):
-            sstring = ('/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-F%i*-lcmv.hdf' %
-                       (subject, sess, F))
-            files.extend(glob(sstring))
+    sstring = ('/home/nwilming/conf_meg/sr_labeled/S%i-SESS*-lcmv.hdf'
+               % (subject))
+    files = glob(sstring)
     if len(files) == 0:
         raise RuntimeError(
-            'No files found for sub %i, session %i' % (subject, session))
+            'No files found for sub %i, session %i' % (subject))
     df = []
     for f in preprocessing.ensure_iter(files):
+        subject, session, F, tuning = find_numbers(f)
         d = pd.read_hdf(f)
         if d.time.min() < -0.75:
             d.time += 0.75
@@ -71,14 +61,27 @@ def get_power(subject, session=None, decim=3, tuning=None, F=None):
                 return df.iloc[slice(0, len(df), x)]
             d = d.groupby('trial').apply(lambda x: decim_func(x, decim))
             del d['trial']
-        d = d.reset_index().set_index(['time', 'trial'])
+        d.loc[:, 'subject'] = subject
+        d.loc[:, 'session'] = session
+        d.loc[:, 'F'] = F
+        d.loc[:, 'tune'] = tuning
+        d = d.reset_index().set_index(
+            ['time', 'trial', 'subject', 'session', 'F', 'tune'])
         d = combine_areas(d, hemi=True)
         df.append(d)
     df = pd.concat(df)
 
     meta = preprocessing.get_meta_for_subject(
-        subject, 'stimulus', sessions=session)
+        subject, 'stimulus')
     return df, meta
+
+
+def sample_aligned_power_AAA(df, meta, baseline=(-0.2, 0)):
+    cols = []
+    for area in df.columns:
+        col = sample_aligned_power(df, meta, area, baseline=baseline)
+        cols.append(col.set_index(['trial', 'contrast', 'sample', 'time']))
+    return pd.concat(cols, axis=1)
 
 
 def sample_aligned_power(df, meta, area, baseline=(-0.2, 0)):
@@ -110,22 +113,41 @@ def sample_aligned_power(df, meta, area, baseline=(-0.2, 0)):
     return pd.concat(stuff)
 
 
+def compute_tuning_index(sa, edges=[0, 0.4, 0.6, 1.]):
+    areas = sa.columns
+    sa = sa.reset_index()
+
+    k = sa.groupby(['time', pd.cut(sa.loc[:, 'contrast'], edges)]).mean()
+    del k['contrast']
+    del k['sample']
+    del k['trial']
+    res = {}
+    for area in areas:
+        kk = pd.pivot_table(k, index='contrast', columns='time',
+                            values=area).loc[:, 0:0.3]
+        low = kk.iloc[0, :]
+        high = kk.iloc[2, :]
+        time = low.index.values
+        res[area] = np.trapz(high.values, time) - np.trapz(low.values, time)
+    return pd.Series(res)
+
+
 def plot_sample_aligned_power(stuff, area, edges=[0, 0.5, 1], ax=None):
     k = stuff.groupby(['time', pd.cut(stuff.contrast, edges)]).mean()
     del k['contrast']
-    pd.pivot_table(k, index='contrast', columns='time',
-                   values=area).T.plot(ax=ax)
+    k = pd.pivot_table(k, index='contrast', columns='time',
+                       values=area)
+    plt.plot(k.columns.values, k.values.T)
 
 
-def plot_sample_aligned_power_all_areas(df, meta, edges, plot_areas=['V1', 'V2', 'V3', 'V4']):
-    import matplotlib
-    gs = matplotlib.gridspec.GridSpec(4, 4)
+def plot_sample_aligned_power_all_areas(df, meta, edges, gs=None, plot_areas=['V1', 'V2', 'V3', 'V4']):
+    if gs is None:
+        import matplotlib
+        gs = matplotlib.gridspec.GridSpec(4, 2)
     areas = df.columns
     cnt = 0
-    plot_pos = {'V1vlh': (0, 0), 'V1vrh': (0, 1), 'V1dlh': (1, 0), 'V1drh': (1, 1),
-                'V2vlh': (2, 0), 'V2vrh': (2, 1), 'V2dlh': (3, 0), 'V2drh': (3, 1),
-                'V3vlh': (0, 2), 'V3vrh': (0, 3), 'V3dlh': (1, 2), 'V3drh': (1, 3),
-                'hV4lh': (2, 2), 'hV4rh': (2, 3)}
+    plot_pos = {'V1-lh': (0, 0), 'V1-rh': (0, 1), 'V2-lh': (1, 0), 'V2-rh': (1, 1),
+                'V3-lh': (2, 0), 'V3-rh': (2, 1), 'hV4-lh': (3, 0), 'hV4-rh': (3, 1)}
     for area, pos in plot_pos.iteritems():
         if not any([a in area for a in plot_areas]):
             continue
@@ -133,10 +155,11 @@ def plot_sample_aligned_power_all_areas(df, meta, edges, plot_areas=['V1', 'V2',
         s = sample_aligned_power(df, meta, area)
         plot_sample_aligned_power(
             s, area, edges, ax=plt.gca())
-        #plt.title(area)
+        # plt.title(area)
         plt.axvline(0, color='k', alpha=0.5)
-        plt.ylim([-1.5, 1.5])        
+        plt.ylim([-1.5, 1.5])
         plt.legend([])
+        plt.title(area)
         #plt.text(0, 7.5, area)
     plt.legend(bbox_to_anchor=(1.0, 1.0))
     import seaborn as sns
@@ -144,49 +167,25 @@ def plot_sample_aligned_power_all_areas(df, meta, edges, plot_areas=['V1', 'V2',
     return gs
 
 
-def combine_areas(df, hemi=False):
-    areas = ['V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d',
-             'hV4', 'VO2', 'PHC1', 'PHC2',
-             'TO1', 'LO1', 'LO2', 'V3A', 'IPS0', 'IPS1', 'IPS3',
-             'IPS4', 'IPS5', 'FEF']
+def combine_areas(df, only_lower=True, hemi=True):
+    import re
+    areas = ['V1', 'V2',  'V3', 'hV4']
+    if not only_lower:
+        areas += ['VO2', 'PHC1', 'PHC2',
+                  'TO1', 'LO1', 'LO2', 'IPS0', 'IPS1', 'IPS3',
+                  'IPS4', 'IPS5', 'FEF']
     res = []
-
-    def foo(df, areas, hemi=''):
-        res = []
-        for area in areas:
-            cols = [c for c in df.columns if (area in c)]
-            name = area + hemi
-            if len(cols) >= 1:
-                col = df.loc[:, cols].mean(1)
-                col.name = name
-                res.append(col)
-        return res
     if hemi:
-        res.extend(
-            foo(df.loc[:, [x for x in df.columns if 'rh' in x]], areas, hemi='rh'))
-        res.extend(
-            foo(df.loc[:, [x for x in df.columns if 'lh' in x]], areas, hemi='lh'))
-    else:
-        res.extend(foo(df, areas))
+        areas = [a + '.?-lh' for a in areas] + [a + '.?-rh' for a in areas]
+    for area in areas:
 
+        index = [True if re.search(
+            area, x) is not None else False for x in df.columns]
+
+        col = df.loc[:, index].mean(1)
+        col.name = area.replace('.?', '') if hemi else area
+        res.append(col)
     return pd.concat(res, axis=1)
-
-
-def get_dfp_for_all_subs():
-    frames = []
-    for subject in [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14]:
-        df, meta = get_power(subject, 59)
-        dfp = combine_areas(df)
-        areas = ['V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d',
-                 'hV4', 'VO2', 'PHC1', 'PHC2',
-                 'TO1', 'LO1', 'LO2', 'V3A', 'IPS0', 'IPS1', 'IPS3',
-                 'IPS4', 'IPS5', 'FEF']
-        for i, area in enumerate(areas):
-            saligned = sample_aligned_power(dfp, meta, area)
-            saligned.loc[:, 'subject'] = subject
-            saligned.loc[:, 'area'] = area
-            frames.append(saligned)
-    return frames
 
 
 def fir_analysis(df, meta, area='V1dlh',
@@ -311,3 +310,14 @@ def plot_area(cc, **kwargs):
         plt.plot([0, 0], (-0.2, 0.2), color='k', alpha=0.5)
     vals = np.stack(vals).mean(0)
     plt.plot(time[idx] - (0.1 * d), vals, lw=3.5, color='k', alpha=0.75)
+
+
+def find_numbers(string, ints=False):
+    # From Marc Maxson on stackoverflow:
+    numexp = re.compile(r'[-]?\d[\d,]*[\.]?[\d{2}]*')  # optional - in front
+    numbers = numexp.findall(string)
+    numbers = [x.replace(',', '') for x in numbers]
+    if ints is True:
+        return [int(x.replace(',', '').split('.')[0]) for x in numbers]
+    else:
+        return [float(x) for x in numbers]
