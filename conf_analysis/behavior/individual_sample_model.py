@@ -1,21 +1,36 @@
 '''
-Make a model that predicts choice and confidence based on
-individual contrast samples.
+Implement tests for models that use a non-linear transformation of contrast
+
 '''
 import matplotlib
 import sys
 sys.path.append('/Users/nwilming/u')
+
 import numpy as np
-import seaborn as sns
 import pandas as pd
-from conf_analysis.behavior import empirical
 import pylab as plt
-from scipy.stats import norm
-from scipy.special import expit, logit, erf, erfinv
+import seaborn as sns
+
+from conf_analysis.behavior import empirical
 from scipy.optimize import minimize
-#import cma
-import pymc3 as pm
-import theano.tensor as T
+from scipy.special import erf
+from scipy.special import erfinv
+from scipy.special import expit
+from scipy.special import logit
+from scipy.stats import norm
+
+try:
+    import pymc3 as pm
+    import theano.tensor as T
+except ImportError:
+    pm = None
+    T = None
+
+
+from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import interp1d
+from scipy.stats import bernoulli
+
 
 sns.set_style('ticks')
 
@@ -31,29 +46,6 @@ def get_data():
     return data
 
 
-from scipy.interpolate import UnivariateSpline, interp1d
-
-
-def sigmoid_transformer(x, a, b):
-    '''
-    x is in range (-1, 1)
-    '''
-
-    b = erf(b)
-    if a >= 0:
-        y = erf(abs(a) * (x + b))
-        y0 = erf(abs(a) * (0 + b))
-        y -= y.min()
-        return 2 * ((y / y.max()) - 0.5), 2 * ((y0 / y.max()) - 0.5),
-    if a < 0:
-        xx = np.linspace(-1, 1, 200)
-        y = erf(-a * (xx + b))
-        y -= y.min()
-        y = 2 * ((y / y.max()) - 0.5)
-        spl = interp1d(y, xx, kind='linear')
-        return spl(x), spl(0)
-
-
 def power_transformer(x, a):
     '''
     x is in range (0, 1), maps to (0, 1)
@@ -61,6 +53,7 @@ def power_transformer(x, a):
     '''
     y = x**np.exp(a)
     return y
+
 
 transformer = power_transformer
 
@@ -86,29 +79,6 @@ def base_model(offset, a, *tslope, **kwargs):
     return y
 
 
-def variance_model_old(offset, varslope, a, *tslope, **kwargs):
-    contrast = kwargs['contrast']
-
-    # Transform contrast and remove ref such that 0 is ideal decision boundary
-    transformed = transformer(contrast, a) - transformer(0.5, a)
-    weights = np.array(tslope)
-    transformed = weights[np.newaxis, :] * transformed
-
-    stdc = transformed.std(1)
-    stdc = (stdc) / stdc.std()
-    y = transformed.sum(1) + varslope * stdc + offset
-
-    return y
-
-
-def ph_power_transformer(x, a):
-    '''
-    x is in range (0, 1), maps to (0, 1)
-    a is in range(-inf, inf)
-    '''
-    return x**pm.math.exp(a)
-
-
 def variance_model(offset, varslope, a, *tslope, **kwargs):
     contrast = kwargs['contrast']
     # Transform contrast and remove ref such that 0 is ideal decision boundary
@@ -122,6 +92,13 @@ def variance_model(offset, varslope, a, *tslope, **kwargs):
 
 
 def bayes_variance_model(data, var=True):
+    '''
+    Implement a model that predicts individual choices based on
+    non-linearly transformed contrast samples.
+
+    If var == True the variance of the ten contrast samples is
+    explicitly modeled. If False it is ommited.
+    '''
     basic_model = pm.Model()
     contrast = get_contrast(data)
     response = (data.response + 1) / 2.
@@ -146,108 +123,105 @@ def bayes_variance_model(data, var=True):
     return basic_model
 
 
-def err(modelargs, **kwargs):
-    '''
-    Kwargs needs to contain:
-        contrast, confidence, responses
-    '''
-    if 'func' in kwargs.keys():
-        model = kwargs['func']
-
-    y = model(*modelargs, contrast=kwargs['contrast'])
-    if np.any(np.isnan(y)):
-        print 'NAN prediction'
-        return np.inf
-    yy = expit(y)
-    yy = np.maximum(yy, np.finfo(float).eps)
-    yy = np.minimum(yy, 1 - np.finfo(float).eps)
-    v = -np.sum((1 - kwargs['responses']) *
-                np.log(1 - yy) + kwargs['responses'] * np.log(yy))
-    if np.isnan(v):
-        print modelargs, v
-        1 / 0
-    return v  # +v
-
-
-def conf_err(modelargs, **kwargs):
-    '''
-    Compute likelihood that confidence response is sample from a multinomial
-    distribution.
-
-
-    Kwargs needs to contain:
-        contrast, confidence, responses, func
-    '''
-    if 'func' in kwargs.keys():
-        model = kwargs['func']
-
-    y = model(*modelargs, contrast=kwargs['contrast'])
-    yy = expit(y)
-    yy = np.maximum(yy, np.finfo(float).eps)
-    yy = np.minimum(yy, 1 - np.finfo(float).eps)
-    # yy is the probability of making a 'yes' choice
-    # Now map to multinomial distribution.
-    conf_width = 1.0
-    ps = np.array([0, 0.25, 0.5, 0.75, 1])[:, np.newaxis]
-    p = np.diff(norm.cdf(logit(ps), logit(yy), conf_width), axis=0)
-    # r are the confidence responses in [0, 1, 2, 3], i.e. [high no, low no,
-    # low yes, high yes]
-    r = (kwargs['confidence'] + 1.) * kwargs['responses'] + 2
-    r[r > 2] -= 1
-    v = -np.log(p[r]).sum()
-    return v  # +v
-
-
 def get_contrast(data):
+    '''
+    Stack contrast values in a data frame and take care of
+    values that are outside of [0, 1]
+    '''
     contrast = np.vstack(data.contrast_probe)
     contrast[contrast < 0] = 0
-    contrast[contrast > 1] = 0
+    contrast[contrast > 1] = 1
     return contrast
 
 
-def fit_base_model(data, use_cma=False):
-    start = [0., 0.] + [1.] * 10
-    return fit_model(data, start, base_model, use_cma=use_cma)
+def get_surfaces(x, y, filter, bins):
+    '''
+    Compute how often x and y occured before a specific
+    choice.
+
+    Parameters
+    ----------
+    x, y: array containing mean contrast and std respectively
+    filter: array
+        True for choice 1, false for choice 2
+    bins: 2-list of arrays
+        Specifies edges for the 2D histogram. 
+    '''
+    idx = filter > 0
+    resp1 = plt.histogram2d(x[idx], y[idx],
+                            bins=bins)[0]
+    resp2 = plt.histogram2d(x[~idx], y[~idx],
+                            bins=bins)[0]
+    return resp1, resp2
 
 
-def fit_varmodel(data, use_cma=False):
-    start = [0., 1., 0.] + [1.] * 10
-    return fit_model(data, start, variance_model, use_cma=use_cma)
+def get_predicted_surface(x, y, predicted, bins, mincnt=10):
+    '''
+    
+    '''
+    cnt = np.histogram2d(x, y, bins=bins)[0]
+    cnt[cnt < mincnt] = np.nan
+    return (np.histogram2d(x, y, weights=predicted, bins=bins)[0] / cnt)
 
 
-def fit_model(data, start, func, use_cma=False):
-    contrast = get_contrast(data)
-    resp = (data.response + 1) / 2.
-    conf = data.conf_0index.values
-
-    err_function = lambda x: err(list(x),
-                                 contrast=contrast, confidence=conf, responses=resp.values,
-                                 func=func)
-
-    if use_cma:
-        x = cma.fmin(err_function, start, 1.5, restarts=5, options={
-            'verbose': -9})[0]
-        L = err_function(x)
-        return x, L
-    else:
-        out = minimize(err_function,
-                       start, method='Nelder-Mead',
-                       options={'maxiter': 5000})
-        return out.x, out.fun
+def tovarparams(df):
+    offset, varslope, a = df.loc[:, 'offset'], df.loc[
+        :, 'std'], df.loc[:, 'alpha']
+    time = np.vstack(df.loc[:, 'time'])
+    return np.concatenate((offset[:, np.newaxis],
+                           varslope[:, np.newaxis],
+                           a[:, np.newaxis], time), axis=1)
 
 
-from scipy.stats import bernoulli
+def tobaseparams(df):
+    offset, a = df.loc[:, 'offset'], df.loc[:, 'alpha']
+    time = np.vstack(df.loc[:, 'time'])
+    return np.concatenate((offset[:, np.newaxis],
+                           a[:, np.newaxis], time), axis=1)
+
+
+def get_all_subs(d, models=[True, False], iter=5000):
+    '''
+    Estimate the bayesian model for all subjects and save results.
+    '''
+    import cPickle
+    res = []
+    for s, kd in d.groupby('snum'):
+        for var in models:
+            with bayes_variance_model(kd, var=var) as model:
+                trace = pm.sample(iter, init='advi',
+                                  njobs=3)
+                dic = pm.stats.dic(trace)
+                waic = pm.stats.waic(trace)
+                bpic = pm.stats.bpic(trace)
+                GR = pm.diagnostics.gelman_rubin(trace)
+
+                fname = 's%i_var%s_modeltrace.pickle' % (s, var)
+                cPickle.dump({'trace': trace, 'model': model, 'dic': dic,
+                              'waic': waic.WAIC, 'waic_se': waic.WAIC_se,
+                              'p_waic': waic.p_WAIC, 'bpic': bpic,
+                              'gelman_rubin': GR},
+                             open(fname, 'w'))
+            dd = {'snum': s, 'var': var}
+
+            for var in trace.varnames:
+                dd[var] = trace[var]
+            dd['time'] = [k for k in dd['time']]
+            dd = pd.DataFrame(dd)
+            dd.to_hdf('bayes_snum%i_var%s_fits.hdf' % (s, str(var)), 'df')
+            res.append(pd.DataFrame(dd))
+    return res
+
+
+'''
+Here start the plotting functions
+'''
 
 
 def plot_model(df, model=None, bins=[np.linspace(0, .3, 26), np.linspace(0, 1, 26)],
                hyperplane_only=False, alpha=1, mincnt=10, cmap='RdBu_r',
                fieldy='stdc', fieldx='mc', vmin=-2.4, vmax=2.4,
                predicted_surface=False, contrast=None):
-
-    #contrast = contrast+norm.rvs(0, 0.25, size=contrast.shape)
-    #mlow, mhigh = np.percentile(mc, [1, 99])
-    #slow, shigh = np.percentile(stdc, [1, 99])
-    #bins = [np.linspace(slow, shigh, 51), np.linspace(mlow, mhigh, 51)]
     C, M = np.meshgrid(*bins)
     if model is not None:
         if not predicted_surface:
@@ -312,56 +286,36 @@ def plot_model(df, model=None, bins=[np.linspace(0, .3, 26), np.linspace(0, 1, 2
     plt.plot([0, 0], [bins[0][0], bins[0][-1]], 'k--', lw=2)
 
 
-def get_surfaces(x, y, filter, bins):
-    idx = filter > 0
-    resp1 = plt.histogram2d(x[idx], y[idx],
-                            bins=bins)[0]
-    resp2 = plt.histogram2d(x[~idx], y[~idx],
-                            bins=bins)[0]
-    return resp1, resp2
-
-
-def get_predicted_surface(x, y, predicted, bins, mincnt=10):
-    cnt = np.histogram2d(x, y, bins=bins)[0]
-    cnt[cnt < mincnt] = np.nan
-    return (np.histogram2d(x, y, weights=predicted, bins=bins)[0] / cnt)
-
-
 def plot_bayes_model(df, params, model='variance',
                      bins=[np.linspace(0, .3, 51), np.linspace(0, 1, 51)],
                      cmap='RdBu_r', stride=20, start=0, vmin=-2.4, vmax=2.4):
     if model == 'variance':
         func = variance_model
         params = tovarparams(params.query('var==True'))[start::stride, :]
-        #params = tovarparams(params)[start::stride, :]
+
     elif model == 'base':
         func = base_model
         params = tobaseparams(params.query('var==False'))[start::stride, :]
-        #params = tobaseparams(params)[start::stride, :]
+
     else:
         raise RuntimeError("don't know the model")
     contrast = get_contrast(df)
     resp1 = 0 * np.ones((len(bins[0]) - 1, len(bins[1]) - 1)).astype(float)
     resp2 = 0 * np.ones((len(bins[0]) - 1, len(bins[1]) - 1)).astype(float)
-    #surface = 0*np.ones((len(bins[0])-1, len(bins[1])-1)).astype(float)
+
     print 'Using %i models' % (len(params))
     for row in params:
         ps = expit(func(*row, contrast=contrast))
         response = bernoulli.rvs(ps).astype(bool)
         r1, r2 = get_surfaces(df.stdc.values, df.mc.values, response, bins)
-        # surf = get_predicted_surface(df.stdc.values, df.mc.values, ps, bins)#get_surfaces(df.stdc.values, df.mc.values, response, bins)
-        #surf = np.maximum(surf, logit(1-0.999))
-        #surf = np.minimum(surf, logit(0.999))
-        #surface += surf
         resp1, resp2 = resp1 + r1, resp2 + r2
-    #surface = surface/len(params)
-    #resp1, resp2 = resp1/float(len(params)), resp2/float(len(params))
+
     resp1 = resp1.astype(float) / np.nansum(resp1)
     resp2 = resp2.astype(float) / np.nansum(resp2)
     plane = np.log(resp1 / resp2)
-    # plane = surface# resp1-resp2
+
     plane[plane == 0] = np.nan
-    print np.nanmin(plane), np.nanmax(plane)
+
     pcol = plt.pcolormesh(bins[1], bins[0], np.ma.masked_invalid(plane), cmap=cmap,
                           vmin=vmin, vmax=vmax, rasterized=True, linewidth=0)
     pcol.set_edgecolor('face')
@@ -370,22 +324,6 @@ def plot_bayes_model(df, params, model='variance',
     plt.ylim(bins[0][0], bins[0][-1])
     plt.xlim(bins[1][0], bins[1][-1])
     plt.plot([0, 0], [bins[0][0], bins[0][-1]], 'k--', lw=2)
-
-
-def tovarparams(df):
-    offset, varslope, a = df.loc[:, 'offset'], df.loc[
-        :, 'std'], df.loc[:, 'alpha']
-    time = np.vstack(df.loc[:, 'time'])
-    return np.concatenate((offset[:, np.newaxis],
-                           varslope[:, np.newaxis],
-                           a[:, np.newaxis], time), axis=1)
-
-
-def tobaseparams(df):
-    offset, a = df.loc[:, 'offset'], df.loc[:, 'alpha']
-    time = np.vstack(df.loc[:, 'time'])
-    return np.concatenate((offset[:, np.newaxis],
-                           a[:, np.newaxis], time), axis=1)
 
 
 def plot_subject(d, df, start=1000, row=None, gs=None):
@@ -503,15 +441,6 @@ def model_comparison_plot(resdf, d):
         plt.title('snum=%i' % snum)
         plt.xticks([0.5])
         plt.yticks([])
-        #plt.subplot(8, 2*(nmodels+2), cnt)
-        # cnt+=1
-        # plot_model(kd, lambda x: weighted_variance_model(
-        #        row.woffset, row.wvarslope, row.wmcslope, row.wa, *row.wweights,
-        #        contrast=contrast),
-        #        cmap='RdBu_r', bins=[np.linspace(0,0.3,21), np.linspace(low, high, 21)])
-        # plt.xticks([0.5])
-        # plt.yticks([])
-
         plt.subplot(8, 2 * (nmodels + 2), cnt)
         cnt += 1
         plot_model(kd,
@@ -529,37 +458,8 @@ def model_comparison_plot(resdf, d):
     plt.legend(bbox_to_anchor=(2.9, 1.))
     sns.despine(trim=True)
     plt.tight_layout()
-    # plt.savefig('/Users/nwilming/u/conf_analysis/plots/nonlinear_modelfits.pdf')
-
-
-def get_all_subs(d, models=[True, False], iter=5000):
-    import cPickle
-    res = []
-    for s, kd in d.groupby('snum'):
-        for var in models:
-            with bayes_variance_model(kd, var=var) as model:
-                trace = pm.sample(iter, init='advi',
-                                  njobs=3)
-                dic = pm.stats.dic(trace)
-                waic = pm.stats.waic(trace)
-                bpic = pm.stats.bpic(trace)
-                GR = pm.diagnostics.gelman_rubin(trace)
-
-                fname = 's%i_var%s_modeltrace.pickle' % (s, var)
-                cPickle.dump({'trace': trace, 'model': model, 'dic': dic,
-                             'waic': waic.WAIC, 'waic_se': waic.WAIC_se, 
-                             'p_waic': waic.p_WAIC, 'bpic': bpic, 
-                             'gelman_rubin': GR},
-                             open(fname, 'w'))
-            dd = {'snum': s, 'var': var}
-
-            for var in trace.varnames:
-                dd[var] = trace[var]
-            dd['time'] = [k for k in dd['time']]
-            dd = pd.DataFrame(dd)
-            dd.to_hdf('bayes_snum%i_var%s_fits.hdf' % (s, str(var)), 'df')
-            res.append(pd.DataFrame(dd))
-    return res
+    plt.savefig(
+            '/Users/nwilming/u/conf_analysis/plots/nonlinear_modelfits.pdf')
 
 
 def parameter_overview(d):
@@ -640,3 +540,159 @@ def rowplot(df, scale=10):
             if i == 1:
                 plt.xlabel('Parameter estimate')
     plt.legend(bbox_to_anchor=(2., 1.))
+
+
+'''
+Here starts the function dump. Stuff that I think is not necessary anymore.
+'''
+import functools
+import warnings
+
+
+def deprecated(func):
+    """This is a decorator which can be used to mark functions
+    as deprecated. It will result in a warning being emitted
+    when the function is used."""
+    @functools.wraps(func)
+    def new_func(*args, **kwargs):
+        warnings.simplefilter('always', DeprecationWarning)  # turn off filter
+        warnings.warn("Call to deprecated function {}.".format(func.__name__),
+                      category=DeprecationWarning,
+                      stacklevel=2)
+        warnings.simplefilter('default', DeprecationWarning)  # reset filter
+        return func(*args, **kwargs)
+    return new_func
+
+
+@deprecated
+def fit_base_model(data, use_cma=False):
+    start = [0., 0.] + [1.] * 10
+    return fit_model(data, start, base_model, use_cma=use_cma)
+
+
+@deprecated
+def fit_varmodel(data, use_cma=False):
+    start = [0., 1., 0.] + [1.] * 10
+    return fit_model(data, start, variance_model, use_cma=use_cma)
+
+
+@deprecated
+def fit_model(data, start, func, use_cma=False):
+    contrast = get_contrast(data)
+    resp = (data.response + 1) / 2.
+    conf = data.conf_0index.values
+
+    err_function = lambda x: err(list(x),
+                                 contrast=contrast, confidence=conf, responses=resp.values,
+                                 func=func)
+
+    if use_cma:
+        x = cma.fmin(err_function, start, 1.5, restarts=5, options={
+            'verbose': -9})[0]
+        L = err_function(x)
+        return x, L
+    else:
+        out = minimize(err_function,
+                       start, method='Nelder-Mead',
+                       options={'maxiter': 5000})
+        return out.x, out.fun
+
+
+@deprecated
+def err(modelargs, **kwargs):
+    '''
+    Kwargs needs to contain:
+        contrast, confidence, responses
+    '''
+    if 'func' in kwargs.keys():
+        model = kwargs['func']
+
+    y = model(*modelargs, contrast=kwargs['contrast'])
+    if np.any(np.isnan(y)):
+        print 'NAN prediction'
+        return np.inf
+    yy = expit(y)
+    yy = np.maximum(yy, np.finfo(float).eps)
+    yy = np.minimum(yy, 1 - np.finfo(float).eps)
+    v = -np.sum((1 - kwargs['responses']) *
+                np.log(1 - yy) + kwargs['responses'] * np.log(yy))
+    if np.isnan(v):
+        print modelargs, v
+        1 / 0
+    return v  # +v
+
+
+@deprecated
+def sigmoid_transformer(x, a, b):
+    '''
+    x is in range (-1, 1)
+    '''
+
+    b = erf(b)
+    if a >= 0:
+        y = erf(abs(a) * (x + b))
+        y0 = erf(abs(a) * (0 + b))
+        y -= y.min()
+        return 2 * ((y / y.max()) - 0.5), 2 * ((y0 / y.max()) - 0.5),
+    if a < 0:
+        xx = np.linspace(-1, 1, 200)
+        y = erf(-a * (xx + b))
+        y -= y.min()
+        y = 2 * ((y / y.max()) - 0.5)
+        spl = interp1d(y, xx, kind='linear')
+        return spl(x), spl(0)
+
+
+@deprecated
+def variance_model_old(offset, varslope, a, *tslope, **kwargs):
+    contrast = kwargs['contrast']
+
+    # Transform contrast and remove ref such that 0 is ideal decision boundary
+    transformed = transformer(contrast, a) - transformer(0.5, a)
+    weights = np.array(tslope)
+    transformed = weights[np.newaxis, :] * transformed
+
+    stdc = transformed.std(1)
+    stdc = (stdc) / stdc.std()
+    y = transformed.sum(1) + varslope * stdc + offset
+
+    return y
+
+
+@deprecated
+def ph_power_transformer(x, a):
+    '''
+    x is in range (0, 1), maps to (0, 1)
+    a is in range(-inf, inf)
+    '''
+    return x**pm.math.exp(a)
+
+
+@deprecated
+def conf_err(modelargs, **kwargs):
+    '''
+    Compute likelihood that confidence response is sample from a multinomial
+    distribution.
+
+
+    Kwargs needs to contain:
+        contrast, confidence, responses, func
+    '''
+    if 'func' in kwargs.keys():
+        model = kwargs['func']
+
+    y = model(*modelargs, contrast=kwargs['contrast'])
+    yy = expit(y)
+    yy = np.maximum(yy, np.finfo(float).eps)
+    yy = np.minimum(yy, 1 - np.finfo(float).eps)
+    # yy is the probability of making a 'yes' choice
+    # Now map to multinomial distribution.
+    conf_width = 1.0
+    ps = np.array([0, 0.25, 0.5, 0.75, 1])[:, np.newaxis]
+    p = np.diff(norm.cdf(logit(ps), logit(yy), conf_width), axis=0)
+    # r are the confidence responses in [0, 1, 2, 3], i.e. [high no, low no,
+    # low yes, high yes]
+    r = (kwargs['confidence'] + 1.) * kwargs['responses'] + 2
+    r[r > 2] -= 1
+    v = -np.log(p[r]).sum()
+    return v  # +v

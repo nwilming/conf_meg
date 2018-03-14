@@ -255,6 +255,9 @@ def get_head_correct_info(subject, session, N=-1):
 
 
 def make_trans(subject, session):
+    '''
+    Create coregistration between MRI and MEG space.
+    '''
     import os
     import time
     trans, fiducials, info = get_head_correct_info(subject, session)

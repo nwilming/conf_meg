@@ -3,27 +3,42 @@ import numpy as np
 import matplotlib
 import pylab as plt
 from glob import glob
+
 from conf_analysis.behavior import metadata
 from conf_analysis.meg import preprocessing, localizer, lcmv, srplots
-from conf_analysis.meg import tfr_analysis as ta
+
 from conf_analysis.meg import source_recon as sr
-from joblib import Memory, Parallel, delayed
-
-import pandas as pd
-
-from itertools import product, izip
+from joblib import Memory
 
 
 memory = Memory(cachedir=metadata.cachedir)
 
 
-def overview_figure(subject):
+def make_overview_figures(subjects, bem='three_layer', prefix=''):
+    from conf_analysis.meg import srplots
+    for sub in subjects:
+        avg, idx, F = srplots.single_sub_contrast_indices(sub)
+        print 'Subject:', sub, 'F:', F
+        gamma_overview(sub, F=F, bem=bem, prefix=prefix + 'F%f' % F)
+        stats_overview(sub, F=F, prefix=prefix + 'F%f' % F)
+
+
+def gamma_overview(subject, F=45, bem='three_layer', prefix=''):
     '''
     Prepare data for an overview figure that shows source recon'ed activity.
     '''
     plt.figure(figsize=(15, 15))
     gs = matplotlib.gridspec.GridSpec(2 * 4, 6)
-    freqs, _, stcfiles = srplots.get_freq_tuning(subject)
+    stcfiles = {}
+    for session in [0, 1, 2, 3]:
+        if bem is not None:
+            sstring = ('/home/nwilming/conf_meg/source_recon_F/SR_S%i_SESS%i_*_F%i*' %
+                       (subject, session, F))
+        else:
+            sstring = ('/home/nwilming/conf_meg/source_recon_F_%s/%s_SR_S%i_SESS%i_*_F%i*' %
+                       (bem, bem, subject, session, F))
+        stcfiles[session] = glob(sstring)
+
     stcs = get_stcs(stcfiles)
     for col, view in enumerate(['cau', 'med', 'lat']):
         for session, stc in enumerate(stcs):
@@ -34,7 +49,11 @@ def overview_figure(subject):
                 plt.imshow(m)
                 plt.xticks([])
                 plt.yticks([])
-    plt.savefig('/home/nwilming/sub_%i_stc_overview.png'%subject, dpi=600)
+    plt.savefig('/home/nwilming/sub_%i_stc_overview%s.png' %
+                (subject, prefix), dpi=600)
+
+
+def stats_overview(subject, F=45, prefix=''):
     plt.figure(figsize=(15, 10))
     gs = matplotlib.gridspec.GridSpec(2 * 4, 7)
     offset = -2
@@ -54,6 +73,7 @@ def overview_figure(subject):
         plt.subplot(gs[sid:sid + 2, offset + 3])
         plt.title('N=%i' % avg.nave)
         avg.plot_topomap(fmin=35, fmax=100, axes=plt.gca(), colorbar=False)
+
         plt.subplot(gs[sid:sid + 2, offset + 5:offset + 7])
         localizer.plot_tfr(avg, channels)
         #avg.plot([chan], axes=plt.gca(), yscale='linear', colorbar=False)
@@ -64,17 +84,20 @@ def overview_figure(subject):
 
         plt.subplot(gs[sid:sid + 2, offset + 8])
         power, meta = srplots.get_power(
-            subject, session=session, decim=3, tuning=1)
+            subject, session=session, decim=3)
+        power = power.query('F==%f' % F)
         sa = srplots.sample_aligned_power(
-            power, meta, 'V1dlh', baseline=(-0.2, 0))
+            power, meta, 'V1-lh', baseline=(-0.2, 0)).set_index('contrast')
         srplots.plot_sample_aligned_power(
-            sa, edges=[0, .4, .6, 1], ax=plt.gca())
+            sa, 'V1-lh', edges=[0, .4, .6, 1], ax=plt.gca())
         plt.xticks([0, 0.1, 0.2, 0.3])
-        yd = np.abs(plt.ylim()).max()/2
+        yd = np.abs(plt.ylim()).max() / 2
         plt.yticks([-yd, 0, yd])
         plt.legend([])
     plt.legend()
-    plt.savefig('/home/nwilming/sub_%i_stats_overview.png'%subject, dpi=600)
+    plt.savefig('/home/nwilming/sub_%i_stats_overview%s.png' %
+                (subject, prefix), dpi=600)
+
 
 def peak_channel(avg, fmin=10):
     id_f = fmin < avg.freqs

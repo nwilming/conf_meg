@@ -30,7 +30,7 @@ def get_noise_cov(epochs):
 
 
 def extract(subject, session, lowest_freq=None,
-            func=None, accumulator=None):
+            func=None, accumulator=None, BEM='three_layer'):
     epochs, meta = preprocessing.get_epochs_for_subject(subject,
                                                         'stimulus',
                                                         sessions=session)
@@ -46,7 +46,7 @@ def extract(subject, session, lowest_freq=None,
         epochs.filter(lowest_freq, None)
     data_cov = get_cov(epochs)
     noise_cov = None  # get_noise_cov(epochs)
-    forward, bem, source, trans = sr.get_leadfield(subject, session)
+    forward, bem, source, trans = sr.get_leadfield(subject, session, BEM)
     labels = sr.get_labels(subject)
     labels = [l for l in labels if 'V' in l.name]
     # combined_label = reduce(lambda x, y: x + y, labels)
@@ -146,7 +146,8 @@ class AccumSR(object):
     Accumulate SRs and compute an average.
     '''
 
-    def __init__(self, subject, session, lowest_freq, F,  prefix=''):
+    def __init__(self, subject, session, lowest_freq, F,  BEM='three_layer',
+                 prefix=''):
         self.stc = None
         self.N = 0
         self.subject = subject
@@ -155,7 +156,8 @@ class AccumSR(object):
             lowest_freq = 'None'
         self.lowest_freq = lowest_freq
         self.F = F
-        self.prefix = prefix
+        self.prefix = prefix + BEM
+        self.BEM = BEM
 
     def update(self, stc):
         if self.stc is None:
@@ -166,8 +168,8 @@ class AccumSR(object):
 
     def save_averaged_sr(self):
         stcs = self.stc.copy()
-        filename = '/home/nwilming/conf_meg/source_recon/%sSR_S%i_SESS%i_lF%s_F%s.stc' % (
-            self.prefix, self.subject, self.session, str(self.lowest_freq),
+        filename = '/home/nwilming/conf_meg/source_recon_F_%s/%sSR_S%i_SESS%i_lF%s_F%s.stc' % (
+            self.BEM, self.prefix, self.subject, self.session, str(self.lowest_freq),
             str(self.F))
         idbase = (-.5 < stcs.times) & (stcs.times < 0)
         m = stcs.data[:, idbase].mean(1)[:, np.newaxis]
