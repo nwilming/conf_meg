@@ -285,7 +285,7 @@ def make_sub_data(subject, area, F=55, log=True):
 
 def make_data(df, area='V1-lh', log=False):
     data = pd.pivot_table(df, index='trial', columns='time',
-                          values='V1-lh').loc[:, -0.2:1.3]
+                          values=area).loc[:, -0.2:1.3]
     if log:
         data = np.log(data)
     base = data.loc[:, -0.2:0].mean(1)
@@ -302,16 +302,16 @@ def subject_fit(subject, F, area, fit_func='stld'):
     return data, contrast, params
 
 
-@memory.cache
 def subject_sa(subject, F=[40, 45, 50, 55, 60, 65, 70],
                areas=['V1-lh', 'V2-lh', 'V3-lh', 'V1-rh', 'V2-rh', 'V3-rh'],
-               window=0.01):
+               window=0.01, remove_overlap=True):
     acc_real, acc_pred = [], []
     for f, area in product(F, areas):
         data, contrast, params = subject_fit(subject, f, area)
-        print 'Loaded subject fits'
-        sa = sample_aligned_rm(data, contrast, params,
-                               window=window, predict_func=sltd_predict)
+        sa = sample_aligned(data, contrast, params,
+                            window=window, predict_func=sltd_predict,
+                            remove_overlap=remove_overlap)
+
         sa.loc[:, 'subject'] = subject
         sa.loc[:, 'F'] = f
         sa.loc[:, 'area'] = area
@@ -319,8 +319,10 @@ def subject_sa(subject, F=[40, 45, 50, 55, 60, 65, 70],
         predicted = sltd_predict(data.columns.values, contrast, **params).T
         predicted = pd.DataFrame(
             data, index=np.arange(data.shape[0]), columns=data.columns.values)
-        sa = sample_aligned_rm(predicted, contrast, params,
-                               window=window, predict_func=sltd_predict)
+
+        sa = sample_aligned(predicted, contrast, params,
+                            window=window, predict_func=sltd_predict,
+                            remove_overlap=remove_overlap)
         sa.loc[:, 'subject'] = subject
         sa.loc[:, 'F'] = f
         sa.loc[:, 'area'] = area
@@ -328,61 +330,96 @@ def subject_sa(subject, F=[40, 45, 50, 55, 60, 65, 70],
     return pd.concat(acc_real), pd.concat(acc_pred)
 
 
-def sample_aligned_rm(data, contrast, params, window=0.01, predict_func=nltd_predict):
+def make_all_sub_sa():
+    out_sa, out_sp = [], []
+    for subject in [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
+        sa, sp = subject_sa(subject)
+        out_sa.append(sa)
+        out_sp.append(sp)
+    return pd.concat(out_sa), pd.concat(out_sp)
+
+
+def sample_aligned(data, contrast, params, window=0.01, remove_overlap=True,
+                   predict_func=sltd_predict):
     '''
     Produce sample aligned power values, but remove effec from previous sample
     '''
+
     latency = params['latency']
     output = []
+    cnt = 0
     for sample, onset in enumerate(np.arange(0, 1, 0.1) + latency):
-        con = contrast.copy()
-        con[:, sample] = 0.5
-        predicted = predict_func(data.columns.values, con, **params).T
-        predicted = pd.DataFrame(
-            predicted, columns=data.columns, index=data.index)
-        vs = (data - predicted).loc[:, onset - window:onset + window].mean(1)
+        if remove_overlap:
+            con = contrast.copy()
+            con[:, sample] = 0.5
+            predicted = predict_func(data.columns.values, con, **params).T
+            predicted = pd.DataFrame(
+                predicted, columns=data.columns, index=data.index)
+            vs = (data - predicted).loc[:, onset -
+                                        window:onset + window].mean(1)
+        else:
+            vs = data.loc[:, onset - window:onset + window].mean(1)
         for trial, cc, d in zip(vs.index.values, contrast[:, sample], vs):
             output.append({'sample': sample, 'power': d,
-                           'contrast': cc, 'trial': trial})
+                           'contrast': cc, 'trial': trial, 'sample_id': cnt})
+            cnt += 1
     return pd.DataFrame(output)
 
 
-def sample_aligned(data, contrast, latency, window=0.01):
-    output = []
-    for sample, onset in enumerate(np.arange(0, 1, 0.1) + latency):
-        vs = data.loc[:, onset - window:onset + window].mean(1)
-        for cc, d in zip(contrast[:, sample], vs):
-            output.append({'sample': sample, 'power': d, 'contrast': cc})
-    return pd.DataFrame(output)
-
-
-def get_average_contrast(contrast, params, time,  data=None,
-                         edges=np.linspace(0.1, 0.9, 8),
-                         predict_func=lmtd_predict,
-                         remove_overlap=False):
-    if data is None:
-        data = predict_func(time, contrast, **params).T
-        data = pd.DataFrame(data, index=np.arange(data.shape[0]), columns=time)
-    if remove_overlap:
-        dy = sample_aligned_rm(data, contrast, params,
-                               predict_func=predict_func)
-    else:
-        dy = sample_aligned(data, contrast, params['latency'])
-    dy = dy.groupby(['sample', pd.cut(dy.contrast, edges)]).mean()
-    dy.index.names = ['sample', 'cbins']
+def get_average_contrast(sa, by=[], area='V1-lh', edges=np.linspace(0, 1, 10)):
+    sa = sa.query('area=="%s"' % area)
+    dy = sa.groupby(
+        by + [pd.cut(sa.contrast, edges)]).mean().loc[:, ('contrast', 'power')]
+    print dy.head()
+    dy.index.names = by + ['cbins']
     return dy
 
+
+def t_model(power, contrast):
+    '''
+    Define a model that predicts contrast from power. Two step approach:
+    First fit likelihood to observe a power value based on contrast.
+
+    X contains power values, each colum is a feature (area / Freq)
+    c contains contrast values 
+    '''
+    import numpy as np
+    #import theano.tensor as tt
+    import pymc3 as pm
+
+    with pm.Model() as model:
+
+        # Now define contrast dependence.
+        l = pm.Gamma("l", alpha=2, beta=1)
+        eta = pm.HalfCauchy("eta", beta=5)
+
+        cov = eta**2 * pm.gp.cov.Matern52(1, l)
+        gp = pm.gp.Latent(cov_func=cov)
+
+        f = gp.prior("f", X=contrast)
+
+        sigma = pm.HalfCauchy("sigma", beta=5)
+        nu = pm.Gamma("nu", alpha=2, beta=0.1)
+        y_ = pm.StudentT("power", mu=f, lam=1.0 /
+                         sigma, nu=nu, observed=power)
+        trace = pm.sample(1000)
+        return trace
 
 '''
 Plots
 '''
 
 
-def plot_sample_aligned_responses():
+def plot_sample_aligned_responses(sa, area='V1-lh'):
     '''
     Plot sample aligned responses
     '''
-    pass
+    import pylab as plt
+    # 1 Plot averaged gp response as a function of contrast and frequency
+    dreal = get_average_contrast(sa, by=['subject'], area=area)
+    for sub, d in dreal.groupby('subject'):
+        plt.plot(d.contrast, d.power, label=sub)
+    # 2 Plot predicted gp response as a function of contrast and frequency
 
 
 '''
@@ -390,19 +427,24 @@ Precomputing
 '''
 
 
+def foo(x):
+    print x
+
+
+def cache_warmup(subject, area):
+    F = [40, 45, 50, 55, 60, 65, 70]
+    for f in F:
+        subject_fit(subject, f, area)
+
+
 def precompute_fits():
     from pymeg import parallel
-    subs = [2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    F = [40]#, 45, 50, 55, 60, 65, 70]
+    subs = [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     funcs = ['stld']
-    areas = ['V1-lh']#, 'V2-lh', 'V3-lh', 'V1-rh', 'V2-rh', 'V3-rh']
+    areas = ['V1-lh', 'V2-lh', 'V3-lh', 'V1-rh', 'V2-rh', 'V3-rh']
     from itertools import product
-    for sub, f, area in product(subs, F, areas):
-        #parallel.pmap(make_sub_data, [[sub, area, f]])        
-        parallel.pmap(subject_fit, [[sub, f, area]])
-    '''
-    for sub in subs:
-        paralle.pmap(subject_sa, [[sub, [40, 45, 50, 55, 60, 65, 70],
-                     ['V1-lh', 'V2-lh', 'V3-lh', 'V1-rh', 'V2-rh', 'V3-rh'],
-                     0.01]])
-    '''
+    ids = []
+    for sub, area in product(subs, areas):
+        if not cache_warmup.is_cached(sub, area):
+            ids.append(parallel.pmap(cache_warmup, [[sub, area]]))
+    return ids
