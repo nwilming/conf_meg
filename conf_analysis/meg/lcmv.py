@@ -169,7 +169,8 @@ class AccumSR(object):
     def save_averaged_sr(self):
         stcs = self.stc.copy()
         filename = '/home/nwilming/conf_meg/source_recon_F_%s/%sSR_S%i_SESS%i_lF%s_F%s.stc' % (
-            self.BEM, self.prefix, self.subject, self.session, str(self.lowest_freq),
+            self.BEM, self.prefix, self.subject, self.session, str(
+                self.lowest_freq),
             str(self.F))
         idbase = (-.5 < stcs.times) & (stcs.times < 0)
         m = stcs.data[:, idbase].mean(1)[:, np.newaxis]
@@ -191,12 +192,12 @@ def get_power_estimator(F, cycles, time_bandwidth, sf=600., decim=1):
             time_bandwidth=None,
             n_jobs=None, decim=decim):
         x = x[np.newaxis, :, :]
-        x = tfr.epochs_tfr(x,
-                           sf=sf,
-                           foi=[F],
-                           cycles=cycles,
-                           time_bandwidth=time_bandwidth,
-                           n_jobs=4, decim=decim)
+        x = tfr.array_tfr(x,
+                          sf=sf,
+                          foi=[F],
+                          cycles=cycles,
+                          time_bandwidth=time_bandwidth,
+                          n_jobs=4, decim=decim)
         return x.squeeze()
 
     return functools.partial(foo, sf=sf,
