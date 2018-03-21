@@ -307,6 +307,9 @@ def subject_sa(subject, F=[40, 45, 50, 55, 60, 65, 70],
                window=0.01, remove_overlap=True):
     acc_real, acc_pred = [], []
     for f, area in product(F, areas):
+        if not subject_fit.is_cached(subject, f, area):
+            print 'Skipping', subject, f, area
+            continue
         data, contrast, params = subject_fit(subject, f, area)
         sa = sample_aligned(data, contrast, params,
                             window=window, predict_func=sltd_predict,
@@ -385,7 +388,7 @@ def t_model(power, contrast):
     '''
     import numpy as np
     #import theano.tensor as tt
-    import pymc3 as pm
+    #import pymc3 as pm
 
     with pm.Model() as model:
 
@@ -431,20 +434,17 @@ def foo(x):
     print x
 
 
-def cache_warmup(subject, area):
-    F = [40, 45, 50, 55, 60, 65, 70]
-    for f in F:
-        subject_fit(subject, f, area)
-
 
 def precompute_fits():
     from pymeg import parallel
-    subs = [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    subs = [3]
     funcs = ['stld']
     areas = ['V1-lh', 'V2-lh', 'V3-lh', 'V1-rh', 'V2-rh', 'V3-rh']
     from itertools import product
     ids = []
     for sub, area in product(subs, areas):
-        if not cache_warmup.is_cached(sub, area):
-            ids.append(parallel.pmap(cache_warmup, [[sub, area]]))
+        F = [40, 45, 50, 55, 60, 65, 70]
+        for f in F:
+            if not subject_fit.is_cached(sub, f, area):
+                ids.append(parallel.pmap(subject_fit, [[sub, f, area]]))
     return ids
