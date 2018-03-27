@@ -47,7 +47,7 @@ def single_sub_contrast_indices(subject, folder='/home/nwilming/conf_meg/sr_freq
     return r, idx, tp.argmax()
 
 
-def compute_contrast_indices(subjects=[1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+def compute_contrast_indices(subjects=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
                              folder='/home/nwilming/conf_meg/sr_freq_labeled_three_layer/'):
     averages = []
     indices = []
