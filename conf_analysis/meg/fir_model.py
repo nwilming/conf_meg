@@ -4,16 +4,23 @@ each response follows a parameterized function (normals for now). The
 amplitude of each response is assumed to be modulated by contrast.
 '''
 
-from itertools import product
 import numpy as np
 import pandas as pd
 
-from ..behavior import individual_sample_model as ism
+from itertools import product
+
 from . import srplots
-from numba import jit, vectorize
+from ..behavior import individual_sample_model as ism
+from numba import jit
+from numba import vectorize
 from scipy.optimize import least_squares
-from scipy.special import erf
+
 from scipy.interpolate import interp1d
+from scipy.special import erf
+
+
+from scipy.stats import multivariate_normal as mvnorm
+from scipy.stats import norm
 
 
 from conf_analysis.behavior import metadata
@@ -506,6 +513,7 @@ def get_average_contrast(sa, by=['subject', 'area', 'F'], centers=np.linspace(0,
     return dy
 
 
+
 def contrast_integrated_averages(sa, centers=np.linspace(0.1, 0.9, 5),
                                  width=0.2):
     sa = sa.reset_index()
@@ -574,36 +582,66 @@ Bayesian fits
 '''
 
 
-def t_model(power, contrast):
+
+
+def mv_model(power, contrast):
     '''
     Define a model that predicts contrast from power. Two step approach:
     First fit likelihood to observe a power value based on contrast.
 
-    X contains power values, each colum is a feature (area / Freq)
-    c contains contrast values
+    Power is num_freqs x trials
+    
     '''
+    num_freqs = power.shape[1]
     import numpy as np
-    # import theano.tensor as tt
-    # import pymc3 as pm
-
+    import theano.tensor as tt
+    import pymc3 as pm
     with pm.Model() as model:
+        slope = pm.Normal('slope', mu=0, sd=5, shape=(1, num_freqs))
+        amplitude = pm.Normal('amplitude', mu=0, sd=5, shape=(1, num_freqs))
+        offset = pm.Normal('offset', mu=0, sd=1, shape=(1, num_freqs))
 
         # Now define contrast dependence.
-        l = pm.Gamma("l", alpha=2, beta=1)
-        eta = pm.HalfCauchy("eta", beta=5)
+        mu = amplitude * \
+            (pm.math.invlogit(
+                slope * (contrast[:, np.newaxis] + offset)) - 0.5)
 
-        cov = eta**2 * pm.gp.cov.Matern52(1, l)
-        gp = pm.gp.Latent(cov_func=cov)
+        # sigma = pm.HalfCauchy("sigma", beta=5, shape=10)
 
-        f = gp.prior("f", X=contrast)
+        packed_L = pm.LKJCholeskyCov('packed_L', n=num_freqs,
+                                     eta=2., sd_dist=pm.HalfCauchy.dist(2.5))
+        L = pm.expand_packed_triangular(num_freqs, packed_L)
+        sigma = pm.Deterministic('sigma', L.dot(L.T))
+        y_ = pm.MvNormal('obs', mu, chol=L, observed=power)
+        return model
 
-        sigma = pm.HalfCauchy("sigma", beta=5)
-        nu = pm.Gamma("nu", alpha=2, beta=0.1)
-        y_ = pm.StudentT("power", mu=f, lam=1.0 /
-                         sigma, nu=nu, observed=power)
-        trace = pm.sample(1000)
-        return trace
 
+def mv_model_eval(contrast, power, amplitude, slope, offset, sigma):
+    mu = amplitude * \
+        (expit(
+            slope * (contrast[:, np.newaxis] + offset)) - 0.5)
+
+    return np.array([mvnorm.pdf(power, mean=mu[ii, :], cov=sigma)
+                     for ii in range(len(contrast))])
+
+
+def invert(trace, X, contrast, thin=10):
+    ampl, slope, off = trace['amplitude'][::thin], trace['slope'][::thin], trace['offset'][::thin]
+
+    sigma = trace['sigma']
+    pC = pc(contrast)
+    out = np.zeros((len(contrast), X.shape[0]))
+    for ii in range(ampl.shape[0]):
+        y = mv_model_eval(contrast, X, ampl[ii], slope[ii], off[ii], sigma[ii])
+        y = y / y.sum(1)[:, np.newaxis]
+        out += np.log(y)
+    return out / (ii + 1)
+
+
+def pc(x, t=0.05):
+    y = (norm.pdf(x, 0.5 + t, 0.05) + norm.pdf(x, 0.5 + t, 0.1) + norm.pdf(x, 0.5 + t, 0.15) +
+         norm.pdf(x, 0.5 - t, 0.05) + norm.pdf(x, 0.5 - t, 0.1) + norm.pdf(x, 0.5 - t, 0.15))
+    return y / y.sum()
 '''
 Plots
 '''
