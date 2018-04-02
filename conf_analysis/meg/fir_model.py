@@ -4,15 +4,24 @@ each response follows a parameterized function (normals for now). The
 amplitude of each response is assumed to be modulated by contrast.
 '''
 
-from itertools import product
 import numpy as np
 import pandas as pd
 
-from ..behavior import individual_sample_model as ism
+from itertools import product
+
 from . import srplots
-from numba import jit, vectorize
+from ..behavior import individual_sample_model as ism
+from numba import jit
+from numba import vectorize
 from scipy.optimize import least_squares
-from scipy.stats import multivariate_normal as mvnorm, norm
+
+from scipy.interpolate import interp1d
+from scipy.special import erf
+
+
+from scipy.stats import multivariate_normal as mvnorm
+from scipy.stats import norm
+
 
 from conf_analysis.behavior import metadata
 from joblib import Memory
@@ -53,13 +62,51 @@ def power_transformer(x, a):
 
 
 @jit(nopython=True)
-def sigmoidal(contrast, slope, offset):
+def sigmoidal_old(contrast, slope, offset):
     '''
     Sigmoidal transform of contrast
     '''
     y = expit((slope * (contrast - 0.5 + offset))) - 0.5
     y = y / (expit((slope * (1 - 0.5 + offset))) - 0.5)
     return y
+
+
+@jit(nopython=True)
+def sigmoidal(contrast, slope, offset):
+    '''
+    Sigmoidal transform of contrast
+    '''
+    y = expit((slope * (contrast - 0.5 + offset))) - 0.5
+    return y / (expit((slope * (1 - 0.5))) - 0.5)
+
+
+def sigmoid_transformer(x, amplitude, offset, a, b):
+    '''
+    x is in range (-1, 1)
+    '''
+
+    b = erf(b)
+    if a >= 0:
+        y = erf(abs(a) * (x + b))
+        y -= y.min()
+        y = 2 * ((y / y.max()) - 0.5)
+    if a < 0:
+        xx = np.linspace(-1, 1, 200)
+        y = erf(-a * (xx + b))
+        y -= y.min()
+        y = 2 * ((y / y.max()) - 0.5)
+        spl = interp1d(y, xx, kind='linear')
+        y = spl(x)
+    return amplitude * y + offset
+
+
+def spitzer_exp(contrast, kappa, offset):
+    '''
+    Kappa is parameterized such that 0 is a linear relationship
+    Negative kappa is compression
+    '''
+    term = (2 * (contrast - 0.5)) + offset
+    return ((np.abs(term)**kappa) * term / np.abs(term))
 
 
 def fit(predict, data, x0, bounds):
@@ -198,7 +245,6 @@ The contrast dependence is non-linear.
 '''
 
 
-#@jit(nopython=True)
 def sltd_predict(time, contrast, offset=None,
                  latency=0.2, std=0.05,
                  slope=1.0, sigmoid_offset=0.0,
@@ -279,6 +325,93 @@ def sltd_fit(data, contrast, time, offset=True):
 
 
 '''
+Linear model with temporal differences and Spitzer et al.
+non-linearities: spitzer
+The contrast dependence is non-linear and can follow a sigmoid
+or inverted sigmoid.
+'''
+
+
+def spitzer_predict(time, contrast, offset=None,
+                    latency=0.2, std=0.05,
+                    kappa=1.0, sigmoid_offset=0.0,
+                    amplitude_parameters=1,
+                    diff_latency=0.2, diff_std=0.05,
+                    diff_amplitude_parameters=1):
+    if len(contrast.shape) < 2:
+        raise RuntimeError('Contrast array needs to be of dimension trials:10')
+    contrast = spitzer_exp(contrast, kappa, sigmoid_offset)
+    output = time.reshape((-1, 1)) * np.zeros((1, contrast.shape[0]))
+
+    for ii, onset in enumerate(np.arange(0, 1, 0.1)):
+        output += gauss(time, onset + latency, std,
+                        contrast[:, ii] * amplitude_parameters)
+
+    cdiff = np.diff(contrast, 1)
+    onsets = np.arange(0.1, 1, 0.1)
+    for ii, onset in enumerate(onsets):
+        output += gauss(time, onset + latency + diff_latency, diff_std,
+                        cdiff[:, ii] * diff_amplitude_parameters)
+    if offset is not None:
+        output += offset.reshape((-1, 1))
+    return output
+
+
+def spitzer_params2dict(time, x, offset=True):
+    params = {}
+    if len(x) != int(offset) * len(time) + 8:
+        raise RuntimeError(
+            'Number of parameters is wrong. Is %i, should be %i' % (len(x), len(time) + 8))
+    if offset:
+
+        tl = len(time)
+        params['offset'] = x[0:tl]
+    else:
+        tl = 0
+        params['offset'] = None
+
+    params.update({
+        'latency': x[tl],
+        'std': x[tl + 1],
+        'kappa': x[tl + 2],
+        'sigmoid_offset': x[tl + 3],
+        'amplitude_parameters': x[tl + 4],
+        'diff_latency': x[tl + 5],
+        'diff_std': x[tl + 6],
+        'diff_amplitude_parameters': x[tl + 7]})
+    return params
+
+
+def spitzer_fit(data, contrast, time, offset=True):
+    '''
+    Use non-linear least squares to find parameters.
+    '''
+    from scipy.optimize import least_squares
+
+    if offset:
+        x0 = np.concatenate(
+            (data.mean(1), [0.15, 0.001, 1., 0.0,  0.0,  0.001, 0.001, .5]))
+        # Offset, latency, std, slope, sigmoid_offset, ...
+        bounds = ([-np.inf] * len(time) +
+                  [0.0, 0.0,   0, -0.5, -np.inf, -0.1, 0.0, -np.inf],
+                  [+np.inf] * len(time) +
+                  [0.5, 0.1, +10, +0.5, +np.inf, +0.1, 0.1, +np.inf])
+    else:
+        x0 = np.array([0.15, 0.001, 1., 0.0,  0.0,  0.001, 0.001, .5])
+        data = data - data.mean(0)
+        bounds = ([0.0, 0.0, -10, -0.5, -np.inf, -0.1, 0.0, -np.inf],
+                  [0.5, 0.1, +10, +0.5, +np.inf, +0.1, 0.1, +np.inf])
+
+    yp = lambda x: sltd_predict(
+        time, contrast, **sltd_params2dict(time, x, offset=offset))
+    err = (lambda x:
+           (data - yp(x)).ravel())
+
+    out = least_squares(err, x0, loss='soft_l1', bounds=bounds)
+    return sltd_params2dict(time, out['x'], offset=offset)
+
+
+'''
 Analysis functions
 '''
 
@@ -313,6 +446,9 @@ def subject_fit(subject, F, area, fit_func='stld'):
 def subject_sa(subject, F=[40, 45, 50, 55, 60, 65, 70],
                areas=['V1-lh', 'V2-lh', 'V3-lh', 'V1-rh', 'V2-rh', 'V3-rh'],
                window=0.01, remove_overlap=True):
+    '''
+    Extraxt single trial power estimates.
+    '''
     acc_real, acc_pred = [], []
     for f, area in product(F, areas):
         if not subject_fit.is_cached(subject, f, area):
@@ -377,47 +513,82 @@ def sample_aligned(data, contrast, params, window=0.01, remove_overlap=True,
     return pd.DataFrame(output)
 
 
-def get_average_contrast(sa, by=[], area='V1-lh', edges=np.linspace(0, 1, 10)):
-    sa = sa.query('area=="%s"' % area)
+def get_average_contrast(sa, by=['subject', 'area', 'F'], centers=np.linspace(0, 1, 10),
+                         width=0.2):
     dy = sa.groupby(
-        by + [pd.cut(sa.contrast, edges)]).mean().loc[:, ('contrast', 'power')]
-    print dy.head()
-    dy.index.names = by + ['cbins']
+        by).apply(lambda x: contrast_integrated_averages(x, centers, width))
     return dy
 
 
-def t_model(power, contrast, sample, F, total_size):
-    '''
-    Define a model that predicts contrast from power. Two step approach:
-    First fit likelihood to observe a power value based on contrast.
 
-    X contains power values, each colum is a feature (area / Freq)
-    c contains contrast values
+def contrast_integrated_averages(sa, centers=np.linspace(0.1, 0.9, 5),
+                                 width=0.2):
+    sa = sa.reset_index()
+    rows = []
+    contrast = sa.loc[:, 'contrast'].values
+    w = width / 2.
+    for center in centers:
+        idx = ((center - w) < contrast) & (contrast < (center + w))
+        r = sa.loc[idx, ('contrast', 'power')].mean()
+        r.loc['contrast'] = center
+        rows.append(r)
+    return pd.concat(rows, 1).T
 
 
-    '''
+def example_plot():
+    from pylab import plot, subplot, ylim, xlabel, ylabel
+    import seaborn as sns
+    c = np.linspace(0, 1, 100)
+    subplot(1, 3, 1)
+    color = sns.color_palette("Blues", n_colors=10)
+    for ii, slope in enumerate(np.arange(1, 11, 1)):
+        plot(c, sigmoidal(c, slope, 0), color=color[ii])
+        ylim([-1, 1])
+        xlabel('contrast')
+        ylabel(r'$\Delta Power$')
+    subplot(1, 3, 2)
+    color = sns.color_palette("Greens", n_colors=10)
+    for ii, amplitude in enumerate(np.linspace(0, 1, 10)):
+        plot(c, amplitude * sigmoidal(c, 2.5, 0), color=color[ii])
+        ylim([-1, 1])
+        xlabel('contrast')
+    subplot(1, 3, 3)
+    color = sns.color_palette("Reds", n_colors=10)
+    for ii, offset in enumerate(np.linspace(-0.5, 0.5, 10)):
+        plot(c, 1 * sigmoidal(c, 5, offset), color=color[ii])
+        ylim([-1, 1])
+        xlabel('contrast')
 
-    import numpy as np
-    import theano.tensor as tt
-    import pymc3 as pm
-    with pm.Model() as model:
-        slope = pm.Normal('slope', mu=0, sd=5, shape=(10, 7))
-        amplitude = pm.Normal('amplitude', mu=0, sd=5, shape=7)
-        offset = pm.Normal('offset', mu=0, sd=1, shape=(10, 7))
+    sns.despine(offset=5)
 
-        # Now define contrast dependence.
-        mu = amplitude[F] * \
-            (pm.math.invlogit(
-                slope[sample, F] * (contrast + offset[sample, F])) - 0.5)
 
-        sigma = pm.HalfCauchy("sigma", beta=5, shape=10)
+def plot_fit_params(parameters):
+    import seaborn as sns
+    ps = (parameters
+          .set_index(['F', 'area', 'subject', 'hemisphere'])
+          .loc[:, ['slope', 'amplitude_parameters', 'sigmoid_offset', 'latency']]
+          .stack()
+          .reset_index())
+    ps.columns = ['F', 'area', 'subject', 'hemisphere', 'parameter', 'value']
+    g = sns.FacetGrid(ps, col="hemisphere", row="parameter",
+                      hue='area', sharey=False, sharex=True, size=2, aspect=2.5)
+    g.map(sns.pointplot, 'F', 'value')
+    g.axes[0, 0].set_ylim([0, 11])
+    g.axes[0, 1].set_ylim([0, 11])
 
-        nu = pm.Gamma("nu", alpha=2, beta=0.1, shape=10)
-        y_ = pm.StudentT("power", mu=mu, lam=1.0 /
-                         sigma[sample], nu=nu[sample], observed=power,
-                         )
-        # trace = pm.sample(1000)
-        return model
+    g.axes[1, 0].set_ylim([-0.1, 0.6])
+    g.axes[1, 1].set_ylim([-0.1, 0.6])
+
+    g.axes[2, 0].set_ylim([-0.4, 0.3])
+    g.axes[2, 1].set_ylim([-0.4, 0.3])
+
+    g.axes[3, 0].set_ylim([0.0, 0.3])
+    g.axes[3, 1].set_ylim([0.0, 0.3])
+'''
+Bayesian fits
+'''
+
+
 
 
 def mv_model(power, contrast):
@@ -426,8 +597,7 @@ def mv_model(power, contrast):
     First fit likelihood to observe a power value based on contrast.
 
     Power is num_freqs x trials
-    The rest is trials
-
+    
     '''
     num_freqs = power.shape[1]
     import numpy as np
@@ -515,6 +685,31 @@ def plot_sample_aligned_responses(sa, area='V1-lh'):
 
 
 '''
+CRFs
+'''
+
+
+def H(x, m, p, q, c):
+    c = float(c)
+
+    k = (m * (x**p)) / (x**(p + q) + c**(p + q))
+
+    if k[-1] < k.max():
+        dk = dH(x, m, p, q, c)
+        norm = k[np.argmin(abs(dk))]
+        k = k / norm
+    else:
+        k = k / k.max()
+    return m * k - m / 2.
+
+
+def dH(x, m, p, q, c):
+    z = m * x**(p - 1) * (p * (c**(p + q)) - q * (x**(p + q)))
+    t = (c**(p + q) + x**(p + q))**2.
+    return z / t
+
+
+'''
 Precomputing
 '''
 
@@ -525,7 +720,7 @@ def foo(x):
 
 def precompute_fits():
     from pymeg import parallel
-    subs = [3]
+    subs = range(1, 16)
     funcs = ['stld']
     areas = ['V1-lh', 'V2-lh', 'V3-lh', 'V1-rh', 'V2-rh', 'V3-rh']
     from itertools import product
