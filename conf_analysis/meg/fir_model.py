@@ -17,6 +17,13 @@ from scipy.stats import multivariate_normal as mvnorm, norm
 from conf_analysis.behavior import metadata
 from joblib import Memory
 
+
+import socket
+if 'lisa.surfsara' in socket.gethostname():
+    cachedir = '/home/nwilming'
+else:
+    cachedir = metadata.cachedir
+
 memory = Memory(cachedir=metadata.cachedir)
 
 
@@ -456,7 +463,8 @@ def mv_model_eval(contrast, power, amplitude, slope, offset, sigma):
 
 
 def invert(trace, X, contrast, thin=10):
-    ampl, slope, off = trace['amplitude'][::thin], trace['slope'][::thin], trace['offset'][::thin]
+    ampl, slope, off = trace['amplitude'][::thin], trace[
+        'slope'][::thin], trace['offset'][::thin]
 
     sigma = trace['sigma']
     pC = pc(contrast)
@@ -472,6 +480,23 @@ def pc(x, t=0.05):
     y = (norm.pdf(x, 0.5 + t, 0.05) + norm.pdf(x, 0.5 + t, 0.1) + norm.pdf(x, 0.5 + t, 0.15) +
          norm.pdf(x, 0.5 - t, 0.05) + norm.pdf(x, 0.5 - t, 0.1) + norm.pdf(x, 0.5 - t, 0.15))
     return y / y.sum()
+
+
+@memory.cache
+def get_trace_for_subject(subject, area):
+    import pymc3 as pm
+    sa = pd.read_hdf(
+        '/home/nwilming/individual_sample_gp_sltd_remove_overlap.hdf', 's_empirical')
+    sa = sa.query('subject==%i & area=="%s"' % (subject, area))
+    power = pd.pivot_table(sa, values='power', index='sample_id', columns='F')
+    contrast = pd.pivot_table(sa, values='contrast', index='sample_id')
+
+    mdl = mv_model(power.values, contrast.values.ravel())
+    with mdl:
+        savedir = 'mvnorm_S%i_%s_trace' % (subject, area)
+        db = pm.backends.Text(savedir)
+        trace = pm.sample(5000, cores=4, njobs=4, trace=db, init='advi+adapt_diag')
+    return trace
 '''
 Plots
 '''
@@ -496,7 +521,6 @@ Precomputing
 
 def foo(x):
     print x
-
 
 
 def precompute_fits():

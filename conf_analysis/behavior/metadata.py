@@ -3,7 +3,8 @@ Keep track of all the subject data
 '''
 from numpy import *
 import numpy as np
-import os, socket
+import os
+import socket
 import pandas as pd
 
 if socket.gethostname().startswith('node'):
@@ -13,6 +14,10 @@ if socket.gethostname().startswith('node'):
     preprocessed = '/home/nwilming/conf_meg/'
     cachedir = '/home/nwilming/conf_data/cache/'
     behavioral_path = '/home/nwilming/conf_data/'
+elif 'lisa.surfsara' in socket.gethostname():
+    home = '/home/nwilming/'
+    project = '/home/nwilming/conf_analysis/'
+    cachedir = '/home/nwilming'
 else:
     home = '/Users/nwilming/'
     project = '/Users/nwilming/u/conf_analysis/'
@@ -82,14 +87,15 @@ data_files = {'S01': ['s01-01_Confidence_20151208_02.ds',
                       'S15-2_Confidence_20160425_01.ds',
                       'S15-3_Confidence_20160427_01.ds',
                       'S15-4_Confidence_20160428_01.ds']
-}
+              }
 
-file_type_map = {'fif':'-epo.fif.gz', 'artifacts':'.artifact_def', 'meta':'.meta'}
+file_type_map = {'fif': '-epo.fif.gz',
+                 'artifacts': '.artifact_def', 'meta': '.meta'}
 
 
 def get_raw_filename(snum, session):
     return os.path.join(raw_path,
-                        data_files['S%02i'%snum][session])
+                        data_files['S%02i' % snum][session])
 
 
 def get_epoch_filename(snum, session, block, period, data_type):
@@ -105,11 +111,13 @@ def get_epoch_filename(snum, session, block, period, data_type):
     One of 'fif', 'artifcats', 'meta'
     '''
     assert(data_type in list(file_type_map.keys()))
-    path = os.path.join(preprocessed, 'S%i'%snum)
+    path = os.path.join(preprocessed, 'S%i' % snum)
     if period is None:
-        fname = 'SUB%i_S%i_B%i'%(snum, session, block) + file_type_map[data_type]
+        fname = 'SUB%i_S%i_B%i' % (
+            snum, session, block) + file_type_map[data_type]
     else:
-        fname = 'SUB%i_S%i_B%i_%s'%(snum, session, block, period) + file_type_map[data_type]
+        fname = 'SUB%i_S%i_B%i_%s' % (
+            snum, session, block, period) + file_type_map[data_type]
     fname = os.path.join(path, fname)
     return fname
 
@@ -127,37 +135,40 @@ def define_blocks(events):
     TODO: Doc.
     '''
     events = events.astype(float)
-    start = [0,0,]
-    end = [0,]
+    start = [0, 0, ]
+    end = [0, ]
     if not len(start) == len(end):
-        dif = len(start)-len(end)
-        start = where(events[:,2] == 150)[0]
+        dif = len(start) - len(end)
+        start = where(events[:, 2] == 150)[0]
         end = where(events[:, 2] == 151)[0]
 
-        # Aborted block during a trial, find location where [start ... start end] occurs
+        # Aborted block during a trial, find location where [start ... start
+        # end] occurs
         i_start, i_end = 0, 0   # i_start points to the beginning of the current
-                                # trial and i_end to the beginning of the current trial.
+        # trial and i_end to the beginning of the current trial.
 
         if not (len(start) == len(end)):
-            # Handle this condition by looking for the closest start to each end.
-            id_keep = (0*events[:,0]).astype(bool)
+            # Handle this condition by looking for the closest start to each
+            # end.
+            id_keep = (0 * events[:, 0]).astype(bool)
             start_times = events[start, 0]
             end_times = events[end, 0]
 
             for i, e in enumerate(end_times):
-                d = start_times-e
-                d[d>0] = -inf
+                d = start_times - e
+                d[d > 0] = -inf
                 matching_start = argmax(d)
                 evstart = start[matching_start]
 
-                if (151 in events[evstart-10:evstart, 2]):
-                    prev_end = 10-where(events[evstart-10:evstart, 2]==151)[0][0]
-                    id_keep[(start[matching_start]-prev_end+1):end[i]+1] = True
+                if (151 in events[evstart - 10:evstart, 2]):
+                    prev_end = 10 - \
+                        where(events[evstart - 10:evstart, 2] == 151)[0][0]
+                    id_keep[(start[matching_start] - prev_end + 1):end[i] + 1] = True
                 else:
-                    id_keep[(start[matching_start]-10):end[i]+1] = True
-            events = events[id_keep,:]
+                    id_keep[(start[matching_start] - 10):end[i] + 1] = True
+            events = events[id_keep, :]
 
-        start = where(events[:,2] == 150)[0]
+        start = where(events[:, 2] == 150)[0]
         end = where(events[:, 2] == 151)[0]
 
     trials = []
@@ -165,13 +176,13 @@ def define_blocks(events):
     block = -1
     for i, (ts, te) in enumerate(zip(start, end)):
         # Get events just before trial onset, they mark trial numbers
-        trial_nums = events[ts-8:ts+1, 2]
-        pins = trial_nums[(0<=trial_nums) & (trial_nums<=8)]
+        trial_nums = events[ts - 8:ts + 1, 2]
+        pins = trial_nums[(0 <= trial_nums) & (trial_nums <= 8)]
         if len(pins) == 0:
             trial = 1
         else:
             # Convert pins to numbers
-            trial = sum([2**(8-pin) for pin in pins])
+            trial = sum([2**(8 - pin) for pin in pins])
         if trial == 1:
             block += 1
         trials.append(trial)
@@ -179,24 +190,25 @@ def define_blocks(events):
     # If the recording did not start before the first trial we might miss trials
     # In this case the first trial should not be labelled 1.
     for b in unique(blocks):
-        if sum(blocks==b) is not 100:
-            ids = where(blocks==b)[0]
-            trials[ids[0]] = trials[ids[1]]-1
-    return events[start,0], events[end, 0], np.array(trials), np.array(blocks)
+        if sum(blocks == b) is not 100:
+            ids = where(blocks == b)[0]
+            trials[ids[0]] = trials[ids[1]] - 1
+    return events[start, 0], events[end, 0], np.array(trials), np.array(blocks)
 
 val2field = {
-    41:'meg_side', 40:'meg_side',
-    31:'meg_noise_sigma', 32:'meg_noise_sigma', 33:'meg_noise_sigma',
-    64:'_onset', 49:'ref_offset', 50:'cc', 48:'stim_offset',
-    24:'button', 23:'button', 22:'button', 21:'button', 88:'button',
-    10:'meg_feedback', 11:'meg_feedback'
-    }
+    41: 'meg_side', 40: 'meg_side',
+    31: 'meg_noise_sigma', 32: 'meg_noise_sigma', 33: 'meg_noise_sigma',
+    64: '_onset', 49: 'ref_offset', 50: 'cc', 48: 'stim_offset',
+    24: 'button', 23: 'button', 22: 'button', 21: 'button', 88: 'button',
+    10: 'meg_feedback', 11: 'meg_feedback'
+}
 
 
 def fname2session(filename):
     print(filename)
     #'/Volumes/dump/conf_data/raw/s04-04_Confidence_20151217_02.ds'
     return int(filename.split('/')[-1].split('_')[-2])
+
 
 def get_meta(events, tstart, tend, tnum, bnum, day, subject):
     trls = []
@@ -215,7 +227,7 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject):
             trial[fname] = v
             trial[fname + '_t'] = t
 
-        trial['trial'] = trialnum-1
+        trial['trial'] = trialnum - 1
         trial['block_num'] = block
         trial['start'] = ts
         trial['end'] = te
@@ -234,10 +246,10 @@ def correct_recording_errors(df):
     '''
 
     if 3 in unique(df.snum):
-        id_button_21 = ((df.snum==3) & (df.button == 21) &
-                      ((df.day == 20151207) | (df.day == 20151208)))
-        id_button_22 =  ((df.snum==3) & (df.button == 22) &
-                      ((df.day == 20151207) | (df.day == 20151208)))
+        id_button_21 = ((df.snum == 3) & (df.button == 21) &
+                        ((df.day == 20151207) | (df.day == 20151208)))
+        id_button_22 = ((df.snum == 3) & (df.button == 22) &
+                        ((df.day == 20151207) | (df.day == 20151208)))
         df.loc[id_button_21, 'button'] = 22
         df.loc[id_button_22, 'button'] = 21
     return df
@@ -254,19 +266,22 @@ def cleanup(meta):
     no_lates = no_lates.query('~(button==88)')
 
     # Check for proper button to response mappings!
-    assert all(no_lates.button.replace({21:1, 22:1, 23:-1, 24:-1})==no_lates.response)
-    assert all(no_lates.button.replace({21:2, 22:1, 23:1, 24:2})==no_lates.confidence)
+    assert all(no_lates.button.replace(
+        {21: 1, 22: 1, 23: -1, 24: -1}) == no_lates.response)
+    assert all(no_lates.button.replace(
+        {21: 2, 22: 1, 23: 1, 24: 2}) == no_lates.confidence)
     cols += ['button']
-    assert all( (no_lates.meg_feedback-10)==no_lates.correct)
+    assert all((no_lates.meg_feedback - 10) == no_lates.correct)
     cols += ['meg_feedback']
-    assert all( (no_lates.meg_side.replace({40:-1, 41:1}))==no_lates.side)
+    assert all((no_lates.meg_side.replace({40: -1, 41: 1})) == no_lates.side)
     cols += ['meg_side']
-    assert all( (no_lates.meg_noise_sigma.replace({31:.05, 32:.1, 33:.15}))==no_lates.noise_sigma)
+    assert all((no_lates.meg_noise_sigma.replace(
+        {31: .05, 32: .1, 33: .15})) == no_lates.noise_sigma)
     cols += ['meg_noise_sigma']
-    cols += ['cc%i'%c for c in range(10)]
+    cols += ['cc%i' % c for c in range(10)]
     cols += ['meg_side_t', ]
     return meta.drop(cols, axis=1)
 
 
 def mne_events(data, time_field, event_val):
-    return vstack([data[time_field], 0*data[time_field], data[event_val]]).astype(int).T
+    return vstack([data[time_field], 0 * data[time_field], data[event_val]]).astype(int).T
