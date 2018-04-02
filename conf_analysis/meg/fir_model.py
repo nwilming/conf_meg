@@ -686,7 +686,6 @@ def pc(x, t=0.05):
     return y / y.sum()
 
 
-@memory.cache
 def get_trace_for_subject(subject, area):
     import pymc3 as pm
     sa = pd.read_hdf(
@@ -695,12 +694,16 @@ def get_trace_for_subject(subject, area):
     power = pd.pivot_table(sa, values='power', index='sample_id', columns='F')
     contrast = pd.pivot_table(sa, values='contrast', index='sample_id')
 
-    mdl = mv_model(power.values, contrast.values.ravel())
+    mdl = mv_crf_model(power.values, contrast.values.ravel())
     with mdl:
-        savedir = 'mvnorm_S%i_%s_trace' % (subject, area)
+        savedir = 'mvnorm_CRF_S%i_%s_trace' % (subject, area)
         db = pm.backends.Text(savedir)
-        trace = pm.sample(5000, cores=4, njobs=4, trace=db, init='advi+adapt_diag')
-    return trace
+        trace = pm.sample(4500, tune=1000, cores=4, njobs=4,
+                          trace=db, init='advi+adapt_diag')
+    import cPickle
+    cPickle.dump({'model': mdl, 'trace': trace}, open(
+        'mvnorm_CRF_S%i_%s_trace.pkl' % (subject, area), 'w'))
+
 '''
 Plots
 '''
@@ -721,6 +724,7 @@ def plot_sample_aligned_responses(sa, area='V1-lh'):
 '''
 CRFs
 '''
+
 
 def vector_crf(x, m, p, q, c):
     #c = float(c)
