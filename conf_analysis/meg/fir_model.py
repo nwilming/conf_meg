@@ -18,13 +18,14 @@ from scipy.optimize import least_squares
 from scipy.interpolate import interp1d
 from scipy.special import erf
 
-
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import norm
 
-
 from conf_analysis.behavior import metadata
 from joblib import Memory
+
+from sympy import mpmath
+
 
 memory = Memory(cachedir=metadata.cachedir)
 
@@ -506,12 +507,12 @@ def sample_aligned(data, contrast, params, window=0.01, remove_overlap=True,
     return pd.DataFrame(output)
 
 
-def get_average_contrast(sa, by=['subject', 'area', 'F'], centers=np.linspace(0, 1, 10),
+def get_average_contrast(sa, by=['subject', 'area', 'F'],
+                         centers=np.linspace(0, 1, 10),
                          width=0.2):
     dy = sa.groupby(
         by).apply(lambda x: contrast_integrated_averages(x, centers, width))
     return dy
-
 
 
 def contrast_integrated_averages(sa, centers=np.linspace(0.1, 0.9, 5),
@@ -582,15 +583,13 @@ Bayesian fits
 '''
 
 
-
-
 def mv_model(power, contrast):
     '''
     Define a model that predicts contrast from power. Two step approach:
     First fit likelihood to observe a power value based on contrast.
 
     Power is num_freqs x trials
-    
+
     '''
     num_freqs = power.shape[1]
     import numpy as np
@@ -616,6 +615,44 @@ def mv_model(power, contrast):
         return model
 
 
+def mv_crf_model(power, contrast):
+    '''
+    Fit contrast response functions with two independent exponents.
+
+    The CRF has four parameters:
+        m - magnitude
+        p - exponent in numerator
+        q - added to p in denominator
+        c - point of half contrast.
+
+    Contrast needs will be scaled to [0..100], but is expected to be 
+    in [0..1]
+    '''
+    num_freqs = power.shape[1]
+    import numpy as np
+    import theano.tensor as tt
+    import pymc3 as pm
+
+    contrast = contrast[:, np.newaxis] * 100
+
+    with pm.Model() as model:
+
+        magnitude = pm.Normal('magnitude', mu=0, sd=250, shape=(1, num_freqs))
+        p = pm.Gamma('P', mu=3., sd=10., shape=(1, num_freqs))
+        q = pm.Normal('Q', mu=0, sd=1, shape=(1, num_freqs))
+        c50 = pm.Uniform('c50', lower=1, upper=100, shape=(1, num_freqs))
+
+        # Now define contrast dependence.
+        mu = crf(contrast, magnitude, p, q, c50)
+
+        packed_L = pm.LKJCholeskyCov('packed_L', n=num_freqs,
+                                     eta=2., sd_dist=pm.HalfCauchy.dist(2.5))
+        L = pm.expand_packed_triangular(num_freqs, packed_L)
+        sigma = pm.Deterministic('sigma', L.dot(L.T))
+        y_ = pm.MvNormal('obs', mu, chol=L, observed=power)
+        return model
+
+
 def mv_model_eval(contrast, power, amplitude, slope, offset, sigma):
     mu = amplitude * \
         (expit(
@@ -626,7 +663,8 @@ def mv_model_eval(contrast, power, amplitude, slope, offset, sigma):
 
 
 def invert(trace, X, contrast, thin=10):
-    ampl, slope, off = trace['amplitude'][::thin], trace['slope'][::thin], trace['offset'][::thin]
+    ampl, slope, off = trace['amplitude'][::thin], trace[
+        'slope'][::thin], trace['offset'][::thin]
 
     sigma = trace['sigma']
     pC = pc(contrast)
@@ -663,22 +701,43 @@ def plot_sample_aligned_responses(sa, area='V1-lh'):
 CRFs
 '''
 
+def vector_crf(x, m, p, q, c):
+    #c = float(c)
+    print p.tag.test_value.shape
+    print x.shape
+    #p = p[:, np.newaxis]
+    #q = q[:, np.newaxis]
+    #c = c[:, np.newaxis]
+    #m = m[:, np.newaxis]
+    k = (m * (x**p[:, np.newaxis])) / (x**(p + q) + c**(p + q))
+    ck = (m * (c**p)) / (c**(p + q) + c**(p + q))
+    return k - ck
 
-def H(x, m, p, q, c):
+
+def crf(x, m, p, q, c):
+    #c = float(c)
+    k = (m * (x**p)) / (x**(p + q) + c**(p + q))
+    ck = (m * (c**p)) / (c**(p + q) + c**(p + q))
+    return k - ck
+
+
+def old_crf(x, m, p, q, c):
     c = float(c)
 
     k = (m * (x**p)) / (x**(p + q) + c**(p + q))
+    kmax = (m * (100.**p)) / (100.**(p + q) + c**(p + q))
 
     if k[-1] < k.max():
-        dk = dH(x, m, p, q, c)
-        norm = k[np.argmin(abs(dk))]
-        k = k / norm
+        #dk = dx_crf(x, m, p, q, c)
+        root = float(mpmath.findroot(lambda x: dx_crf(x, m, p, q, c), 50))
+        kmax = (m * (root**p)) / (root**(p + q) + c**(p + q))
+        k = k / kmax
     else:
-        k = k / k.max()
+        k = k / kmax
     return m * k - m / 2.
 
 
-def dH(x, m, p, q, c):
+def dx_crf(x, m, p, q, c):
     z = m * x**(p - 1) * (p * (c**(p + q)) - q * (x**(p + q)))
     t = (c**(p + q) + x**(p + q))**2.
     return z / t
