@@ -18,10 +18,8 @@ from scipy.optimize import least_squares
 from scipy.interpolate import interp1d
 from scipy.special import erf
 
-
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import norm
-
 
 from conf_analysis.behavior import metadata
 from joblib import Memory
@@ -513,12 +511,12 @@ def sample_aligned(data, contrast, params, window=0.01, remove_overlap=True,
     return pd.DataFrame(output)
 
 
-def get_average_contrast(sa, by=['subject', 'area', 'F'], centers=np.linspace(0, 1, 10),
+def get_average_contrast(sa, by=['subject', 'area', 'F'],
+                         centers=np.linspace(0, 1, 10),
                          width=0.2):
     dy = sa.groupby(
         by).apply(lambda x: contrast_integrated_averages(x, centers, width))
     return dy
-
 
 
 def contrast_integrated_averages(sa, centers=np.linspace(0.1, 0.9, 5),
@@ -589,15 +587,13 @@ Bayesian fits
 '''
 
 
-
-
 def mv_model(power, contrast):
     '''
     Define a model that predicts contrast from power. Two step approach:
     First fit likelihood to observe a power value based on contrast.
 
     Power is num_freqs x trials
-    
+
     '''
     num_freqs = power.shape[1]
     import numpy as np
@@ -614,6 +610,44 @@ def mv_model(power, contrast):
                 slope * (contrast[:, np.newaxis] + offset)) - 0.5)
 
         # sigma = pm.HalfCauchy("sigma", beta=5, shape=10)
+
+        packed_L = pm.LKJCholeskyCov('packed_L', n=num_freqs,
+                                     eta=2., sd_dist=pm.HalfCauchy.dist(2.5))
+        L = pm.expand_packed_triangular(num_freqs, packed_L)
+        sigma = pm.Deterministic('sigma', L.dot(L.T))
+        y_ = pm.MvNormal('obs', mu, chol=L, observed=power)
+        return model
+
+
+def mv_crf_model(power, contrast):
+    '''
+    Fit contrast response functions with two independent exponents.
+
+    The CRF has four parameters:
+        m - magnitude
+        p - exponent in numerator
+        q - added to p in denominator
+        c - point of half contrast.
+
+    Contrast needs will be scaled to [0..100], but is expected to be 
+    in [0..1]
+    '''
+    num_freqs = power.shape[1]
+    import numpy as np
+    import theano.tensor as tt
+    import pymc3 as pm
+
+    contrast = contrast[:, np.newaxis] * 100
+
+    with pm.Model() as model:
+
+        magnitude = pm.Normal('magnitude', mu=0, sd=250, shape=(1, num_freqs))
+        p = pm.Gamma('P', mu=3., sd=10., shape=(1, num_freqs))
+        q = pm.Normal('Q', mu=0, sd=1, shape=(1, num_freqs))
+        c50 = pm.Uniform('c50', lower=1, upper=100, shape=(1, num_freqs))
+
+        # Now define contrast dependence.
+        mu = crf(contrast, magnitude, p, q, c50)
 
         packed_L = pm.LKJCholeskyCov('packed_L', n=num_freqs,
                                      eta=2., sd_dist=pm.HalfCauchy.dist(2.5))
@@ -652,7 +686,6 @@ def pc(x, t=0.05):
     return y / y.sum()
 
 
-@memory.cache
 def get_trace_for_subject(subject, area):
     import pymc3 as pm
     sa = pd.read_hdf(
@@ -661,12 +694,16 @@ def get_trace_for_subject(subject, area):
     power = pd.pivot_table(sa, values='power', index='sample_id', columns='F')
     contrast = pd.pivot_table(sa, values='contrast', index='sample_id')
 
-    mdl = mv_model(power.values, contrast.values.ravel())
+    mdl = mv_crf_model(power.values, contrast.values.ravel())
     with mdl:
-        savedir = 'mvnorm_S%i_%s_trace' % (subject, area)
+        savedir = 'mvnorm_CRF_S%i_%s_trace' % (subject, area)
         db = pm.backends.Text(savedir)
-        trace = pm.sample(5000, cores=4, njobs=4, trace=db, init='advi+adapt_diag')
-    return trace
+        trace = pm.sample(4500, tune=1000, cores=4, njobs=4,
+                          trace=db, init='advi+adapt_diag')
+    import cPickle
+    cPickle.dump({'model': mdl, 'trace': trace}, open(
+        'mvnorm_CRF_S%i_%s_trace.pkl' % (subject, area), 'w'))
+
 '''
 Plots
 '''
@@ -689,21 +726,43 @@ CRFs
 '''
 
 
-def H(x, m, p, q, c):
+def vector_crf(x, m, p, q, c):
+    #c = float(c)
+    print p.tag.test_value.shape
+    print x.shape
+    #p = p[:, np.newaxis]
+    #q = q[:, np.newaxis]
+    #c = c[:, np.newaxis]
+    #m = m[:, np.newaxis]
+    k = (m * (x**p[:, np.newaxis])) / (x**(p + q) + c**(p + q))
+    ck = (m * (c**p)) / (c**(p + q) + c**(p + q))
+    return k - ck
+
+
+def crf(x, m, p, q, c):
+    #c = float(c)
+    k = (m * (x**p)) / (x**(p + q) + c**(p + q))
+    ck = (m * (c**p)) / (c**(p + q) + c**(p + q))
+    return k - ck
+
+
+def old_crf(x, m, p, q, c):
     c = float(c)
 
     k = (m * (x**p)) / (x**(p + q) + c**(p + q))
+    kmax = (m * (100.**p)) / (100.**(p + q) + c**(p + q))
 
     if k[-1] < k.max():
-        dk = dH(x, m, p, q, c)
-        norm = k[np.argmin(abs(dk))]
-        k = k / norm
+        #dk = dx_crf(x, m, p, q, c)
+        root = float(mpmath.findroot(lambda x: dx_crf(x, m, p, q, c), 50))
+        kmax = (m * (root**p)) / (root**(p + q) + c**(p + q))
+        k = k / kmax
     else:
-        k = k / k.max()
+        k = k / kmax
     return m * k - m / 2.
 
 
-def dH(x, m, p, q, c):
+def dx_crf(x, m, p, q, c):
     z = m * x**(p - 1) * (p * (c**(p + q)) - q * (x**(p + q)))
     t = (c**(p + q) + x**(p + q))**2.
     return z / t
