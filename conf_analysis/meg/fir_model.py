@@ -656,7 +656,7 @@ def pc(x, t=0.05):
 def get_trace_for_subject(subject, area):
     import pymc3 as pm
     sa = pd.read_hdf(
-        '/home/nwilming/individual_sample_gp_sltd_remove_overlap.hdf', 's_empirical')
+        '/home/nwilming/fixed_individual_sample_gp_sltd_remove_overlap.hdf', 's_empirical')
     sa = sa.query('subject==%i & area=="%s"' % (subject, area))
     power = pd.pivot_table(sa, values='power', index='sample_id', columns='F')
     contrast = pd.pivot_table(sa, values='contrast', index='sample_id')
