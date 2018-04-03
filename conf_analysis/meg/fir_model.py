@@ -538,7 +538,7 @@ def example_plot():
     import seaborn as sns
     c = np.linspace(0, 1, 100)
     subplot(1, 3, 1)
-    color = sns.color_palette("Blues", n_colors=10)
+    color = sns.color_palette("Reds", n_colors=10)
     for ii, slope in enumerate(np.arange(1, 11, 1)):
         plot(c, sigmoidal(c, slope, 0), color=color[ii])
         ylim([-1, 1])
@@ -551,7 +551,7 @@ def example_plot():
         ylim([-1, 1])
         xlabel('contrast')
     subplot(1, 3, 3)
-    color = sns.color_palette("Reds", n_colors=10)
+    color = sns.color_palette("Blues", n_colors=10)
     for ii, offset in enumerate(np.linspace(-0.5, 0.5, 10)):
         plot(c, 1 * sigmoidal(c, 5, offset), color=color[ii])
         ylim([-1, 1])
@@ -629,7 +629,7 @@ def mv_crf_model(power, contrast):
         q - added to p in denominator
         c - point of half contrast.
 
-    Contrast needs will be scaled to [0..100], but is expected to be 
+    Contrast needs will be scaled to [0..100], but is expected to be
     in [0..1]
     '''
     num_freqs = power.shape[1]
@@ -640,20 +640,25 @@ def mv_crf_model(power, contrast):
     contrast = contrast[:, np.newaxis] * 100
 
     with pm.Model() as model:
+        BoundedNormal = pm.Bound(pm.Normal, lower=0)
+        #BoundedNormalP = pm.Bound(pm.Normal, lower=0)
 
-        magnitude = pm.Normal('magnitude', mu=0, sd=250, shape=(1, num_freqs))
-        p = pm.Gamma('P', mu=3., sd=10., shape=(1, num_freqs))
-        q = pm.Normal('Q', mu=0, sd=1, shape=(1, num_freqs))
-        c50 = pm.Uniform('c50', lower=1, upper=100, shape=(1, num_freqs))
+        magnitude = pm.Normal('magnitude', mu=0, sd=5, shape=(1, num_freqs))
+        p = pm.Normal('P', mu=0, sd=.5,
+                      shape=(1, num_freqs))
+        q = pm.Gamma('Q', alpha=2, beta=0.5,
+                     shape=(1, num_freqs))
+        c50 = pm.Normal('c50', mu=50, sd=20, shape=(1, num_freqs))
 
         # Now define contrast dependence.
         mu = crf(contrast, magnitude, p, q, c50)
 
         packed_L = pm.LKJCholeskyCov('packed_L', n=num_freqs,
-                                     eta=2., sd_dist=pm.HalfCauchy.dist(2.5))
+                                     eta=2., sd_dist=pm.HalfCauchy.dist(5.))
         L = pm.expand_packed_triangular(num_freqs, packed_L)
         sigma = pm.Deterministic('sigma', L.dot(L.T))
-        y_ = pm.MvNormal('obs', mu, chol=L, observed=power)
+        nu = BoundedNormal('NU', mu=3, sd=20)
+        y_ = pm.MvStudentT('obs', mu=mu, chol=L, nu=nu, observed=power)
         return model
 
 
@@ -726,23 +731,16 @@ CRFs
 '''
 
 
-def vector_crf(x, m, p, q, c):
-    #c = float(c)
-    print p.tag.test_value.shape
-    print x.shape
-    #p = p[:, np.newaxis]
-    #q = q[:, np.newaxis]
-    #c = c[:, np.newaxis]
-    #m = m[:, np.newaxis]
-    k = (m * (x**p[:, np.newaxis])) / (x**(p + q) + c**(p + q))
-    ck = (m * (c**p)) / (c**(p + q) + c**(p + q))
+def crf(x, m, p, q, c):
+    k = (m * (x**(p + q))) / (x**(q) + c**(q))
+    ck = (m * (c**(p + q))) / (c**(q) + c**(q))
     return k - ck
 
 
-def crf(x, m, p, q, c):
-    #c = float(c)
-    k = (m * (x**p)) / (x**(p + q) + c**(p + q))
-    ck = (m * (c**p)) / (c**(p + q) + c**(p + q))
+def crf2(x, m, p, q, c):
+    # c = float(c)
+    k = (m * (x**p)) / (x**(q) + c**(q))
+    ck = (m * (c**p)) / (c**(q) + c**(q))
     return k - ck
 
 
@@ -753,7 +751,7 @@ def old_crf(x, m, p, q, c):
     kmax = (m * (100.**p)) / (100.**(p + q) + c**(p + q))
 
     if k[-1] < k.max():
-        #dk = dx_crf(x, m, p, q, c)
+        # dk = dx_crf(x, m, p, q, c)
         root = float(mpmath.findroot(lambda x: dx_crf(x, m, p, q, c), 50))
         kmax = (m * (root**p)) / (root**(p + q) + c**(p + q))
         k = k / kmax
