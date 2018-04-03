@@ -686,6 +686,7 @@ def pc(x, t=0.05):
     return y / y.sum()
 
 
+@memory.cache
 def get_trace_for_subject(subject, area):
     import pymc3 as pm
     sa = pd.read_hdf(
