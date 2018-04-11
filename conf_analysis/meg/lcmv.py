@@ -61,6 +61,18 @@ def extract(subject, session, lowest_freq=None,
 
 def do_epochs(epochs, meta, forward, source, noise_cov, data_cov, labels,
               func=None, accumulator=None):
+    '''
+    Perform SR for a set of epochs. 
+
+    func can apply a function to the source-reconstructed data, for example
+    to perform a time-frqeuncy decomposition. The behavior of do_epochs depends
+    on what this function returns. If it returns a 2D matrix, it will be 
+    interpreted as source_locations*num_F*time array. 
+
+    func itself should be a tuple: ('identifier', identifier values, function).
+    This allows to label the transformed data appropriately.
+
+    '''
     results = []
     if labels is None:
         labels = []
@@ -73,22 +85,119 @@ def do_epochs(epochs, meta, forward, source, noise_cov, data_cov, labels,
                                          reg=0.05,
                                          pick_ori='max-power',
                                          return_generator=True)):
-        if func is not None:
-            epoch.data = func(epoch.data)
-        srcepoch = {'time': epoch.times, 'trial': trial}
+        if func is None:
+            srcepoch = extract_labels_from_trial(epoch, labels)
+            results.append(srcepoch)
+            accumulator.update(epoch)
+            del epoch
+        else:
+            transformed = func[-1](epoch.data)
+            keyname, values = func[:2]
+            for value, row in zip(values, transformed):
+                epoch.data = row
+                srcepoch = extract_labels_from_trial(epoch, labels)
+                srcepoch[keyname] = value
+                results.append(srcepoch)
+                accumulator.update(epoch)
+            del epoch, transformed
 
-        for label in labels:
-            pca = epoch.extract_label_time_course(
-                label, source, mode='mean')
-            srcepoch[label.name] = pca
-        results.append(srcepoch)
-        accumulator.update(epoch)
-        del epoch
     if len(labels) > 0:
         results = pd.concat([to_df(r) for r in results])
     else:
         results = None
     return results
+
+
+def extract_labels_from_trial(epoch, labels):
+    srcepoch = {'time': epoch.times, 'trial': trial}
+    for label in labels:
+        pca = epoch.extract_label_time_course(
+            label, source, mode='mean')
+        srcepoch[label.name] = pca
+    return srcepoch
+
+
+class AccumSR(object):
+    '''
+    Accumulate SRs and compute an average.
+    '''
+
+    def __init__(self, subject, session, lowest_freq, F,  BEM='three_layer',
+                 prefix=''):
+        self.stc = None
+        self.N = 0
+        self.subject = subject
+        self.session = session
+        if lowest_freq is None:
+            lowest_freq = 'None'
+        self.lowest_freq = lowest_freq
+        self.F = F
+        self.prefix = prefix + BEM
+        self.BEM = BEM
+
+    def update(self, stc):
+        if self.stc is None:
+            self.stc = stc.copy()
+        else:
+            self.stc += stc
+        self.N += 1
+
+    def save_averaged_sr(self):
+        stcs = self.stc.copy()
+        filename = '/home/nwilming/conf_meg/source_recon_F_%s/%sSR_S%i_SESS%i_lF%s_F%s.stc' % (
+            self.BEM, self.prefix, self.subject, self.session, str(
+                self.lowest_freq),
+            str(self.F))
+        idbase = (-.5 < stcs.times) & (stcs.times < 0)
+        m = stcs.data[:, idbase].mean(1)[:, np.newaxis]
+        s = stcs.data[:, idbase].std(1)[:, np.newaxis]
+        stcs.data = (stcs.data - m) / s
+        stcs.save(filename)
+        return stcs
+
+
+def get_power_estimator(F, cycles, time_bandwidth, sf=600., decim=1):
+    '''
+    Estimate power from source reconstruction
+
+    This will return a num_trials*num_F*time array
+    '''
+    import functools
+
+    def foo(x, sf=600.,
+            foi=None,
+            cycles=None,
+            time_bandwidth=None,
+            n_jobs=None, decim=decim):
+        x = x[np.newaxis, :, :]
+        x = tfr.array_tfr(x,
+                          sf=sf,
+                          foi=foi,
+                          cycles=cycles,
+                          time_bandwidth=time_bandwidth,
+                          n_jobs=4, decim=decim)
+        return x
+
+    return ('F', F, functools.partial(foo, sf=sf,
+                                      foi=F,
+                                      cycles=cycles,
+                                      time_bandwidth=time_bandwidth,
+                                      n_jobs=4, decim=decim))
+
+
+def to_df(r):
+    p = {}
+    for key in r.keys():
+        if key == 'trial':
+            p[key] = np.array([r[key]] * len(r['time']))
+        else:
+            p[key] = r[key].ravel()
+    return pd.DataFrame(p)
+
+
+'''
+Everything below is deprecated I think
+'''
 
 
 def freq_from_tfr(averages, picks, max_tmin=0.2):
@@ -139,82 +248,6 @@ def load_tfr(subject, session):
     del ep
     avg = avg.apply_baseline((-0.2, 0), mode='zscore')
     return avg
-
-
-class AccumSR(object):
-    '''
-    Accumulate SRs and compute an average.
-    '''
-
-    def __init__(self, subject, session, lowest_freq, F,  BEM='three_layer',
-                 prefix=''):
-        self.stc = None
-        self.N = 0
-        self.subject = subject
-        self.session = session
-        if lowest_freq is None:
-            lowest_freq = 'None'
-        self.lowest_freq = lowest_freq
-        self.F = F
-        self.prefix = prefix + BEM
-        self.BEM = BEM
-
-    def update(self, stc):
-        if self.stc is None:
-            self.stc = stc.copy()
-        else:
-            self.stc += stc
-        self.N += 1
-
-    def save_averaged_sr(self):
-        stcs = self.stc.copy()
-        filename = '/home/nwilming/conf_meg/source_recon_F_%s/%sSR_S%i_SESS%i_lF%s_F%s.stc' % (
-            self.BEM, self.prefix, self.subject, self.session, str(
-                self.lowest_freq),
-            str(self.F))
-        idbase = (-.5 < stcs.times) & (stcs.times < 0)
-        m = stcs.data[:, idbase].mean(1)[:, np.newaxis]
-        s = stcs.data[:, idbase].std(1)[:, np.newaxis]
-        stcs.data = (stcs.data - m) / s
-        stcs.save(filename)
-        return stcs
-
-
-def get_power_estimator(F, cycles, time_bandwidth, sf=600., decim=1):
-    '''
-    Estimate power from source reconstruction
-    '''
-    import functools
-
-    def foo(x, sf=600.,
-            foi=None,
-            cycles=None,
-            time_bandwidth=None,
-            n_jobs=None, decim=decim):
-        x = x[np.newaxis, :, :]
-        x = tfr.array_tfr(x,
-                          sf=sf,
-                          foi=[F],
-                          cycles=cycles,
-                          time_bandwidth=time_bandwidth,
-                          n_jobs=4, decim=decim)
-        return x.squeeze()
-
-    return functools.partial(foo, sf=sf,
-                             foi=[F],
-                             cycles=cycles,
-                             time_bandwidth=time_bandwidth,
-                             n_jobs=4, decim=decim)
-
-
-def to_df(r):
-    p = {}
-    for key in r.keys():
-        if key == 'trial':
-            p[key] = np.array([r[key]] * len(r['time']))
-        else:
-            p[key] = r[key].ravel()
-    return pd.DataFrame(p)
 
 
 def source_tfr(epochs, foi=None, sfreq=600, cycles=None, time_bandwidth=None,

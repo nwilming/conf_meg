@@ -37,7 +37,7 @@ def execute(subjid, session, kws):
         p = lcmv.get_power_estimator(Fact, cycles, tb, sf=600.)
         _, _, ts, fs = tfr.taper_data(
             Fact, cycles=cycles, time_bandwidth=tb)[0]
-        lowest_freq = Fact - 1.5 * fs
+        lowest_freq = None # No high pass filtering before estimation. Old: Fact - 1.5 * fs 
         run(subjid, session, p, lowest_freq, Fact, BEM=BEM)
     else:
         run(subjid, session, None, kws['lowest_freq'], F, BEM=BEM)
@@ -70,7 +70,7 @@ def list_tasks(**kws):
                 if 'F' in kws.keys() and kws['F'] == 'determine':
                     yield f, session, kws
                 else:
-                    for F in range(15, 75, 5):
+                    for F in range(5, 75, 5):
                         params = kws.copy()
                         params['F'] = F
                         params['BEM'] = BEM
