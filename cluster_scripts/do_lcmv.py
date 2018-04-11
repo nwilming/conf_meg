@@ -60,9 +60,9 @@ def run(subjid, session, p, lowest_freq, F, BEM='three_layer'):
 
 
 def list_tasks(**kws):
-    for BEM in ['single_layer']:
+    for BEM in ['three_layer']:
         if BEM == 'three_layer':
-            subs = [6, 7]
+            subs = [3]
         else:
             subs = [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         for f in subs:

@@ -622,7 +622,7 @@ def err(modelargs, **kwargs):
     return v  # +v
 
 
-@deprecated
+
 def sigmoid_transformer(x, a, b):
     '''
     x is in range (-1, 1)

@@ -472,7 +472,7 @@ def subject_sa(subject, F=[40, 45, 50, 55, 60, 65, 70],
 
 def make_all_sub_sa():
     out_sa, out_sp = [], []
-    for subject in [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
+    for subject in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
         sa, sp = subject_sa(subject)
         out_sa.append(sa)
         out_sp.append(sp)
@@ -668,14 +668,8 @@ def H(x, m, p, q, c):
     c = float(c)
 
     k = (m * (x**p)) / (x**(p + q) + c**(p + q))
-
-    if k[-1] < k.max():
-        dk = dH(x, m, p, q, c)
-        norm = k[np.argmin(abs(dk))]
-        k = k / norm
-    else:
-        k = k / k.max()
-    return m * k - m / 2.
+    ck = (m * (c**p)) / (c**(p + q) + c**(p + q))    
+    return k-ck
 
 
 def dH(x, m, p, q, c):

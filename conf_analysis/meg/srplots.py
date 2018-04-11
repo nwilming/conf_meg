@@ -197,7 +197,7 @@ def plot_tuning_indices(averages, indices, tps):
     from matplotlib.gridspec import GridSpec
 
     gs = GridSpec(16, 3, hspace=0.05, wspace=0.3)
-    subs = [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    subs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     import seaborn as sns
     ce = {}
     for sub in subs:

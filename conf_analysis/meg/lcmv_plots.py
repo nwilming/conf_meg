@@ -31,12 +31,13 @@ def gamma_overview(subject, F=45, bem='three_layer', prefix=''):
     gs = matplotlib.gridspec.GridSpec(2 * 4, 6)
     stcfiles = {}
     for session in [0, 1, 2, 3]:
-        if bem is not None:
+        if bem is None:
             sstring = ('/home/nwilming/conf_meg/source_recon_F/SR_S%i_SESS%i_*_F%i*' %
                        (subject, session, F))
         else:
-            sstring = ('/home/nwilming/conf_meg/source_recon_F_%s/%s_SR_S%i_SESS%i_*_F%i*' %
+            sstring = ('/home/nwilming/conf_meg/source_recon_F_%s/%sSR_S%i_SESS%i_*_F%i*' %
                        (bem, bem, subject, session, F))
+            print sstring
         stcfiles[session] = glob(sstring)
 
     stcs = get_stcs(stcfiles)
@@ -45,7 +46,7 @@ def gamma_overview(subject, F=45, bem='three_layer', prefix=''):
             for j, hemi in enumerate(['lh', 'rh']):
                 plt.subplot(gs[session * 2:session * 2 + 2, col * 2 + j])
                 m = plot_stcs(stc, 'S%02i' % subject, hemi,
-                              vmin=2, vmax=12.5, view=view)
+                              vmin=2, vmax=15, view=view)
                 plt.imshow(m)
                 plt.xticks([])
                 plt.yticks([])
@@ -81,7 +82,7 @@ def stats_overview(subject, F=45, prefix=''):
         plt.yticks([20, 40, 60, 80, 100, 140])
         plt.xlabel('time')
         plt.ylabel('Hz')
-
+        '''
         plt.subplot(gs[sid:sid + 2, offset + 8])
         power, meta = srplots.get_power(
             subject, session=session, decim=3)
@@ -94,6 +95,7 @@ def stats_overview(subject, F=45, prefix=''):
         yd = np.abs(plt.ylim()).max() / 2
         plt.yticks([-yd, 0, yd])
         plt.legend([])
+        '''
     plt.legend()
     plt.savefig('/home/nwilming/sub_%i_stats_overview%s.png' %
                 (subject, prefix), dpi=600)
