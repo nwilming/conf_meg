@@ -219,6 +219,8 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject):
         stim_state = ['stim', 'ref']
         cc_state = list(range(10))[::-1]
         for i, (v, t) in enumerate(zip(trigs[:, 2], trigs[:, 0])):
+            if not v in val2field.keys():
+              continue
             fname = val2field[v]
             if v == 64:
                 fname = stim_state.pop() + fname

@@ -135,6 +135,8 @@ def get_labels(subject):
     subject = 'S%02i' % subject
     subject_dir = join(subjects_dir, subject)
     labels = glob.glob(join(subject_dir, 'label', '*wang2015atlas*'))
+    labels += glob.glob(join(subject_dir, 'label', '*JWDG*.label'))
+    labels += glob.glob(join(subject_dir, 'label', '*a2009s*.label'))
     return [mne.read_label(label, subject) for label in labels]
 
 

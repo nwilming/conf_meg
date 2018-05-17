@@ -8,10 +8,10 @@ import mne
 import pandas as pd
 import numpy as np
 import cPickle
-import pylab as plt
-import seaborn as sns
+#import pylab as plt
+#import seaborn as sns
 from pymeg import tfr
-sns.set_style('ticks')
+#sns.set_style('ticks')
 
 from joblib import Memory
 memory = Memory(cachedir=metadata.cachedir)

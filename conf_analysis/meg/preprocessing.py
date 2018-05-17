@@ -32,6 +32,8 @@ from mne.transforms import apply_trans
 from pymeg import preprocessing as pymegprepr
 
 memory = Memory(cachedir=metadata.cachedir)
+import locale
+locale.setlocale(locale.LC_ALL, "en_US")
 
 
 def one_block(snum, session, block_in_raw, block_in_experiment):
@@ -45,6 +47,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         raw : mne.io.Raw object
     Raw data for an entire session of a subject.
         block_in_raw, block_in_experiment : int
+
     Each succesfull session consists out of five blocks, yet a sessions MEG
     data file sometimes contains more. This happens, for example, when a block
     is restarted. 'block_in_raw' refers to the actual block in a raw file, and
@@ -74,11 +77,12 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         logging.info('Loading block of data: %s; block: %i' %
                      (filename, block_in_experiment))
         r, r_id = load_block(raw, trials, block_in_raw)
-        r_id['filnemae'] = filename
+        r_id['filname'] = filename
         print('Working on:', filename, block_in_experiment, block_in_raw)
         logging.info('Starting artifact detection')
 
         r, ants, artdefs = pymegprepr.preprocess_block(r)
+        #r.annotations = r
         print('Notch filtering')
         midx = np.where([x.startswith('M') for x in r.ch_names])[0]
         r.notch_filter(np.arange(50, 251, 50), picks=midx)
@@ -97,10 +101,15 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
                 [(0, 1), (-1, 0.5), (-0.5, 0.5)]):
 
             logging.info('Processing epoch: %s' % epoch)
-            m, s = pymegprepr.get_epoch(r, meta, timing,
-                                        event=event, epoch_time=(tmin, tmax),
-                                        reject_time=(rmin, rmax),
-                                        base_event='stim_onset_t', base_time=(-.2, 0))
+            try:
+                m, s = pymegprepr.get_epoch(r, meta, timing,
+                                            event=event, epoch_time=(
+                                                tmin, tmax),
+                                            reject_time=(rmin, rmax),
+                                            )
+            except RuntimeError as e:
+                print(e)
+                continue
 
             if len(s) > 0:
                 epo_fname = metadata.get_epoch_filename(snum, session,
@@ -224,7 +233,9 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
             data.append(filename)
     #assert len(data) == len(list(ensure_iter(sessions)))*5
     data = pymegprepr.load_epochs(data)
-
+    event_ids = reduce(lambda x, y: x + y, [d.event_id.values() for d in data])
+    meta = meta.reset_index().set_index('hash')
+    meta = meta.loc[event_ids, :]
     assert len(meta) == sum([d._data.shape[0] for d in data])
     return pymegprepr.concatenate_epochs(data, [meta])
 

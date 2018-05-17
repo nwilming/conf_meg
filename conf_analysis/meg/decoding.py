@@ -3,8 +3,9 @@ Do some decoding stuff.
 '''
 from conf_analysis.meg import preprocessing, tfr_analysis
 from conf_analysis.behavior import metadata
-from sklearn import cross_validation, svm, pipeline, preprocessing as skpre
+from sklearn import svm, pipeline, preprocessing as skpre
 from sklearn import decomposition
+#from sklearn import cross_validation -- Commented out, needs rewrite with model_selection module
 import numpy as np
 import pandas as pd
 from joblib import Memory
