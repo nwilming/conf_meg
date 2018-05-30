@@ -50,24 +50,58 @@ def baseline(data, baseline_data, baseline=(-0.25, 0)):
                 .div(s, 1))
 
 
-def contrast_controlled_response_contrast(sub, epoch='stimulus'):
+def confidence_contrast(subs=range(1, 16), epoch='stimulus'):
+    return pd.concat(
+        [_prewarm_confidence_contrast(sub, epoch=epoch) for sub in subs])
+
+
+def _prewarm_confidence_contrast(sub, epoch='stimulus', baseline_time=(-0.25, 0)):
+    meta = preprocessing.get_meta_for_subject(sub, 'stimulus')
+    filter_dict = {'C0': meta.query('confidence==0').reset_index().loc[:, 'hash'].values,
+                   'C1': meta.query('confidence==1').reset_index().loc[:, 'hash'].values}
+    return contrast(sub, filter_dict, None, None,
+                    epoch=epoch, baseline_time=baseline_time)
+
+
+def contrast_controlled_response_contrast(sub, epoch='stimulus',
+                                          baseline_time=(-0.25, 0)):
     '''
     Compute a response contrast but control for
-    mean contrast level. To this by splitting up
+    mean contrast level. Do this by splitting up
     trials into several contrast groups and then computing
     individual response contrasts within.
     '''
     meta = preprocessing.get_meta_for_subject(sub, 'stimulus')
-    for (response, mc) in meta.groupby(['response']):
-        pass,
-    filter_dict = {'M1': meta.query('response==-1').reset_index().loc[:, 'hash'].values,
-                   'P1': meta.query('response==1').reset_index().loc[:, 'hash'].values}
+
+    # Compute Hits, Miss, CR and FA
+    # Positive -> Yes, Negative -> No
+    # [-2, 2]-> correct, [-1, 1] -> err:
+    response_type = ((1 + meta.correct) * meta.response).values
+    hits = response_type == 2
+    cr = response_type == -2
+    miss = response_type == -1
+    fa = response_type == 1
+
+    filter_dict = {
+        'HIT': meta.reset_index().loc[hits, 'hash'].values,
+        'FA': meta.reset_index().loc[fa, 'hash'].values,
+        'CR': meta.reset_index().loc[cr, 'hash'].values,
+        'MISS': meta.reset_index().loc[miss, 'hash'].values
+    }
+
     if sub <= 8:
-        hand_mapping = {'M1': 'lh_is_ipsi', 'P1': 'rh_is_ipsi'}
+        hand_mapping = {'CR': 'lh_is_ipsi', 
+                        'MISS': 'lh_is_ipsi',
+                        'HIT': 'rh_is_ipsi',
+                        'FA': 'rh_is_ipsi'}
     else:
-        hand_mapping = {'M1': 'rh_is_ipsi', 'P1': 'lh_is_ipsi'}
-    return contrast(sub, filter_dict, hand_mapping, ['P1', 'M1'],
+        hand_mapping = {'HIT': 'lh_is_ipsi', 
+                        'FA': 'lh_is_ipsi',
+                        'CR': 'rh_is_ipsi',
+                        'MISS': 'rh_is_ipsi'}
+    return contrast(sub, filter_dict, hand_mapping, None,
                     epoch=epoch, baseline_time=baseline_time)
+
 
 def response_contrast(subs=range(1, 16), epoch='stimulus'):
     return pd.concat(
@@ -122,18 +156,18 @@ def contrast(sub, filter_dict, hand_mapping, contrast,
             groups.append(group)
 
         tfr = pd.concat(groups)
-
-        # Now compute lateralisation
         left, right = rois.lh(tfr.columns), rois.rh(tfr.columns)
-        if hand_mapping[condition] == 'lh_is_ipsi':
-            print(sub, condition, 'Left=IPSI')
-            ipsi, contra = left, right
-        elif hand_mapping[condition] == 'rh_is_ipsi':
-            print(sub, condition, 'Right=IPSI')
-            ipsi, contra = right, left
-        else:
-            raise RuntimeError('Do not understand hand mapping')
-        lateralized = rois.lateralize(tfr, ipsi, contra)
+        # Now compute lateralisation
+        if hand_mapping is not None:    
+            if hand_mapping[condition] == 'lh_is_ipsi':
+                print(sub, condition, 'Left=IPSI')
+                ipsi, contra = left, right
+            elif hand_mapping[condition] == 'rh_is_ipsi':
+                print(sub, condition, 'Right=IPSI')
+                ipsi, contra = right, left
+            else:
+                raise RuntimeError('Do not understand hand mapping')
+            lateralized = rois.lateralize(tfr, ipsi, contra)
 
         # Averge hemispheres
         havg = pd.concat(
@@ -278,7 +312,7 @@ def plot_set(response, stimulus, setname, setareas, minmax=(10, 20),
     # Setup gridspec to compare stimulus and response next to each other.
     rows, cols = rois.layouts[setname]
     if new_figure:
-        plt.figure(figsize=(cols*3.5, rows*3.5))
+        plt.figure(figsize=(cols * 3.5, rows * 3.5))
 
     gs = GridSpec(2 * rows, 2 * cols, height_ratios=[140, 16] * rows,
                   width_ratios=[1.55, 1] * cols)
@@ -322,7 +356,7 @@ def plot_labels(data, areas, locations, gs, stats=True, minmax=(10, 20),
             p = p.reshape(t.shape)
         cbar = _plot_tfr(area, ex_tfr.columns.values, ex_tfr.index.values,
                          s.mean(0), p, title_color='k', minmax=minmax[0])
-        if ((row+2, col+1) == gs.get_geometry()):
+        if ((row + 2, col + 1) == gs.get_geometry()):
             pass
         else:
             cbar.remove()
