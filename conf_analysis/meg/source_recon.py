@@ -84,7 +84,7 @@ def get_bem(subject, head_model='three_layer', ico=4, type='mne'):
     if head_model == 'three_layer':
         conductivity = (0.3, 0.006, 0.3)  # for three layers
     else:
-        conductivity = (0.3,)  # for single layer    
+        conductivity = (0.3,)  # for single layer
 
     if type == 'mne':
         model = mne.make_bem_model(
@@ -111,7 +111,7 @@ def get_leadfield(subject, session, head_model='three_layer'):
     '''
     src = get_source_space(subject)
     if head_model == 'three_layer':
-        bem = get_bem(subject, head_model=head_model, type='fieldtrip')    
+        bem = get_bem(subject, head_model=head_model, type='fieldtrip')
     else:
         bem = get_bem(subject, head_model=head_model, type='mne')
     trans = get_trans(subject, session)
@@ -136,7 +136,13 @@ def get_labels(subject):
     subject_dir = join(subjects_dir, subject)
     labels = glob.glob(join(subject_dir, 'label', '*wang2015atlas*'))
     labels += glob.glob(join(subject_dir, 'label', '*JWDG*.label'))
-    labels += glob.glob(join(subject_dir, 'label', '*a2009s*.label'))
+    frontal = ['G&S_cingul-Ant-lh', 'G&S_cingul-Mid-Ant', 'G&S_frontomargin-',
+               'G&S_transv_frontopol', 'G_front_inf-Opercular', 'G_front_inf-Orbital',
+               'G_front_inf-Triangul', 'G_front_middle', 'G_front_sup',
+               'S_front_inf', 'S_front_middle', 'S_front_sup']
+    a2009s = glob.glob(join(subject_dir, 'label', '*a2009s*.label'))
+    a2009s = [x for x in a2009s if any([t in x for t in frontal])]
+    labels += a2009s
     return [mne.read_label(label, subject) for label in labels]
 
 
@@ -198,9 +204,9 @@ def clear_cache():
 
 
 def make_fieldtrip_bem_model(subject, ico=4, conductivity=(0.3, 0.006, 0.3),
-                   subjects_dir=None, verbose=None):
+                             subjects_dir=None, verbose=None):
     """Create a BEM model for a subject.
-    
+
     Copied from MNE python, adapted to read surface from fieldtrip / spm
     segmentation.
     """
@@ -225,9 +231,8 @@ def make_fieldtrip_bem_model(subject, ico=4, conductivity=(0.3, 0.006, 0.3),
         surfaces = surfaces[:1]
         ids = ids[:1]
     surfaces = mne.bem._surfaces_to_bem(surfaces, ids, conductivity, ico)
-    mne.bem._check_bem_size(surfaces)    
+    mne.bem._check_bem_size(surfaces)
     return surfaces
-
 
 
 def add_volume_info(subject, surface, subjects_dir, volume='T1'):
@@ -244,7 +249,7 @@ def add_volume_info(subject, surface, subjects_dir, volume='T1'):
     rr, tris, volume_info = read_surface(surface,
                                          read_metadata=True)
 
-    #volume_info.update(new_info)  # replace volume info, 'head' stays
+    # volume_info.update(new_info)  # replace volume info, 'head' stays
     print volume_info.keys()
     import numpy as np
     if 'head' not in volume_info.keys():
