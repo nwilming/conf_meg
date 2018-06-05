@@ -1,5 +1,5 @@
-from __future__ import division
-from __future__ import print_function
+
+
 '''
 Compute TFRs from source reconstructed data
 
@@ -18,7 +18,7 @@ The logical path through this module is:
 
 
 import os
-if 'DISPLAY' in os.environ.keys():
+if 'DISPLAY' in list(os.environ.keys()):
     try:
         from surfer import Brain
     except:
@@ -50,7 +50,7 @@ def baseline(data, baseline_data, baseline=(-0.25, 0)):
                 .div(s, 1))
 
 
-def confidence_contrast(subs=range(1, 16), epoch='stimulus'):
+def confidence_contrast(subs=list(range(1, 16)), epoch='stimulus'):
     return pd.concat(
         [_prewarm_confidence_contrast(sub, epoch=epoch) for sub in subs])
 
@@ -103,7 +103,7 @@ def contrast_controlled_response_contrast(sub, epoch='stimulus',
                     epoch=epoch, baseline_time=baseline_time)
 
 
-def response_contrast(subs=range(1, 16), epoch='stimulus'):
+def response_contrast(subs=list(range(1, 16)), epoch='stimulus'):
     return pd.concat(
         [_prewarm_response_contrast(sub, epoch=epoch) for sub in subs])
 
@@ -126,8 +126,8 @@ def contrast(sub, filter_dict, hand_mapping, contrast,
              baseline_time=(-0.25, 0)):
     tfrs = []
 
-    trial_list = filter_dict.values()
-    condition_names = filter_dict.keys()
+    trial_list = list(filter_dict.values())
+    condition_names = list(filter_dict.keys())
     condition_tfrs, weights = load_sub_grouped_weighted(
         sub, trial_list, epoch=epoch)
 

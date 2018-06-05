@@ -18,13 +18,13 @@ except IOError:
 
 def select(snum, reject=dict(mag=4e-12), params=params):
     import pylab as plt
-    import cPickle
+    import pickle
 
     power, power_std = get_localizer_power(
         snum, reject=reject, params=params).crop(tmin=-0.4, tmax=0.75)
     clusters, ch_names, f_roi, freq_resp, dists = cluster_sensors(power,
                                                                   n_clusters=10, freq=slice(20, 80))
-    cPickle.dump(
+    pickle.dump(
         (clusters, ch_names, f_roi, freq_resp, dists),
         open('/home/nwilming/conf_analysis/localizer_results/lr_%i_gamma.pickle' % snum, 'w'))
     plt.figure(figsize=(15, 30))
@@ -35,7 +35,7 @@ def select(snum, reject=dict(mag=4e-12), params=params):
 
 def select_by_gamma(snum, reject=dict(mag=4e-12), params=params, n=10):
     import pylab as plt
-    import cPickle
+    import pickle
     n_sensors = 1
     power, power_std = get_localizer_power(
         snum, reject=reject, params=params, sensors=['occipital', 'posterior'])
@@ -56,7 +56,7 @@ def select_by_gamma(snum, reject=dict(mag=4e-12), params=params, n=10):
     mapping = dict((chn[k], k) for k in ordering if chn[
                    k] in ta.sensors['occipital'](chn))
     ordering = [channel for channel in ordering if chn[
-        channel] in mapping.keys()]
+        channel] in list(mapping.keys())]
 
     pos = np.asarray([ch['loc'][:3] for ch in power.info['chs']])
     N = neighbors.kneighbors_graph(
@@ -71,7 +71,7 @@ def select_by_gamma(snum, reject=dict(mag=4e-12), params=params, n=10):
         freq_resp.append(fresp.mean(1))
         ch_names.append(np.array(averages.ch_names)[cluster])
     dists = np.ones((269, 269))
-    cPickle.dump(
+    pickle.dump(
         (clusters, ch_names, f_roi, freq_resp, dists),
         open('/home/nwilming/conf_analysis/localizer_results/lrbg_%i_gamma.pickle' % snum, 'w'))
     plt.figure(figsize=(15, 30))
@@ -126,23 +126,23 @@ def get_localizer(snum, reject=dict(mag=4e-12)):
 
 @memory.cache
 def get_localizer_power(snum, reject=dict(mag=4e-12), params=params, sensors=None):
-    print 'Getting localizer'
+    print('Getting localizer')
     epochs = get_localizer(snum, reject=reject)
     x, y = eye_voltage2gaze(epochs)
     arts = detect_eyeartifact(epochs.times, x, y)
     epochs.drop(arts)
     if sensors is not None:
-        print 'Kicking sensors'
+        print('Kicking sensors')
         allowed_sensors = []
         for s in sensors:
             allowed_sensors.extend(ta.sensors[s](epochs.ch_names))
         epochs.drop_channels(
             [ch for ch in epochs.ch_names if ch not in allowed_sensors])
-    print 'Number of channels in epochs:', len(epochs.ch_names)
-    print 'Dropping %i epochs because of eye movements' % sum(arts)
+    print('Number of channels in epochs:', len(epochs.ch_names))
+    print('Dropping %i epochs because of eye movements' % sum(arts))
     epochs.pick_channels([ch for ch in epochs.ch_names if ch.startswith('M')])
     epochs.resample(400, n_jobs=4)
-    print 'Doing power calculation'
+    print('Doing power calculation')
     power = get_power(epochs, params=params)
     return power, power.data.std(0)
 

@@ -9,6 +9,7 @@ from conf_analysis.meg import preprocessing, localizer, lcmv, srplots
 
 from conf_analysis.meg import source_recon as sr
 from joblib import Memory
+from functools import reduce
 
 
 memory = Memory(cachedir=metadata.cachedir)
@@ -18,7 +19,7 @@ def make_overview_figures(subjects, bem='three_layer', prefix=''):
     from conf_analysis.meg import srplots
     for sub in subjects:
         avg, idx, F = srplots.single_sub_contrast_indices(sub)
-        print 'Subject:', sub, 'F:', F
+        print('Subject:', sub, 'F:', F)
         gamma_overview(sub, F=F, bem=bem, prefix=prefix + 'F%f' % F)
         stats_overview(sub, F=F, prefix=prefix + 'F%f' % F)
 
@@ -37,7 +38,7 @@ def gamma_overview(subject, F=45, bem='three_layer', prefix=''):
         else:
             sstring = ('/home/nwilming/conf_meg/source_recon_F_%s/%sSR_S%i_SESS%i_*_F%i*' %
                        (bem, bem, subject, session, F))
-            print sstring
+            print(sstring)
         stcfiles[session] = glob(sstring)
 
     stcs = get_stcs(stcfiles)

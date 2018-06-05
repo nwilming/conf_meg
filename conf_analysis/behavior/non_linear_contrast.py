@@ -37,7 +37,7 @@ def plot_wotrans(data, R, bins, fit_cutoff=0.3):
     data = data.copy()
     data.loc[:, 'R'] = data.trans_mc > R(0.5)
     data.loc[:, 'response'] = 2 * ((data.trans_mc > R(0.5)) - 0.5)
-    print(results.params)
+    print((results.params))
     log_res, results = empirical.fit_logistic(data, 'R~mc+stdc', summary=False)
     stuff = plot_model(data, results, bins=bins,
                        cmap='RdBu_r', plot_hyperplane=True)
@@ -74,7 +74,7 @@ def plot(data, R, bins, fit_cutoff=0.3,
     dt = transform(R, data)
     log_res, results = empirical.fit_logistic(
         data, 'R ~ trans_mc + trans_stdc', summary=False)
-    print(results.params)
+    print((results.params))
     plot_model(data, results, bins=bins, cmap='RdBu_r', mc_field='trans_mc',
                stdc_field='trans_stdc', plot_hyperplane=True)
     # if expected_mean_data is None:
@@ -85,7 +85,7 @@ def plot(data, R, bins, fit_cutoff=0.3,
 
 def transform(func, df):
     mc = np.array([np.mean(func(k)) for k in df.contrast_probe.values])
-    print(np.isnan(mc).sum())
+    print((np.isnan(mc).sum()))
     stdc = np.array([np.std(func(k)) for k in df.contrast_probe.values])
     df.loc[:, 'trans_mc'] = mc
     df.loc[:, 'trans_stdc'] = stdc
@@ -97,7 +97,7 @@ def fit_logistic(df, formula, summary=True):
     log_res = sm.GLM(y, X, family=sm.families.Binomial())
     results = log_res.fit(disp=False)
     if summary:
-        print(results.summary())
+        print((results.summary()))
     return log_res, results
 
 

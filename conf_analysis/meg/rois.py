@@ -7,7 +7,7 @@ clusters of labels.
 '''
 
 import os
-if 'DISPLAY' in os.environ.keys():
+if 'DISPLAY' in list(os.environ.keys()):
     try:
         from surfer import Brain
     except:
@@ -23,26 +23,26 @@ from joblib import Memory
 memory = Memory(cachedir=metadata.cachedir)
 
 visual_field_clusters = {
-    'vfcvisual': (u'wang2015atlas.V1d', u'wang2015atlas.V1v',
-                  u'wang2015atlas.V2d', u'wang2015atlas.V2v',
-                  u'wang2015atlas.V3d', u'wang2015atlas.V3v',
-                  u'wang2015atlas.hV4'),
-    'vfcVO': (u'wang2015atlas.VO1', u'wang2015atlas.VO2',),
-    'vfcPHC': (u'wang2015atlas.PHC1', u'wang2015atlas.PHC2'),
-    'vfcV3ab': (u'wang2015atlas.V3A', u'wang2015atlas.V3B'),
-    'vfcTO': (u'wang2015atlas.TO1', u'wang2015atlas.TO2'),
-    'vfcLO': (u'wang2015atlas.LO1', u'wang2015atlas.LO2'),
-    'vfcIPS_occ': (u'wang2015atlas.IPS0', u'wang2015atlas.IPS1'),
-    'vfcIPS_dorsal': (u'wang2015atlas.IPS2', u'wang2015atlas.IPS3',
-                      u'wang2015atlas.IPS4', u'wang2015atlas.IPS5'),
-    'vfcSPL': (u'wang2015atlas.SPL1',),
-    'vfcFEF': (u'wang2015atlas.FEF')
+    'vfcvisual': ('wang2015atlas.V1d', 'wang2015atlas.V1v',
+                  'wang2015atlas.V2d', 'wang2015atlas.V2v',
+                  'wang2015atlas.V3d', 'wang2015atlas.V3v',
+                  'wang2015atlas.hV4'),
+    'vfcVO': ('wang2015atlas.VO1', 'wang2015atlas.VO2',),
+    'vfcPHC': ('wang2015atlas.PHC1', 'wang2015atlas.PHC2'),
+    'vfcV3ab': ('wang2015atlas.V3A', 'wang2015atlas.V3B'),
+    'vfcTO': ('wang2015atlas.TO1', 'wang2015atlas.TO2'),
+    'vfcLO': ('wang2015atlas.LO1', 'wang2015atlas.LO2'),
+    'vfcIPS_occ': ('wang2015atlas.IPS0', 'wang2015atlas.IPS1'),
+    'vfcIPS_dorsal': ('wang2015atlas.IPS2', 'wang2015atlas.IPS3',
+                      'wang2015atlas.IPS4', 'wang2015atlas.IPS5'),
+    'vfcSPL': ('wang2015atlas.SPL1',),
+    'vfcFEF': ('wang2015atlas.FEF')
 }
 
 
-jwrois = {'IPS_Pces': (u'JWDG.lr_IPS_PCes',),
-          'M1': (u'JWDG.lr_M1',),
-          'aIPS1': (u'JWDG.lr_aIPS1',)}
+jwrois = {'IPS_Pces': ('JWDG.lr_IPS_PCes',),
+          'M1': ('JWDG.lr_M1',),
+          'aIPS1': ('JWDG.lr_aIPS1',)}
 
 
 frontal = {'ACC': ('G&S_cingul-Ant-lh', 'G&S_cingul-Mid-Ant'),
@@ -95,7 +95,7 @@ def reduce(df, all_clusters=all_clusters):
     columns = df.columns.values
     clusters = []
     for hemi, hcolumns in zip(['-lh', '-rh'], [lh(columns), rh(columns)]):
-        for name, cols in all_clusters.items():
+        for name, cols in list(all_clusters.items()):
             cols = filter_cols(hcolumns, cols)
             # if name == "M1":
             #  import pdb; pdb.set_trace()

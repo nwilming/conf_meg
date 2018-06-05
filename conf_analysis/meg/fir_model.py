@@ -452,7 +452,7 @@ def subject_sa(subject, F=[40, 45, 50, 55, 60, 65, 70],
     acc_real, acc_pred = [], []
     for f, area in product(F, areas):
         if not subject_fit.is_cached(subject, f, area):
-            print 'Skipping', subject, f, area
+            print('Skipping', subject, f, area)
             continue
         data, contrast, params = subject_fit(subject, f, area)
         sa = sample_aligned(data, contrast, params,
@@ -674,8 +674,8 @@ def invert(trace, X, contrast, thin=10):
     pC = pc(contrast)
     out = np.zeros((len(contrast), X.shape[0]))
     cnt = 0
-    for ii in range(0, trace[trace.keys()[0]].shape[0], thin):
-        params = dict((k, trace[k][ii, :]) for k in trace.keys())
+    for ii in range(0, trace[list(trace.keys())[0]].shape[0], thin):
+        params = dict((k, trace[k][ii, :]) for k in list(trace.keys()))
         y = mv_model_eval(contrast, X, **params)
         y = y / y.sum(0)[np.newaxis, :]
         out += y * pC
@@ -769,8 +769,8 @@ def get_trace_for_subject(subject, area):
         db = pm.backends.Text(savedir)
         trace = pm.sample(4500, tune=1000, cores=4, njobs=4,
                           trace=db, init='advi+adapt_diag')
-    import cPickle
-    cPickle.dump({'model': mdl, 'trace': trace}, open(
+    import pickle
+    pickle.dump({'model': mdl, 'trace': trace}, open(
         'mvnorm_CRF_S%i_%s_trace.pkl' % (subject, area), 'w'))
 
 
@@ -792,7 +792,7 @@ def get_single_decoded_contrast(subject, area, trace_path,
     fnames = glob.glob(join(base_path, 'mvnorm_CRF_S%i_%s_trace' %
                             subject, area, 'chain-*.csv'))
     out = [read_chain(fname, burn, thin) for fname in fnames]
-    keys = out[0].keys()
+    keys = list(out[0].keys())
     out = dict((k, np.concatenate([o[k] for o in out])) for k in keys)
     return get_decoded_contrast(sa, out, cc=cc)
 
@@ -857,12 +857,12 @@ Precomputing
 
 
 def foo(x):
-    print x
+    print(x)
 
 
 def precompute_fits():
     from pymeg import parallel
-    subs = range(1, 16)
+    subs = list(range(1, 16))
     funcs = ['stld']
     areas = ['V1-lh', 'V2-lh', 'V3-lh', 'V1-rh', 'V2-rh', 'V3-rh']
     from itertools import product
