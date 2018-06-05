@@ -30,7 +30,7 @@ import pandas as pd
 
 from conf_analysis.behavior import metadata
 from conf_analysis.meg import preprocessing
-from conf_analysis.meg import rois
+from pymeg import roi_clusters as rois
 
 from joblib import Memory
 
@@ -90,12 +90,12 @@ def contrast_controlled_response_contrast(sub, epoch='stimulus',
     }
 
     if sub <= 8:
-        hand_mapping = {'CR': 'lh_is_ipsi', 
+        hand_mapping = {'CR': 'lh_is_ipsi',
                         'MISS': 'lh_is_ipsi',
                         'HIT': 'rh_is_ipsi',
                         'FA': 'rh_is_ipsi'}
     else:
-        hand_mapping = {'HIT': 'lh_is_ipsi', 
+        hand_mapping = {'HIT': 'lh_is_ipsi',
                         'FA': 'lh_is_ipsi',
                         'CR': 'rh_is_ipsi',
                         'MISS': 'rh_is_ipsi'}
@@ -156,9 +156,16 @@ def contrast(sub, filter_dict, hand_mapping, contrast,
             groups.append(group)
 
         tfr = pd.concat(groups)
-        left, right = rois.lh(tfr.columns), rois.rh(tfr.columns)
+        #left, right = rois.lh(tfr.columns), rois.rh(tfr.columns)
+        left, right = sorted(rois.lh(tfr.columns)), sorted(
+            rois.rh(tfr.columns))
+        if len(left) < len(right):
+            right = sorted(l.replace('lh', 'rh') for l in left)
+        elif len(left) > len(right):
+            left = sorted(l.replace('rh', 'lh') for l in right)
+
         # Now compute lateralisation
-        if hand_mapping is not None:    
+        if hand_mapping is not None:
             if hand_mapping[condition] == 'lh_is_ipsi':
                 print(sub, condition, 'Left=IPSI')
                 ipsi, contra = left, right
@@ -170,6 +177,12 @@ def contrast(sub, filter_dict, hand_mapping, contrast,
             lateralized = rois.lateralize(tfr, ipsi, contra)
 
         # Averge hemispheres
+        left, right = sorted(rois.lh(tfr.columns)), sorted(
+            rois.rh(tfr.columns))
+        if len(left) > len(right):
+            right = sorted(l.replace('lh', 'rh') for l in left)
+        elif len(left) < len(right):
+            left = sorted(l.replace('rh', 'lh') for l in right)
         havg = pd.concat(
             [tfr.loc[:, (x, y)].mean(1) for x, y in zip(left, right)],
             1)

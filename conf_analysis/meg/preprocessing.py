@@ -234,7 +234,8 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
             data.append(filename)
     #assert len(data) == len(list(ensure_iter(sessions)))*5
     data = pymegprepr.load_epochs(data)
-    event_ids = reduce(lambda x, y: x + y, [list(d.event_id.values()) for d in data])
+    event_ids = reduce(lambda x, y: x + y,
+                       [list(d.event_id.values()) for d in data])
     meta = meta.reset_index().set_index('hash')
     meta = meta.loc[event_ids, :]
     assert len(meta) == sum([d._data.shape[0] for d in data])
@@ -247,14 +248,18 @@ def get_meta_for_subject(snum, epoch, sessions=None):
     metas = []
     for session, block in product(ensure_iter(sessions), list(range(5))):
         filename = metadata.get_epoch_filename(
-            snum, session, block, epoch, 'meta') + '.msgpack'
-        if os.path.isfile(filename):
-            metas.append(filename)
-    meta = [pd.read_msgpack(f) for f in metas]
-
+            snum, session, block, epoch, 'meta')
+        if os.path.isfile(filename + '.msgpack'):
+            df = pd.read_msgpack(filename + '.msgpack')
+            metas.append(df)
+        elif os.path.isfile(filename):
+            df = pd.read_hdf(filename)
+            metas.append(df)
+        else:
+            pass
     #meta = pymegprepr.load_meta(metas)
-    meta = pd.concat(meta).reset_index()
-    cols = [c.decode('utf-8') if type(c)==bytes else c for c in meta.columns]
+    meta = pd.concat(metas).reset_index()
+    cols = [c.decode('utf-8') if type(c) == bytes else c for c in meta.columns]
     meta.columns = cols
     return meta
 

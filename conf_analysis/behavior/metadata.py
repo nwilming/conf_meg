@@ -12,9 +12,10 @@ if socket.gethostname().startswith('node'):
     project = '/home/nwilming/conf_analysis/'
     raw_path = '/home/nwilming/conf_meg/raw/'
     behavioral_path = '/home/nwilming/conf_data/'
-    if ('RRZ_TMPDIR' in list(os.environ.keys())) or ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys())):
-        cachedir='/work/faty014/cache_dir'
-        preprocessed='/work/faty014/MEG/preprocessed'
+    if (('RRZ_TMPDIR' in list(os.environ.keys()))
+            or ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys()))):
+        cachedir = '/work/faty014/cache_dir'
+        preprocessed = '/work/faty014/MEG/preprocessed'
     else:
         cachedir = '/home/nwilming/conf_data/cache/'
         preprocessed = '/home/nwilming/conf_meg/'
@@ -168,7 +169,8 @@ def define_blocks(events):
                 if (151 in events[evstart - 10:evstart, 2]):
                     prev_end = 10 - \
                         where(events[evstart - 10:evstart, 2] == 151)[0][0]
-                    id_keep[(start[matching_start] - prev_end + 1):end[i] + 1] = True
+                    id_keep[(start[matching_start] - prev_end + 1)
+                             :end[i] + 1] = True
                 else:
                     id_keep[(start[matching_start] - 10):end[i] + 1] = True
             events = events[id_keep, :]
@@ -225,7 +227,7 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject):
         cc_state = list(range(10))[::-1]
         for i, (v, t) in enumerate(zip(trigs[:, 2], trigs[:, 0])):
             if not v in list(val2field.keys()):
-              continue
+                continue
             fname = val2field[v]
             if v == 64:
                 fname = stim_state.pop() + fname

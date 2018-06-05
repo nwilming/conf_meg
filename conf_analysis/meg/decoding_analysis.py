@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from functools import partial
+from itertools import product
 
 from sklearn import linear_model, discriminant_analysis, svm
 from sklearn.model_selection import cross_validate, RandomizedSearchCV
@@ -40,7 +41,7 @@ else:
 areas = [
     # Frontal areas:
     'ACC', 'f_inf_orbital', 'Sf_sup', 'f_inf_Triangul',
-    'frontopol', 'Sf_middle', 'Gf_middle',  #'frontomargin',
+    'frontopol', 'Sf_middle', 'Gf_middle',  # 'frontomargin',
     'Gf_sup', 'Sf_inf', 'f_inf_opercular',
     # Visual Clusters:
     'vfcIPS_occ', 'vfcTO', 'vfcLO', 'vfcIPS_dorsal', 'vfcSPL',
@@ -57,40 +58,43 @@ areas = avgs + lateralized + pairs
 n_jobs = 1
 
 
-
-def submit():
+def submit(cluster='slurm'):
     decoders = ['MIDC_split', 'MIDC_nosplit',
-               'SIDE_split', 'SIDE_nosplit',
-               'CONF_signed', 'CONF_unsigned']
+                'SIDE_split', 'SIDE_nosplit',
+                'CONF_signed', 'CONF_unsigned']
     from pymeg import parallel
+    if cluster == 'slurm':
+        pmap = partial(parallel.pmap, email=None, tasks=1, nodes=1, memory=60,
+                       ssh_to=None, home='/work/faty014', walltime='11:50:55',
+                       cluster='SLURM')
+    else:
+        pmap = partial(parallel.pmap, nodes=1, tasks=1, memory=15,
+                       ssh_to=None,  walltime=24)
+
     for subject in range(1, 16):
-        parallel.pmap(run_AA, [(subject, 'SSD', 'stimulus')], 
-            home='/work/faty014', walltime='11:50:55', memory=60, nodes=1, tasks=1, 
-            name='DCDSSDStimulus'+str(subject), ssh_to=None, cluster='SLURM', 
-            email=None)
-    for subject in range(1, 16):
-         for epoch in ['stimulus', 'response']:
-             for decoder in decoders:
-                  parallel.pmap(run_AA, [(subject, decoder, epoch)], 
-                      home='/work/faty014', walltime='11:50:55', memory=60, nodes=1, tasks=1, 
-                      name='DCD'+decoder+epoch+str(subject), ssh_to=None, cluster='SLURM', 
-                      email=None)
+        pmap(run_AA, [(subject, 'SSD', 'stimulus')],
+             name='DCDSSDStimulus' + str(subject))
+    for subject, epoch, decoder in product(range(1, 16),
+                                           ['stimulus', 'response'],
+                                           decoders):
+        pmap(run_AA, [(subject, decoder, epoch)],
+             name='DCD' + decoder + epoch + str(subject),
+             )
 
 
-def run_AA(subject, decoder, epoch):
+def run_AA(subject, decoder, epoch, ntasks=1):
     from multiprocessing import Pool
-    p = Pool(16)
+    p = Pool(ntasks)
     latencies = {'stimulus': [-0.5, 1.35], 'response': [-1, 0.5]}
     time = latencies[epoch]
-    data = pd.concat([
-            get_all_areas(subject, session, epoch=epoch, time=time,
-	        est_vals=[10, 100], est_key='F', log10=True,
-	        baseline_epoch='stimulus', baseline=(-0.35, 0))
-            for session in [0, 1, 2, 3]])
+    pd.concat([
+        get_all_areas(subject, session, epoch=epoch, time=time,
+                      est_vals=[10, 100], est_key='F', log10=True,
+                      baseline_epoch='stimulus', baseline=(-0.35, 0))
+        for session in [0, 1, 2, 3]])
 
     print('Done caching')
-    from itertools import starmap
-    scores = p.starmap(run_single_area, 
+    scores = p.starmap(run_single_area,
                        [(subject, decoder, epoch, area) for area in areas])
     scores = [s for s in scores if s is not None]
     scores = pd.concat(scores)
@@ -102,11 +106,11 @@ def run_AA(subject, decoder, epoch):
 
 
 def run_single_area(subject, decoder, epoch, area, ignore_errors=True):
-    try: 
+    try:
         return run_decoder(subject, decoder, area, epoch)
     except:
         print('Error in runAA: (%i, %s, %s, %s)' %
-                              (subject, decoder, epoch, area))
+              (subject, decoder, epoch, area))
         if not ignore_errors:
             raise
 
@@ -130,7 +134,8 @@ def run_decoder(subject, decoder, area, epoch):
     epoch : str, 'stimulus' or 'response'
     '''
     def get_save_path(subject, decoder, area, epoch):
-        if ('RRZ_TMPDIR' in list(os.environ.keys())) or ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys())):
+        if (('RRZ_TMPDIR' in list(os.environ.keys())) or
+                ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys()))):
             path = '/work/faty014/MEG/'
         else:
             path = '/home/nwilming/conf_meg/'
@@ -154,11 +159,11 @@ def run_decoder(subject, decoder, area, epoch):
                              est_vals=[10, 100])
     data.reset_index().set_index('trial', inplace=True)
     meta = meta.dropna(subset=['confidence', 'response'])
-    
+
     dt = np.diff(data.time)[0]
     latencies = np.unique(data.time)
     meta.loc[:, 'signed_confidence'] = (meta.loc[:, 'confidence'] *
-                                       meta.loc[:, 'response']).astype(int)
+                                        meta.loc[:, 'response']).astype(int)
     meta.loc[:, 'unsigned_confidence'] = (
         meta.loc[:, 'confidence'] == 1).astype(int)
 
@@ -167,7 +172,7 @@ def run_decoder(subject, decoder, area, epoch):
                                       target_col='response'),
                 'MIDC_nosplit': partial(midc_decoder, splitmc=False,
                                         target_col='response'),
-		'SIDE_split': partial(midc_decoder, splitmc=False,
+                'SIDE_split': partial(midc_decoder, splitmc=False,
                                       target_col='side'),
                 'SIDE_nosplit': partial(midc_decoder, splitmc=False,
                                         target_col='side'),
@@ -182,7 +187,8 @@ def run_decoder(subject, decoder, area, epoch):
     assert(decoder in list(decoders.keys()))
     scores = []
     for latency in latencies:
-        logging.info('S=%i; DCD=%s, EPOCH=%s; t=%f'%(subject, decoder, epoch, latency))
+        logging.info('S=%i; DCD=%s, EPOCH=%s; t=%f' %
+                     (subject, decoder, epoch, latency))
         try:
             s = decoders[decoder](meta, data, area, latency=latency)
             scores.append(s)
@@ -236,9 +242,9 @@ def ssd_decoder(meta, data, area, latency=0.18):
              .unstack())
         X.append(x)
     data = pd.concat(X, 1)
-   
+
     # Turn data into (trial*time X Frequency)
-    #data = (data.reset_index()
+    # data = (data.reset_index()
     #            .loc[:, ['trial', 'time', 'est_val', area]]
     #            .set_index(['trial', 'time', 'est_val'])
     #            .unstack())
@@ -306,7 +312,8 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
     # Map to nearest time point in data
     times = np.unique(data.reset_index().time)
     target_time_point = times[np.argmin(abs(times - latency))]
-    logging.info('Selecting next available time point: %02.2f'%target_time_point)
+    logging.info('Selecting next available time point: %02.2f' %
+                 target_time_point)
     times_idx = np.isclose(data.time, target_time_point, 0.00001)
     data = data.loc[times_idx, :]
 
@@ -332,7 +339,7 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
             # Buld target vector
             target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
 
-            logging.info('Class balance: %0.2f, Nr. of samples: %i'%((target == 1).astype(
+            logging.info('Class balance: %0.2f, Nr. of samples: %i' % ((target == 1).astype(
                 float).mean(), len(target)))
             score = categorize(target, sub_data, target_time_point)
             score.loc[:, 'mc<0.5'] = mc
@@ -342,8 +349,8 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
         meta = meta.reset_index().set_index('hash').loc[data.index, :]
         # Buld target vector
         target = (meta.loc[data.index, target_col]).astype(int)
-        logging.info('Class balance: %0.2f, Nr. of samples: %i'%((target == 1).astype(
-                float).mean(), len(target)))
+        logging.info('Class balance: %0.2f, Nr. of samples: %i' % ((target == 1).astype(
+            float).mean(), len(target)))
 
         return categorize(target, data, target_time_point)
 
@@ -478,14 +485,11 @@ def get_tableau(meta, dresp, dstim, baseline=None, log10=True,
     rois = list(areas.values()) + ['time', 'trial', 'est_key', 'est_val']
     import pylab as plt
     dresp = dresp.reset_index().loc[:, rois].query('est_key=="F"')
-    #dstim = dstim.reset_index().loc[:, rois].query('est_key=="F"')
     dresp.set_index(['trial', 'time', 'est_key', 'est_val'], inplace=True)
-    #dstim.set_index(['trial', 'time', 'est_key', 'est_val'], inplace=True)
     if log10:
         dstim = np.log10(dstim) * 10
         dresp = np.log10(dresp) * 10
     dresp = dresp.reset_index().set_index('trial')
-    #dstim = dstim.reset_index().set_index('trial')
 
     # Do baseline correction
     if baseline == 'avg':
@@ -576,28 +580,37 @@ def get_all_areas(subject, session, epoch='stimulus', time=(0, 1),
     df = rois.reduce(df).reset_index()  # Reduce to visual clusters
     # Filter down to correct trials:
     meta = meta.loc[np.unique(df.trial.values), :]
-    df.set_index('trial', inplace=True)
-
-    left, right = rois.lh(df.columns), rois.rh(df.columns)
+    df.set_index('trial', inplace=True)    
 
     # Now compute lateralisation
-    def lateralize(response, response_hand):
+    def lateralize(response):
         '''
         Expects a DataFrame with responses of one hand
         '''
+        left, right = sorted(rois.lh(df.columns)), sorted(rois.rh(df.columns))
+        if len(left) < len(right):
+            right = sorted(l.replace('lh', 'rh') for l in left)
+        elif len(left) > len(right):
+            left = sorted(l.replace('rh', 'lh') for l in right)
         return rois.lateralize(response, left, right, '_L-R')
 
     response_Mone = df.loc[meta.response == -1, :]
     response_Pone = df.loc[meta.response == +1, :]
     if subject <= 8:
         lateralized = pd.concat(
-            [lateralize(response_Mone, 'left'),
-             lateralize(response_Pone, 'right')])
+            [lateralize(response_Mone),
+             lateralize(response_Pone)])
     else:
         lateralized = pd.concat(
-            [lateralize(response_Mone, 'right'),
-             lateralize(response_Pone, 'left')])
+            [lateralize(response_Mone),
+             lateralize(response_Pone)])
     # Averge hemispheres
+    left, right = sorted(rois.lh(df.columns)), sorted(rois.rh(df.columns))
+
+    if len(left) > len(right):
+        right = sorted(l.replace('lh', 'rh') for l in left)
+    elif len(left) < len(right):
+        left = sorted(l.replace('rh', 'lh') for l in right)
     havg = pd.concat(
         [df.loc[:, (x, y)].mean(1) for x, y in zip(left, right)],
         1)
