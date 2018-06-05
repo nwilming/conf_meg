@@ -79,7 +79,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
                      (filename, block_in_experiment))
         r, r_id = load_block(raw, trials, block_in_raw)
         r_id['filname'] = filename
-        print('Working on:', filename, block_in_experiment, block_in_raw)
+        print(('Working on:', filename, block_in_experiment, block_in_raw))
         logging.info('Starting artifact detection')
 
         r, ants, artdefs = pymegprepr.preprocess_block(r)
@@ -125,7 +125,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         pickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
 
     except MemoryError:
-        print(snum, session, block_in_raw, block_in_experiment)
+        print((snum, session, block_in_raw, block_in_experiment))
         raise RuntimeError('MemoryError caught in one block ' + str(snum) + ' ' + str(
             session) + ' ' + str(block_in_raw) + ' ' + str(block_in_experiment))
     return 'Finished', snum, session, block_in_experiment, filenames
@@ -243,17 +243,20 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
 
 def get_meta_for_subject(snum, epoch, sessions=None):
     if sessions is None:
-        sessions = range(5)
+        sessions = list(range(5))
     metas = []
     for session, block in product(ensure_iter(sessions), list(range(5))):
         filename = metadata.get_epoch_filename(
-            snum, session, block, epoch, 'meta')
-
+            snum, session, block, epoch, 'meta') + '.msgpack'
         if os.path.isfile(filename):
             metas.append(filename)
+    meta = [pd.read_msgpack(f) for f in metas]
 
-    meta = pymegprepr.load_meta(metas)
-    return pd.concat(meta)
+    #meta = pymegprepr.load_meta(metas)
+    meta = pd.concat(meta).reset_index()
+    cols = [c.decode('utf-8') if type(c)==bytes else c for c in meta.columns]
+    meta.columns = cols
+    return meta
 
 
 @memory.cache
