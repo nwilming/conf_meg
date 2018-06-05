@@ -11,9 +11,14 @@ if socket.gethostname().startswith('node'):
     home = '/home/nwilming/'
     project = '/home/nwilming/conf_analysis/'
     raw_path = '/home/nwilming/conf_meg/raw/'
-    preprocessed = '/home/nwilming/conf_meg/'
-    cachedir = '/home/nwilming/conf_data/cache/'
     behavioral_path = '/home/nwilming/conf_data/'
+    if ('RRZ_TMPDIR' in list(os.environ.keys())) or ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys())):
+        cachedir='/work/faty014/cache_dir'
+        preprocessed='/work/faty014/MEG/preprocessed'
+    else:
+        cachedir = '/home/nwilming/conf_data/cache/'
+        preprocessed = '/home/nwilming/conf_meg/'
+    print(cachedir)
 elif 'lisa.surfsara' in socket.gethostname():
     home = '/home/nwilming/'
     project = '/home/nwilming/conf_analysis/'
@@ -219,7 +224,7 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject):
         stim_state = ['stim', 'ref']
         cc_state = list(range(10))[::-1]
         for i, (v, t) in enumerate(zip(trigs[:, 2], trigs[:, 0])):
-            if not v in val2field.keys():
+            if not v in list(val2field.keys()):
               continue
             fname = val2field[v]
             if v == 64:

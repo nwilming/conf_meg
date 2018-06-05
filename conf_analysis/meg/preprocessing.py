@@ -30,6 +30,7 @@ from joblib import Memory
 from mne.transforms import apply_trans
 
 from pymeg import preprocessing as pymegprepr
+from functools import reduce
 
 memory = Memory(cachedir=metadata.cachedir)
 import locale
@@ -78,7 +79,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
                      (filename, block_in_experiment))
         r, r_id = load_block(raw, trials, block_in_raw)
         r_id['filname'] = filename
-        print('Working on:', filename, block_in_experiment, block_in_raw)
+        print(('Working on:', filename, block_in_experiment, block_in_raw))
         logging.info('Starting artifact detection')
 
         r, ants, artdefs = pymegprepr.preprocess_block(r)
@@ -124,7 +125,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         pickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
 
     except MemoryError:
-        print(snum, session, block_in_raw, block_in_experiment)
+        print((snum, session, block_in_raw, block_in_experiment))
         raise RuntimeError('MemoryError caught in one block ' + str(snum) + ' ' + str(
             session) + ' ' + str(block_in_raw) + ' ' + str(block_in_experiment))
     return 'Finished', snum, session, block_in_experiment, filenames
@@ -163,7 +164,7 @@ def load_block(raw, trials, block):
     '''
     start = int(trials['start'][trials['block'] == block].min())
     end = int(trials['end'][trials['block'] == block].max())
-    print start, end
+    print(start, end)
     r = raw.copy().crop(
         max(0, raw.times[start] - 5), min(raw.times[-1], raw.times[end] + 5))
     r_id = {'first_samp': r.first_samp}
@@ -223,7 +224,7 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
     from itertools import product
 
     if sessions is None:
-        sessions = range(4)
+        sessions = list(range(4))
     data = []
     meta = get_meta_for_subject(snum, epoch, sessions=sessions)
     for session, block in product(ensure_iter(sessions), list(range(5))):
@@ -233,7 +234,7 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
             data.append(filename)
     #assert len(data) == len(list(ensure_iter(sessions)))*5
     data = pymegprepr.load_epochs(data)
-    event_ids = reduce(lambda x, y: x + y, [d.event_id.values() for d in data])
+    event_ids = reduce(lambda x, y: x + y, [list(d.event_id.values()) for d in data])
     meta = meta.reset_index().set_index('hash')
     meta = meta.loc[event_ids, :]
     assert len(meta) == sum([d._data.shape[0] for d in data])
@@ -242,17 +243,20 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
 
 def get_meta_for_subject(snum, epoch, sessions=None):
     if sessions is None:
-        sessions = range(5)
+        sessions = list(range(5))
     metas = []
     for session, block in product(ensure_iter(sessions), list(range(5))):
         filename = metadata.get_epoch_filename(
-            snum, session, block, epoch, 'meta')
-
+            snum, session, block, epoch, 'meta') + '.msgpack'
         if os.path.isfile(filename):
             metas.append(filename)
+    meta = [pd.read_msgpack(f) for f in metas]
 
-    meta = pymegprepr.load_meta(metas)
-    return pd.concat(meta)
+    #meta = pymegprepr.load_meta(metas)
+    meta = pd.concat(meta).reset_index()
+    cols = [c.decode('utf-8') if type(c)==bytes else c for c in meta.columns]
+    meta.columns = cols
+    return meta
 
 
 @memory.cache
@@ -280,12 +284,12 @@ def make_trans(subject, session):
     if os.path.isfile(trans_name):
         print('Removing previous trans file')
         os.remove(trans_name)
-    print '--------------------------------'
+    print('--------------------------------')
     print('Please save trans file as:')
     print(trans_name)
     cmd = 'mne coreg --high-res-head -d %s -s %s -f %s' % (
         '/home/nwilming/fs_subject_dir', 'S%02i' % subject, hs_ref)
-    print cmd
+    print(cmd)
     os.system(cmd)
     # mne.gui.coregistration(inst=hs_ref, subject='S%02i' % subject,
     #                       subjects_dir='/home/nwilming/fs_subject_dir')
@@ -333,7 +337,7 @@ def head_movement(epochs):
                 'y': ['HLC0021', 'HLC0022', 'HLC0023'],
                 'z': ['HLC0031', 'HLC0032', 'HLC0033']}
     channel_ids = {}
-    for key, names in channels.iteritems():
+    for key, names in channels.items():
         ids = [np.where([n in ch for ch in ch_names])[0][0] for n in names]
         channel_ids[key] = ids
 
@@ -373,7 +377,7 @@ def head_loc(epochs):
                 'y': ['HLC0021', 'HLC0022', 'HLC0023'],
                 'z': ['HLC0031', 'HLC0032', 'HLC0033']}
     channel_ids = {}
-    for key, names in channels.iteritems():
+    for key, names in channels.items():
         ids = [np.where([n in ch for ch in ch_names])[0][0] for n in names]
         channel_ids[key] = ids
 
@@ -485,7 +489,7 @@ def circumcenter(coil1, coil2, coil3):
 
 
 def ensure_iter(input):
-    if isinstance(input, basestring):
+    if isinstance(input, str):
         yield input
     else:
         try:

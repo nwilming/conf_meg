@@ -157,7 +157,7 @@ def get_eccen_labels(subject):
 def save_source_power(data, subject, filename):
     import numpy as np
     transform = lambda x: dict((d, np.asarray(k).ravel() if type(
-        k) == np.ndarray else k) for d, k in x.iteritems())
+        k) == np.ndarray else k) for d, k in x.items())
     df = pd.concat([pd.DataFrame(transform(x)) for x in data])
     df.loc[:, 'snum'] = subject
     df.to_hdf(filename, 'srcpow')
@@ -245,13 +245,13 @@ def add_volume_info(subject, surface, subjects_dir, volume='T1'):
     mri_dir = op.join(subject_dir, 'mri')
     T1_mgz = op.join(mri_dir, volume + '.mgz')
     new_info = _extract_volume_info(T1_mgz)
-    print new_info.keys()
+    print(list(new_info.keys()))
     rr, tris, volume_info = read_surface(surface,
                                          read_metadata=True)
 
     # volume_info.update(new_info)  # replace volume info, 'head' stays
-    print volume_info.keys()
+    print(list(volume_info.keys()))
     import numpy as np
-    if 'head' not in volume_info.keys():
+    if 'head' not in list(volume_info.keys()):
         volume_info['head'] = np.array([2,  0, 20], dtype=np.int32)
     write_surface(surface, rr, tris, volume_info=volume_info)

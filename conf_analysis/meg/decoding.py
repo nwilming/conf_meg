@@ -322,7 +322,7 @@ def tfr_apply_decoder(func, snum, epoch, label,
 
     labels = [lval[indices[0][i]] for i in m.index.values]
     # Assert correct labelling
-    rs = dict((v, k) for k, v in indices[0].items())
+    rs = dict((v, k) for k, v in list(indices[0].items()))
 
     assert(
         all(
@@ -356,7 +356,7 @@ def tfr_generalization_matrix(epochs, labels,
     steps = [slice(t, t + dt) for t in range(data.shape[-1] - dt)]
     print(data.shape)
     print(steps)
-    relabel_times = dict((v, k) for k, v in indexers[-1].items())
+    relabel_times = dict((v, k) for k, v in list(indexers[-1].items()))
     decoder = lambda x: decode(clf, data, labels, x, [x], cv=cv,
                                relabel_times=relabel_times)
     return pd.concat([decoder(tt) for tt in steps])
