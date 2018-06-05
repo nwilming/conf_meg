@@ -40,7 +40,7 @@ def decode(classifier, data, labels, train_time, predict_times,
            relabel_times=False,
            obs_average=None):
     '''
-    Apply a classifier to data [epochs x channels xtime] and predict labels with cross validation.
+    Apply a classifier to data [epochs x channels x time] and predict labels with cross validation.
     Train classifier from data at data[:, :, train_time] and apply to all
     indices in predict_times. Indices are interpreted as an index into
     the data matrix.

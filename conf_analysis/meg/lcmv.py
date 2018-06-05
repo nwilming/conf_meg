@@ -25,7 +25,7 @@ def submit():
             for epoch in ['stimulus', 'response']:
                 parallel.pmap(
                     run_and_save, [(subject, session, epoch)],
-                    walltime=10, memory=70, nodes='1:ppn=4',
+                    walltime=10, memory=10, nodes='1:ppn=1',
                     name='SR' + str(subject) + '_' + str(session) + epoch,
                     ssh_to=None)
 
