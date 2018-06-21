@@ -18,6 +18,7 @@ The logical path through this module is:
 
 
 import os
+from glob import glob
 if 'DISPLAY' in list(os.environ.keys()):
     try:
         from surfer import Brain
@@ -108,6 +109,19 @@ def response_contrast(subs=list(range(1, 16)), epoch='stimulus'):
         [_prewarm_response_contrast(sub, epoch=epoch) for sub in subs])
 
 
+def submit_response_contrast():
+    from pymeg import parallel
+    from itertools import product
+    for subject, epoch in product(range(1, 16),  ['stimulus', 'response']):
+
+        parallel.pmap(
+            _prewarm_response_contrast, [(subject, epoch)],
+            walltime=10, memory=40, nodes=1, tasks=1,
+            name='PRWRC' + str(subject) + epoch,
+            ssh_to=None)
+
+
+@memory.cache
 def _prewarm_response_contrast(sub, epoch='stimulus', baseline_time=(-0.25, 0)):
     meta = preprocessing.get_meta_for_subject(sub, 'stimulus')
     filter_dict = {'M1': meta.query('response==-1').reset_index().loc[:, 'hash'].values,
@@ -120,7 +134,23 @@ def _prewarm_response_contrast(sub, epoch='stimulus', baseline_time=(-0.25, 0)):
                     epoch=epoch, baseline_time=baseline_time)
 
 
-#@memory.cache
+def side_contrast(subs=range(1, 16), epoch='stimulus'):
+    return pd.concat(
+        [_prewarm_side_contrast(sub, epoch=epoch) for sub in subs])
+
+
+def _prewarm_side_contrast(sub, epoch='stimulus', baseline_time=(-0.25, 0)):
+    meta = preprocessing.get_meta_for_subject(sub, 'stimulus')
+    filter_dict = {'Spos': meta.query('side==-1').reset_index().loc[:, 'hash'].values,
+                   'Sneg': meta.query('side==1').reset_index().loc[:, 'hash'].values}
+    if sub <= 8:
+        hand_mapping = {'Spos': 'lh_is_ipsi', 'Sneg': 'rh_is_ipsi'}
+    else:
+        hand_mapping = {'Sneg': 'rh_is_ipsi', 'Spos': 'lh_is_ipsi'}
+    return contrast(sub, filter_dict, hand_mapping, ['P1', 'M1'],
+                    epoch=epoch, baseline_time=baseline_time)
+
+
 def contrast(sub, filter_dict, hand_mapping, contrast,
              epoch='stimulus', baseline_epoch='stimulus',
              baseline_time=(-0.25, 0)):
@@ -156,7 +186,7 @@ def contrast(sub, filter_dict, hand_mapping, contrast,
             groups.append(group)
 
         tfr = pd.concat(groups)
-        #left, right = rois.lh(tfr.columns), rois.rh(tfr.columns)
+        # left, right = rois.lh(tfr.columns), rois.rh(tfr.columns)
         left, right = sorted(rois.lh(tfr.columns)), sorted(
             rois.rh(tfr.columns))
         if len(left) < len(right):
@@ -190,12 +220,12 @@ def contrast(sub, filter_dict, hand_mapping, contrast,
 
         tfrs.append(pd.concat([tfr, lateralized, havg], 1))
     tfrs = pd.concat(tfrs, 0)
-    #cond1 = tfrs.query('condition=="%s"' % contrast[0])
-    #cond2 = tfrs.query('condition=="%s"' % contrast[1])
+    # cond1 = tfrs.query('condition=="%s"' % contrast[0])
+    # cond2 = tfrs.query('condition=="%s"' % contrast[1])
     # delta = (cond1.reset_index(level='condition', drop=True) -
     #         cond2.reset_index(level='condition', drop=True))
-    #delta.loc[:, 'condition'] = 'diff'
-    #delta.set_index('condition', append=True, inplace=True)
+    # delta.loc[:, 'condition'] = 'diff'
+    # delta.set_index('condition', append=True, inplace=True)
     return tfrs  # pd.concat([tfrs, delta], )
 
 
@@ -241,30 +271,36 @@ def load_sub_session_grouped(sub, session, trial_list, epoch='stimulus',
                              baseline=(-0.25, 0), log10=True):
 
     if epoch == 'stimulus':
-        df = pd.read_hdf(
-            '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-stimulus-lcmv.hdf' % (
+        filenames = glob(
+            '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-stimulus-F-chunk*-lcmv.hdf' % (
                 sub, session))
     elif epoch == 'response':
-        df = pd.read_hdf(
-            '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-response-lcmv.hdf' % (
+        filenames = glob(
+            '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-response-F-chunk*-lcmv.hdf' % (
                 sub, session))
     else:
         raise RuntimeError('Do not understand epoch %s' % epoch)
-    df.set_index(['trial', 'time',
-                  'est_key', 'est_val'], inplace=True)
+    df = pd.concat([pd.read_hdf(f) for f in filenames])
+    # Has index trial time est_key est_val
+    # df.set_index(['trial', 'time',
+    #              'est_key', 'est_val'], inplace=True)
     if log10:
         df = np.log10(df) * 10
 
     df = rois.reduce(df).reset_index()  # Reduce to visual clusters
-    all_trials = df.loc[:, 'trial']
+
+    #all_trials = df.loc[:, 'trial']
     conditions = []
     weights = []
     stds = []
+    df.set_index('trial', inplace=True)
+    total_trials = len(np.unique(df.index.values))
     for trials in trial_list:
-        id_trials = np.in1d(all_trials, trials)
-        n_trials = len(np.unique(df.loc[id_trials, 'trial'].values))
-        df_sub = df.set_index('trial').loc[trials, :].reset_index()
-        weights.append(float(n_trials) / len(trials))
+        id_trials = np.unique(df.index.intersection(trials))
+        n_trials = len(np.unique(id_trials))
+        # df_sub = df.set_index('trial').loc[trials, :].reset_index()
+        df_sub = df.loc[id_trials].reset_index()
+        weights.append(float(n_trials) / total_trials)
         df_sub.loc[:, 'sub'] = sub
         df_sub.loc[:, 'session'] = session
 
@@ -352,8 +388,8 @@ def plot_labels(data, areas, locations, gs, stats=True, minmax=(10, 20),
     '''
     labels = rois.filter_cols(data.columns, areas)
     import pylab as plt
-    #import seaborn as sns
-    #colors = sns.color_palette('bright', len(labels))
+    # import seaborn as sns
+    # colors = sns.color_palette('bright', len(labels))
 
     p = None
     maxrow = max([row for row, col in locations])
@@ -388,11 +424,11 @@ def plot_labels(data, areas, locations, gs, stats=True, minmax=(10, 20),
         cbar = _plot_tfr(area, ex_tfr.columns.values, ex_tfr.index.values,
                          s.mean(0), p, title_color='k', minmax=minmax[1])
         cbar.remove()
-        #plt.xticks([0, 0.5, 1])
+        # plt.xticks([0, 0.5, 1])
         if row == maxrow:
             plt.xlabel('time')
 
-            #plt.xticks([tslice.start, 0, tslice.stop])
+            # plt.xticks([tslice.start, 0, tslice.stop])
         else:
             plt.xticks([])
 
@@ -448,44 +484,12 @@ def _plot_tfr(area, columns, index, tfr_values, ps, title_color='k',
     return cbar
 
 
-'''
-Deprecated
-'''
-
-
-@memory.cache
-def load_sub_grouped(sub, trials=None, epoch='stimulus'):
-    '''
-    Filter trials should either be none or a dict with keys describing
-    conditions and values a list of trials belonging to this condition.
-
-    Parameters:
-        sub : int, subject number
-        trials : list of trial hashes
-    '''
-    sacc = []
-    for session in range(4):
-        if epoch == 'stimulus':
-            df = pd.read_hdf(
-                '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-stimulus-lcmv.hdf' % (
-                    sub, session))
-        elif epoch == 'respone':
-            df = pd.read_hdf(
-                '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-response-lcmv.hdf' % (
-                    sub, session))
-        else:
-            raise RuntimeError('Do not understand epoch %s' % epoch)
-        df.set_index(['trial', 'time',
-                      'est_key', 'est_val'], inplace=True)
-        df = rois.reduce(df)  # Reduce to visual clusters
-        df.loc[:, 'sub'] = sub
-        df.loc[:, 'session'] = session
-        df.set_index(['sub', 'session'], append=True, inplace=True)
-        sacc.append(df)
-    sacc = pd.concat(sacc).reset_index()
-    if trials is None:
-        trials = slice(None)
-    sacc = sacc.set_index('trial')
-    cond = sacc.loc[trials, :].groupby(
-        ['sub', 'time', 'est_key', 'est_val']).mean()
-    return cond
+def make_tableau(data, areas={'lh': 'M1-lh', 'rh': 'M1-rh'}, **kwargs):
+    import pylab as plt
+    for i, (area, condition) in enumerate(zip(['lh', 'rh', 'lh', 'rh'],
+                                              ['P1', 'P1', 'M1', 'M1'])):
+        plt.subplot(2, 2, i + 1)
+        tfr = get_tfr(data.query('condition=="%s"' %
+                                 condition), areas[area],  tslice=slice(-1, 0.5))
+        _plot_tfr(areas[area], tfr.columns, tfr.index,
+                  tfr.values, None, **kwargs)

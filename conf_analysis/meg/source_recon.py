@@ -81,6 +81,7 @@ def get_info(subject, session):
 
 @memory.cache
 def get_bem(subject, head_model='three_layer', ico=4, type='mne'):
+
     if head_model == 'three_layer':
         conductivity = (0.3, 0.006, 0.3)  # for three layers
     else:
@@ -109,12 +110,25 @@ def get_leadfield(subject, session, head_model='three_layer'):
     Parameters
     head_model : str, 'three_layer' or 'single_layer'
     '''
+    from pymeg import source_reconstruction as pymegsr
+    raw_filename = metadata.get_raw_filename(subject, session)
+    epoch_filename = metadata.get_epoch_filename(
+        subject, session, 0, 'stimulus', 'fif')
+    trans = get_trans(subject, session)
+
+    return pymegsr.get_leadfield('S%02i' % subject, raw_filename,
+                                 epoch_filename, trans,
+                                 conductivity=(0.3, 0.006, 0.3),
+                                 bem_sub_path='bem_ft',
+                                 njobs=4)
+    '''
+
     src = get_source_space(subject)
     if head_model == 'three_layer':
         bem = get_bem(subject, head_model=head_model, type='fieldtrip')
     else:
         bem = get_bem(subject, head_model=head_model, type='mne')
-    trans = get_trans(subject, session)
+    
     info = get_info(subject, session)
 
     fwd = mne.make_forward_solution(
@@ -124,79 +138,10 @@ def get_leadfield(subject, session, head_model='three_layer'):
         bem=bem,
         meg=True,
         eeg=False,
-        mindist=5.0,
-        n_jobs=2)
+        mindist=2.5,
+        n_jobs=4)
     return fwd, bem, fwd['src'], trans
-
-
-@memory.cache
-def get_labels(subject):
-    import glob
-    subject = 'S%02i' % subject
-    subject_dir = join(subjects_dir, subject)
-    labels = glob.glob(join(subject_dir, 'label', '*wang2015atlas*'))
-    labels += glob.glob(join(subject_dir, 'label', '*JWDG*.label'))
-    frontal = ['G&S_cingul-Ant-lh', 'G&S_cingul-Mid-Ant', 'G&S_frontomargin-',
-               'G&S_transv_frontopol', 'G_front_inf-Opercular', 'G_front_inf-Orbital',
-               'G_front_inf-Triangul', 'G_front_middle', 'G_front_sup',
-               'S_front_inf', 'S_front_middle', 'S_front_sup']
-    a2009s = glob.glob(join(subject_dir, 'label', '*a2009s*.label'))
-    a2009s = [x for x in a2009s if any([t in x for t in frontal])]
-    labels += a2009s
-    return [mne.read_label(label, subject) for label in labels]
-
-
-def get_eccen_labels(subject):
-    import glob
-    subject = 'S%02i' % subject
-    subject_dir = join(subjects_dir, subject)
-    labels = glob.glob(join(subject_dir, 'label', '*eccen11*'))
-    return [mne.read_label(label, subject) for label in labels]
-
-
-def save_source_power(data, subject, filename):
-    import numpy as np
-    transform = lambda x: dict((d, np.asarray(k).ravel() if type(
-        k) == np.ndarray else k) for d, k in x.items())
-    df = pd.concat([pd.DataFrame(transform(x)) for x in data])
-    df.loc[:, 'snum'] = subject
-    df.to_hdf(filename, 'srcpow')
-
-
-@memory.cache
-def get_stimulus_csd(epochs, noise_t=(0.25, 0.75), data_t=(0.75, 1.75),
-                     freq=(45, 65)):
-    from mne.time_frequency import csd_epochs
-    # Construct filter
-    noise_csd = csd_epochs(epochs,
-                           mode='multitaper', tmin=noise_t[0], tmax=noise_t[1],
-                           fmin=freq[0], fmax=freq[1], fsum=True)
-    data_csd = csd_epochs(epochs,
-                          mode='multitaper', tmin=data_t[0], tmax=data_t[1],
-                          fmin=freq[0], fmax=freq[1], fsum=True)
-    return noise_csd, data_csd
-
-
-def foo(source_epoch, labels, i, events):
-    d = []
-    for label in labels:
-        data = {}
-        hemi = 0 if 'lh' == label.hemi else 1
-        l_data = source_epoch.in_label(label)
-        data['hemi'] = hemi
-        if hemi == 0:
-            for vertex, vert_data in zip(l_data.vertices[0],
-                                         l_data.lh_data):
-                data[vertex] = vert_data
-        elif hemi == 1:
-            for vertex, vert_data in zip(l_data.vertices[1],
-                                         l_data.rh_data):
-                data[vertex] = vert_data
-
-        data['trial'] = events[i, 2]
-        data['time'] = source_epoch.times
-        d.append(pd.DataFrame(data))
-    return pd.concat(d)
+    '''
 
 
 def clear_cache():

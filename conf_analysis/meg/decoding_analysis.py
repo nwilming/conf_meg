@@ -54,6 +54,17 @@ avgs = [x + '-lh_Havg' for x in areas]
 lateralized = [x + '-lh_L-R' for x in areas]
 pairs = [(x + '-lh', x + '-rh') for x in areas]
 
+plot_areas = ['vfcvisual', 'vfcIPS_occ', 'vfcIPS_dorsal', 'vfcSPL', 'vfcFEF',
+              'vfcV3ab', 'vfcLO', 'vfcTO',
+              'vfcVO', 'vfcPHC',
+              # Choice areas:
+              'aIPS1', 'M1', 'IPS_Pces',
+              'ACC']
+
+plot_avgs = [x + '-lh_Havg' for x in plot_areas]
+plot_lateralized = [x + '-lh_L-R' for x in plot_areas]
+plot_pairs = [(x + '-lh', x + '-rh') for x in plot_areas]
+
 areas = avgs + lateralized + pairs
 n_jobs = 1
 
@@ -92,20 +103,34 @@ def run_AA(subject, decoder, epoch, ntasks=1):
                       est_vals=[10, 100], est_key='F', log10=True,
                       baseline_epoch='stimulus', baseline=(-0.35, 0))
         for session in [0, 1, 2, 3]])
-
+    pd.concat([
+        get_all_areas(subject, session, epoch=epoch, time=time,
+                      est_vals=[-1, -1], est_key='BB', log10=True,
+                      baseline_epoch='stimulus', baseline=(-0.35, 0))
+        for session in [0, 1, 2, 3]])
     print('Done caching')
-    scores = p.starmap(run_single_area,
-                       [(subject, decoder, epoch, area) for area in areas])
+    args = []
+    for est_key, est_vals in zip(['F', 'BB'], [(10, 100), (-1, -1)]):
+        for area in areas:
+            args.append((subject, decoder, epoch, area, est_key, est_vals))
+    scores = p.starmap(run_single_area, args)
     scores = [s for s in scores if s is not None]
     scores = pd.concat(scores)
-    filename = '/work/faty014/MEG/sr_decoding/S%i-%s-%s-decoding.hdf' % (
+
+    if (('RRZ_TMPDIR' in list(os.environ.keys()))
+            or ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys()))):
+        outpath = '/work/faty014/MEG/sr_decoding/'
+    else:
+        outpath = '/home/nwilming/conf_meg/sr_decoding/'
+    filename = outpath + '/concat_S%i-%s-%s-decoding.hdf' % (
         subject, decoder, epoch)
     scores.to_hdf(filename, 'decoding')
     p.terminate()
     return scores
 
 
-def run_single_area(subject, decoder, epoch, area, ignore_errors=True):
+def run_single_area(subject, decoder, epoch, area, est_key='F', est_vals=[10, 100],
+                    ignore_errors=True):
     try:
         return run_decoder(subject, decoder, area, epoch)
     except:
@@ -115,7 +140,7 @@ def run_single_area(subject, decoder, epoch, area, ignore_errors=True):
             raise
 
 
-def run_decoder(subject, decoder, area, epoch):
+def run_decoder(subject, decoder, area, epoch, est_key='F', est_vals=[10, 100]):
     '''
     Run a specific type decoding on a subject's data set
 
@@ -156,9 +181,8 @@ def run_decoder(subject, decoder, area, epoch):
 
     data, meta = get_subject(subject, epoch=epoch,
                              area=area, time=latencies[epoch],
-                             est_vals=[10, 100])
+                             est_vals=est_vals, est_key=est_key)
     data.reset_index().set_index('trial', inplace=True)
-    meta = meta.dropna(subset=['confidence', 'response'])
 
     dt = np.diff(data.time)[0]
     latencies = np.unique(data.time)
@@ -168,11 +192,11 @@ def run_decoder(subject, decoder, area, epoch):
         meta.loc[:, 'confidence'] == 1).astype(int)
 
     decoders = {'SSD': ssd_decoder,
-                'MIDC_split': partial(midc_decoder, splitmc=False,
+                'MIDC_split': partial(midc_decoder, splitmc=True,
                                       target_col='response'),
                 'MIDC_nosplit': partial(midc_decoder, splitmc=False,
                                         target_col='response'),
-                'SIDE_split': partial(midc_decoder, splitmc=False,
+                'SIDE_split': partial(midc_decoder, splitmc=True,
                                       target_col='side'),
                 'SIDE_nosplit': partial(midc_decoder, splitmc=False,
                                         target_col='side'),
@@ -194,17 +218,18 @@ def run_decoder(subject, decoder, area, epoch):
             scores.append(s)
         except:
             logging.exception(''''Error in run_decoder:
-        #Subject: %i
-        #Decoder: %s
-        #Epoch: %s
-        #Area: %s
-        #Latency: %f)''' % (subject, decoder, epoch, area, latency))
+        # Subject: %i
+        # Decoder: %s
+        # Epoch: %s
+        # Area: %s
+        # Latency: %f)''' % (subject, decoder, epoch, area, latency))
             raise
     scores = pd.concat(scores)
     scores.loc[:, 'signal'] = decoder
     scores.loc[:, 'subject'] = subject
     scores.loc[:, 'epoch'] = epoch
     scores.loc[:, 'area'] = str(area)
+    scores.loc[:, 'est_key'] = est_key
     scores.to_hdf(filename, 'decoding')
     return scores
 
@@ -330,8 +355,8 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
     if splitmc:
         for mc, sub_meta in meta.groupby(meta.mc < 0.5):
             # Align data and meta
-            #sub_meta = meta
-            #sub_data = data
+            # sub_meta = meta
+            # sub_data = data
 
             sub_data = data.loc[sub_meta.index, :]
             sub_meta = sub_meta.reset_index().set_index('hash').loc[
@@ -393,21 +418,30 @@ def multiclass_roc(y_true, y_predict, **kwargs):
 
 
 def categorize(target, data, latency):
+    '''
+    Expects a pandas series and a pandas data frame.
+    Both need to be indexed with the same index.
+    '''
     from imblearn.pipeline import Pipeline
     from sklearn.metrics.scorer import make_scorer
     from sklearn.metrics import recall_score, precision_score
     from sklearn.utils.multiclass import type_of_target
 
+    if not all(target.index.values == data.index.values):
+        raise RuntimeError('Target and data not aligned with same index.')
+
+    target = target.values
+    data = data.values
     # Determine prediction target:
     y_type = type_of_target(target)
     if y_type == 'multiclass':
         metrics = {'roc_auc': make_scorer(multiclass_roc,
                                           average='weighted'),
-                   'accuracy': 'accuracy',
-                   'recall': make_scorer(recall_score,
-                                         average='weighted'),
-                   'precision': make_scorer(precision_score,
-                                            average='weighted')}
+                   'accuracy': 'accuracy'}
+        #'recall': make_scorer(recall_score,
+        #                      average='weighted'),
+        #'precision': make_scorer(precision_score,
+        #                         average='weighted')}
     else:
         metrics = ['roc_auc', 'accuracy', 'precision', 'recall']
     classifiers = {
@@ -426,7 +460,7 @@ def categorize(target, data, latency):
             (name, clf)
         ])
         # print('Running', name)
-        score = cross_validate(clf, data.values, target,
+        score = cross_validate(clf, data, target,
                                cv=10, scoring=metrics,
                                return_train_score=False,
                                n_jobs=n_jobs)
@@ -475,112 +509,154 @@ def get_session(subject, session, area, epoch='stimulus', time=(0, 1),
     return df.loc[:, ~df.columns.duplicated()]
 
 
-def get_tableau(meta, dresp, dstim, baseline=None, log10=True,
-                areas={'lh': 'M1-lh', 'rh': 'M1-rh'},
-                **kwargs):
+def get_tableau(meta, dresp, areas={'lh': 'M1-lh', 'rh': 'M1-rh'},
+                field='response',
+                options=[1, 1, -1, -1],
+                dbase=None, late=True,
+                ** kwargs):
     '''
     Computes the response lateralization 'Tableau', i.e. Hemishphere*response
     plot.s
     '''
     rois = list(areas.values()) + ['time', 'trial', 'est_key', 'est_val']
     import pylab as plt
-    dresp = dresp.reset_index().loc[:, rois].query('est_key=="F"')
-    dresp.set_index(['trial', 'time', 'est_key', 'est_val'], inplace=True)
-    if log10:
-        dstim = np.log10(dstim) * 10
-        dresp = np.log10(dresp) * 10
+    # dresp = dresp.reset_index().loc[:, rois].query('est_key=="F"')
+    # dresp.set_index(['trial', 'time', 'est_key', 'est_val'], inplace=True)
     dresp = dresp.reset_index().set_index('trial')
-
-    # Do baseline correction
-    if baseline == 'avg':
-        dstim = dstim.query('-0.3<time<-0')
-        m = dstim.groupby('est_val').mean()
-        s = (dstim.groupby(['est_val', 'trial'])
-                  .mean()
-                  .reset_index()
-                  .groupby('est_val')
-                  .std())
-
-    for i, (resp, area) in enumerate(zip([-1, -1, 1, 1],
+    if dbase is not None:
+        dbase = dbase.reset_index().set_index('trial')
+    plt.clf()
+    kbase = None
+    if (dbase is not None) and not late:
+        kbase = (dbase.groupby('est_val').mean())
+        sbase = (dbase
+                 .groupby(['est_val', 'time'])
+                 .mean()
+                 .groupby('est_val')
+                 .std())
+    for i, (resp, area) in enumerate(zip(options,
                                          [areas['lh'], areas['rh'],
                                           areas['lh'], areas['rh']])):
         plt.subplot(2, 2, i + 1)
 
-        data = dresp.loc[meta.loc[meta.response == resp, :].index, :]
+        data = dresp.loc[meta.loc[meta.loc[:, field] == resp, :].index, :]
+
         k = pd.pivot_table(data, values=area,
                            index='est_val', columns='time')
-        if baseline == 'avg':
-            k = k.subtract(m.loc[:, area], 0).div(s.loc[:, area], 0)
         dtmin, dtmax = k.columns.min(), k.columns.max()
+        if (dbase is not None) and late:
+            kbase = (dbase
+                     .loc[meta.loc[meta.loc[:, field]
+                                   == resp, :].index, :]
+                     .groupby('est_val').mean())
+            sbase = (dbase
+                     .loc[meta.loc[meta.loc[:, field] == resp, :].index, :]
+                     .groupby(['est_val', 'time'])
+                     .mean()
+                     .groupby('est_val')
+                     .std())
+        if kbase is not None:
+            k = ((k.values - kbase.loc[k.index.values,
+                                       area].values[:, np.newaxis])
+                 / sbase.loc[k.index.values, area].values[:, np.newaxis])
+
         plt.imshow(np.flipud(k), cmap='RdBu_r',
                    aspect='auto', extent=[dtmin, dtmax, 10, 100], **kwargs)
-        plt.text(-1, 20, 'RESP:%i, HEMI=%s' % (resp, area))
+        plt.text(0, 20, '%s:%i, HEMI=%s' % (field, resp, area))
         if i == 0:
             plt.title('LH')
-            plt.xlabel('RESP=%i' % resp)
+            plt.xlabel('%s=%i' % (field, resp))
         if i == 1:
             plt.title('RH')
 
 
-def get_path(epoch, subject, session):
-    import os
+def get_path(epoch, subject, session, cache=False):
+    from os.path import join
+    from glob import glob
+
     if 'RRZ_LOCAL_TMPDIR' in list(os.environ.keys()):
         path = '/work/faty014/MEG/'
     else:
         path = '/home/nwilming/conf_meg/'
-    if epoch == 'stimulus':
-        filename = 'sr_labeled/S%i-SESS%i-stimulus-lcmv.hdf' % (
-            subject, session)
-    elif epoch == 'response':
-        filename = 'sr_labeled/S%i-SESS%i-response-lcmv.hdf' % (
-            subject, session)
+    if not cache:
+        if epoch == 'stimulus':
+            filenames = glob(
+                join(path, 'sr_labeled/S%i-SESS%i-stimulus-F-chunk*-lcmv.hdf' % (
+                    subject, session)))
+        elif epoch == 'response':
+            filenames = glob(
+                join(path, 'sr_labeled/S%i-SESS%i-response-F-chunk*-lcmv.hdf' % (
+                    subject, session)))
+        else:
+            raise RuntimeError('Do not understand epoch %s' % epoch)
     else:
-        raise RuntimeError('Do not understand epoch %s' % epoch)
-    return os.path.join(path, filename)
+        if epoch == 'stimulus':
+            filenames = join(
+                path, 'sr_labeled', 'aggregates', 'S%i-SESS%i-stimulus-lcmv.hdf' % (
+                    subject, session))
+        elif epoch == 'response':
+            filenames = join(
+                path, 'sr_labeled/', 'aggregates', 'S%i-SESS%i-response-lcmv.hdf' % (
+                    subject, session))
+    return filenames
 
 
-@memory.cache
-def get_all_areas(subject, session, epoch='stimulus', time=(0, 1),
-                  est_vals=(30, 100), est_key='F', log10=True,
+def get_all_areas(subject, session, epoch='stimulus', time=(-1.5, 1),
+                  est_vals=(10, 150), est_key='F',
                   baseline_epoch='stimulus', baseline=(-0.35, 0)):
-    print('.')
+    df = get_aggregates(subject, session, epoch=epoch,
+                        baseline_epoch=baseline_epoch, baseline=baseline)
+
+    df.query('%f<time & time<%f & est_key=="%s" & %f<=est_val & est_val<=%f' %
+             (time[0], time[1], est_key, est_vals[0], est_vals[1]),
+             inplace=True)
+    return df
+
+
+def get_aggregates(subject, session, epoch='stimulus',
+                   baseline_epoch='stimulus', baseline=(-0.35, 0)):
+    est_key = 'F'
+    est_vals = (10, 150)
+    cachefile = get_path(epoch, subject, session, cache=True)
+    try:
+        return pd.read_hdf(cachefile, 'epochs')
+    except IOError:
+        pass
+    filenames = get_path(epoch, subject, session, cache=False)
     meta = preprocessing.get_meta_for_subject(subject, epoch)
     meta = meta.set_index('hash')
-    filename = get_path(epoch, subject, session)
-    df = pd.read_hdf(filename)
-    df.set_index(['trial', 'time', 'est_key', 'est_val'], inplace=True)
-    if log10:
-        df = np.log10(df) * 10
+    df = pd.concat([pd.read_hdf(f) for f in filenames])
+
+    df = np.log10(df) * 10
 
     # This is the place where baselining should be carried out (i.e. before
     # averaging across areas)
     if baseline is not None:
         if not baseline == epoch:
-            filename = get_path('stimulus', subject, session)
-            dbase = pd.read_hdf(filename)
-            dbase.set_index(
-                ['trial', 'time', 'est_key', 'est_val'], inplace=True)
-            if log10:
-                dbase = np.log10(dbase) * 10
+            filenames = get_path('stimulus', subject, session)
+
+            dbase = pd.concat([pd.read_hdf(f) for f in filenames])
+            dbase = np.log10(dbase) * 10
         else:
             dbase = df
         dbase = dbase.query(
-            '%f<time & time<%f & est_key=="%s" & %f<est_val & est_val<%f' %
+            '%f<time & time<%f & est_key=="%s" & %f<=est_val & est_val<=%f' %
             (baseline[0], baseline[1], est_key, est_vals[0], est_vals[1]))
 
-    df.query('%f<time & time<%f & est_key=="%s" & %f<est_val & est_val<%f' %
-             (time[0], time[1], est_key, est_vals[0], est_vals[1]),
+    df.query('est_key=="%s" & %f<=est_val & est_val<=%f' %
+             (est_key, est_vals[0], est_vals[1]),
              inplace=True)
 
     if baseline is not None:
+        logging.info('Doing baseline correction')
         df = apply_baseline(df, dbase, trial=False)
         del dbase
         df.set_index(
             ['trial', 'time', 'est_key', 'est_val'], inplace=True)
     df = rois.reduce(df).reset_index()  # Reduce to visual clusters
     # Filter down to correct trials:
-    meta = meta.loc[np.unique(df.trial.values), :]
-    df.set_index('trial', inplace=True)    
+    meta = meta.reindex(np.unique(df.trial.values))
+    df.set_index('trial', inplace=True)
 
     # Now compute lateralisation
     def lateralize(response):
@@ -615,10 +691,11 @@ def get_all_areas(subject, session, epoch='stimulus', time=(0, 1),
         [df.loc[:, (x, y)].mean(1) for x, y in zip(left, right)],
         1)
     havg.columns = [x + '_Havg' for x in left]
-    return pd.concat(
-        (df.reset_index(),
-         lateralized.reset_index(),
-         havg.reset_index()), 1)
+    df = pd.concat((lateralized.reset_index(), df.reset_index(),
+                    havg.reset_index()), 1)
+    df = df.loc[:, ~df.columns.duplicated()]
+    df.to_hdf(cachefile, 'epochs')
+    return df
 
 
 def apply_baseline(data, baseline, trial=False):
@@ -632,21 +709,31 @@ def apply_baseline(data, baseline, trial=False):
     dmean = dmean.groupby(['est_val', 'est_key']).mean()
     if 'time' in dmean.columns:
         del dmean['time'], dstd['time']
-    data = data.reset_index()
-    target_cols = data.columns
+    index_cols = set(data.reset_index().columns) - set(dmean.columns)
+    data = data.reset_index().set_index(list(index_cols))
+    # target_cols = data.columns
     # (est_key, est_val) x areas
-    #del dmean['trial'], dstd['trial']
-    areas = dmean.columns
-    data = data.join(dmean, on=['est_val', 'est_key'], rsuffix='_!mbase')
-    data = data.join(dstd, on=['est_val', 'est_key'], rsuffix='_!sbase')
+    # del dmean['trial'], dstd['trial']
+    # areas = dmean.columns
+    acc = []
+    for cond, data in data.groupby(['est_val', 'est_key']):
+        data = data.copy()
+        means = dmean.loc[cond, data.columns]
+        stds = dstd.loc[cond, data.columns]
+        data.loc[:, :] = (data.values - means.values[np.newaxis, :]
+                          ) / stds.values[np.newaxis, :]
+        acc.append(data)
+    data = pd.concat(acc)
+    # data = data.join(dmean, on=['est_val', 'est_key'], rsuffix='_!mbase')
+    # data = data.join(dstd, on=['est_val', 'est_key'], rsuffix='_!sbase')
 
-    for area in areas:
-        data.loc[:, area] = data.loc[:, area] - \
-            data.loc[:, area + '_!mbase']
-        data.loc[:, area] = data.loc[:, area] / \
-            data.loc[:, area + '_!sbase']
+    # for area in areas:
+    #    data.loc[:, area] = data.loc[:, area] - \
+    #        data.loc[:, area + '_!mbase']
+    #    data.loc[:, area] = data.loc[:, area] / \
+    #        data.loc[:, area + '_!sbase']
 
-    return data.loc[:, target_cols]
+    return data.reset_index()  # .loc[:, target_cols]
 
 
 def ensure_iter(input):
@@ -658,3 +745,82 @@ def ensure_iter(input):
                 yield item
         except TypeError:
             yield input
+
+
+def plot_set(area_set, data,
+             signals={'MIDC_split': '#E9003A', 'SIDE_nosplit': '#FF5300',
+                      'CONF_signed': '#00AB6F', 'CONF_unsigned': '#58E000'},
+             title='', classifier='SCVlin'):
+    import matplotlib
+    import seaborn as sns
+    import pylab as plt
+    gs = matplotlib.gridspec.GridSpec(1, 2)
+    for i, area in enumerate(area_set):
+        for signal, color in signals.items():
+            try:
+                plot_decoding_results(data, signal, area, stim_ax=gs[
+                    0, 0], resp_ax=gs[0, 1], color=color, classifier=classifier,
+                    offset=i * 0.5)
+            except RuntimeError:
+                print('RuntimeError for area %s, signal %s' % (area, signal))
+    sns.despine(left=True)
+    plt.suptitle(title)
+
+    # Add legend
+    x = [-0.5, -1, -1, -0.5]
+    y = [0., 0.2, 0, 0.2]
+    ylim = list(plt.ylim())
+    ylim[1] = i * 0.5 + 1
+    for i, (signal, color) in enumerate(signals.items()):
+        plt.text(x[i], y[i], signal, color=color)
+    plt.subplot(gs[0, 0])
+    plt.ylim(ylim[0] - 0.1, ylim[1])
+    plt.subplot(gs[0, 1])
+    plt.ylim(ylim[0] - 0.1, ylim[1])
+
+
+def plot_decoding_results(data, signal, area, classifier='SCVlin',
+                          stim_ax=None, resp_ax=None, value='test_roc_auc', color='b',
+                          offset=0):
+    import warnings
+    warnings.filterwarnings("ignore")
+    import pylab as plt
+    import seaborn as sns
+    if stim_ax is None:
+        stim_ax = plt.gca()
+    if resp_ax is None:
+        stim_ax = plt.gca()
+
+    select_string = 'Classifier=="%s" & signal=="%s" & area=="%s"' % (
+        classifier, signal, area)
+    areaname = (str(area).replace('vfc', '')
+                .replace('-lh', '')
+                .replace('-rh', '')
+                .replace('_Havg', '')
+                .replace('_Lateralized', ''))
+    data = data.query(select_string)
+
+    stimulus = data.query('epoch=="stimulus"').reset_index()
+    stimulus.loc[:, value] += offset
+
+    response = data.query('epoch=="response"').reset_index()
+    response.loc[:, value] += offset
+    stim_ax = plt.subplot(stim_ax)
+    sns.tsplot(stimulus, time='latency', value=value,
+               unit='subject', ax=stim_ax, color=color)
+    #plt.ylim([0.1, 0.9])
+    plt.axhline(0.5 + offset, color='k')
+    dx, dy = np.array([0.0, 0.0]), np.array([.5, 0.75])
+    plt.plot(dx, dy + offset, color='k')
+    plt.text(-0.75, 0.6 + offset, areaname)
+    plt.yticks([])
+    plt.ylabel('')
+    resp_ax = plt.subplot(resp_ax)
+
+    sns.tsplot(response, time='latency', value=value,
+               unit='subject', ax=resp_ax, color=color)
+    plt.plot(dx, dy + offset, color='k')
+    plt.yticks([])
+    plt.ylabel('')
+    #plt.ylim([0.1, 0.9])
+    plt.axhline(0.5 + offset, color='k')
