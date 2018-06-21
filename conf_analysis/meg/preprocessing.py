@@ -122,7 +122,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
                 m.to_hdf(epo_metaname, 'meta')
                 r_id[epoch] = len(s)
                 filenames.append(epo_fname)
-        pickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
+        pickle.dump(artdefs, open(art_fname, 'wb'), protocol=2)
 
     except MemoryError:
         print((snum, session, block_in_raw, block_in_experiment))
@@ -187,7 +187,7 @@ def get_meta(data, raw, snum, block, filename):
     block : int
         Block within recording that this raw object corresponds to.
 
-    Note: Data is matched agains the behavioral data with snum, recording, trial
+    Note: Data is matched againts the behavioral data with snum, recording, trial
     number and block number. Since the block number is not encoded in MEG data it
     needs to be passed explicitly. The order of responses is encoded in behavioral
     data and MEG data and is compared to check for alignment.
@@ -196,7 +196,8 @@ def get_meta(data, raw, snum, block, filename):
     es, ee, trl, bl = metadata.define_blocks(trigs)
 
     megmeta = metadata.get_meta(trigs, es, ee, trl, bl,
-                                metadata.fname2session(filename), snum)
+                                metadata.fname2session(filename), snum,
+                                buttons=buts)
     assert len(np.unique(megmeta.snum) == 1)
     assert len(np.unique(megmeta.day) == 1)
     assert len(np.unique(megmeta.block_num) == 1)
