@@ -169,8 +169,7 @@ def define_blocks(events):
                 if (151 in events[evstart - 10:evstart, 2]):
                     prev_end = 10 - \
                         where(events[evstart - 10:evstart, 2] == 151)[0][0]
-                    id_keep[(start[matching_start] - prev_end + 1)
-                             :end[i] + 1] = True
+                    id_keep[(start[matching_start] - prev_end + 1)                            :end[i] + 1] = True
                 else:
                     id_keep[(start[matching_start] - 10):end[i] + 1] = True
             events = events[id_keep, :]
@@ -217,7 +216,7 @@ def fname2session(filename):
     return int(filename.split('/')[-1].split('_')[-2])
 
 
-def get_meta(events, tstart, tend, tnum, bnum, day, subject):
+def get_meta(events, tstart, tend, tnum, bnum, day, subject, buttons=None):
     trls = []
     for ts, te, trialnum, block in zip(tstart, tend, tnum, bnum):
         trig_idx = (ts < events[:, 0]) & (events[:, 0] < te)
@@ -242,6 +241,13 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject):
         trial['end'] = te
         trial['day'] = day
         trial['snum'] = subject
+        if buttons is not None:
+            but_idx = (ts < buttons[:, 0]) & (buttons[:, 0] < te)
+            if sum(but_idx) > 0:
+              buts = buttons[but_idx, :]
+              trial['megbuttons'] = buts[0, 2]
+            else:
+              trial['megbuttons'] = np.nan
         trls.append(trial)
 
     trls = pd.DataFrame(trls)
@@ -286,6 +292,16 @@ def cleanup(meta):
     cols += ['meg_side']
     assert all((no_lates.meg_noise_sigma.replace(
         {31: .05, 32: .1, 33: .15})) == no_lates.noise_sigma)
+
+    # Also check if meg button is related to button resp.
+    map_a = (no_lates.megbuttons.replace(
+        {232: 21, 228: 22, 226: 23, 225: 24}).values == no_lates.button.values)
+    map_b = (no_lates.megbuttons.replace(
+        {232: 24, 228: 23, 226: 22, 225: 21}).values == no_lates.button.values)
+    if not (all(map_a) or all(map_b)):
+        da = sum(~map_a)
+        db = sum(~map_b)
+        print('MEG Button aligment not perfect: %i, %i' % (da, db))
     cols += ['meg_noise_sigma']
     cols += ['cc%i' % c for c in range(10)]
     cols += ['meg_side_t', ]
