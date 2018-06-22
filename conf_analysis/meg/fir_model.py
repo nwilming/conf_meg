@@ -691,7 +691,6 @@ def pc(x, t=0.05):
     return y / y.sum()
 
 
-@memory.cache
 def get_trace_for_subject(subject, area):
     import pymc3 as pm
     sa = pd.read_hdf(
@@ -704,8 +703,8 @@ def get_trace_for_subject(subject, area):
     with mdl:
         savedir = 'mvnorm_CRF_S%i_%s_trace' % (subject, area)
         db = pm.backends.Text(savedir)
-        trace = pm.sample(4500, tune=1000, cores=4, njobs=4,
-                          trace=db, init='advi+adapt_diag')
+        trace = pm.sample(4500, tune=1500, cores=4, njobs=4,
+                          trace=db)
     import cPickle
     cPickle.dump({'model': mdl, 'trace': trace}, open(
         'mvnorm_CRF_S%i_%s_trace.pkl' % (subject, area), 'w'))
