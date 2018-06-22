@@ -30,7 +30,7 @@ def do_one(filename):
         if len(trl[bl==b]) >= 75:
             result[b] = bcnt
             bcnt +=1
-        print(b, bcnt)
+        print((b, bcnt))
     return result
 
 block_map = {}

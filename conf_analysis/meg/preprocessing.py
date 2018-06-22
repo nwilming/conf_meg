@@ -30,8 +30,11 @@ from joblib import Memory
 from mne.transforms import apply_trans
 
 from pymeg import preprocessing as pymegprepr
+from functools import reduce
 
 memory = Memory(cachedir=metadata.cachedir)
+import locale
+locale.setlocale(locale.LC_ALL, "en_US")
 
 
 def one_block(snum, session, block_in_raw, block_in_experiment):
@@ -45,6 +48,7 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         raw : mne.io.Raw object
     Raw data for an entire session of a subject.
         block_in_raw, block_in_experiment : int
+
     Each succesfull session consists out of five blocks, yet a sessions MEG
     data file sometimes contains more. This happens, for example, when a block
     is restarted. 'block_in_raw' refers to the actual block in a raw file, and
@@ -74,11 +78,12 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
         logging.info('Loading block of data: %s; block: %i' %
                      (filename, block_in_experiment))
         r, r_id = load_block(raw, trials, block_in_raw)
-        r_id['filnemae'] = filename
-        print('Working on:', filename, block_in_experiment, block_in_raw)
+        r_id['filname'] = filename
+        print(('Working on:', filename, block_in_experiment, block_in_raw))
         logging.info('Starting artifact detection')
 
         r, ants, artdefs = pymegprepr.preprocess_block(r)
+        #r.annotations = r
         print('Notch filtering')
         midx = np.where([x.startswith('M') for x in r.ch_names])[0]
         r.notch_filter(np.arange(50, 251, 50), picks=midx)
@@ -97,10 +102,15 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
                 [(0, 1), (-1, 0.5), (-0.5, 0.5)]):
 
             logging.info('Processing epoch: %s' % epoch)
-            m, s = pymegprepr.get_epoch(r, meta, timing,
-                                        event=event, epoch_time=(tmin, tmax),
-                                        reject_time=(rmin, rmax),
-                                        base_event='stim_onset_t', base_time=(-.2, 0))
+            try:
+                m, s = pymegprepr.get_epoch(r, meta, timing,
+                                            event=event, epoch_time=(
+                                                tmin, tmax),
+                                            reject_time=(rmin, rmax),
+                                            )
+            except RuntimeError as e:
+                print(e)
+                continue
 
             if len(s) > 0:
                 epo_fname = metadata.get_epoch_filename(snum, session,
@@ -112,10 +122,10 @@ def one_block(snum, session, block_in_raw, block_in_experiment):
                 m.to_hdf(epo_metaname, 'meta')
                 r_id[epoch] = len(s)
                 filenames.append(epo_fname)
-        pickle.dump(artdefs, open(art_fname, 'w'), protocol=2)
+        pickle.dump(artdefs, open(art_fname, 'wb'), protocol=2)
 
     except MemoryError:
-        print(snum, session, block_in_raw, block_in_experiment)
+        print((snum, session, block_in_raw, block_in_experiment))
         raise RuntimeError('MemoryError caught in one block ' + str(snum) + ' ' + str(
             session) + ' ' + str(block_in_raw) + ' ' + str(block_in_experiment))
     return 'Finished', snum, session, block_in_experiment, filenames
@@ -154,7 +164,7 @@ def load_block(raw, trials, block):
     '''
     start = int(trials['start'][trials['block'] == block].min())
     end = int(trials['end'][trials['block'] == block].max())
-    print start, end
+    print(start, end)
     r = raw.copy().crop(
         max(0, raw.times[start] - 5), min(raw.times[-1], raw.times[end] + 5))
     r_id = {'first_samp': r.first_samp}
@@ -177,7 +187,7 @@ def get_meta(data, raw, snum, block, filename):
     block : int
         Block within recording that this raw object corresponds to.
 
-    Note: Data is matched agains the behavioral data with snum, recording, trial
+    Note: Data is matched againts the behavioral data with snum, recording, trial
     number and block number. Since the block number is not encoded in MEG data it
     needs to be passed explicitly. The order of responses is encoded in behavioral
     data and MEG data and is compared to check for alignment.
@@ -186,7 +196,8 @@ def get_meta(data, raw, snum, block, filename):
     es, ee, trl, bl = metadata.define_blocks(trigs)
 
     megmeta = metadata.get_meta(trigs, es, ee, trl, bl,
-                                metadata.fname2session(filename), snum)
+                                metadata.fname2session(filename), snum,
+                                buttons=buts)
     assert len(np.unique(megmeta.snum) == 1)
     assert len(np.unique(megmeta.day) == 1)
     assert len(np.unique(megmeta.block_num) == 1)
@@ -214,7 +225,7 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
     from itertools import product
 
     if sessions is None:
-        sessions = range(4)
+        sessions = list(range(4))
     data = []
     meta = get_meta_for_subject(snum, epoch, sessions=sessions)
     for session, block in product(ensure_iter(sessions), list(range(5))):
@@ -224,24 +235,34 @@ def get_epochs_for_subject(snum, epoch, sessions=None):
             data.append(filename)
     #assert len(data) == len(list(ensure_iter(sessions)))*5
     data = pymegprepr.load_epochs(data)
-
+    event_ids = reduce(lambda x, y: x + y,
+                       [list(d.event_id.values()) for d in data])
+    meta = meta.reset_index().set_index('hash')
+    meta = meta.loc[event_ids, :]
     assert len(meta) == sum([d._data.shape[0] for d in data])
     return pymegprepr.concatenate_epochs(data, [meta])
 
 
 def get_meta_for_subject(snum, epoch, sessions=None):
     if sessions is None:
-        sessions = range(5)
+        sessions = list(range(5))
     metas = []
     for session, block in product(ensure_iter(sessions), list(range(5))):
         filename = metadata.get_epoch_filename(
             snum, session, block, epoch, 'meta')
-
-        if os.path.isfile(filename):
-            metas.append(filename)
-
-    meta = pymegprepr.load_meta(metas)
-    return pd.concat(meta)
+        if os.path.isfile(filename + '.msgpack'):
+            df = pd.read_msgpack(filename + '.msgpack')
+            metas.append(df)
+        elif os.path.isfile(filename):
+            df = pd.read_hdf(filename)
+            metas.append(df)
+        else:
+            pass
+    #meta = pymegprepr.load_meta(metas)
+    meta = pd.concat(metas).reset_index()
+    cols = [c.decode('utf-8') if type(c) == bytes else c for c in meta.columns]
+    meta.columns = cols
+    return meta
 
 
 @memory.cache
@@ -269,12 +290,12 @@ def make_trans(subject, session):
     if os.path.isfile(trans_name):
         print('Removing previous trans file')
         os.remove(trans_name)
-    print '--------------------------------'
+    print('--------------------------------')
     print('Please save trans file as:')
     print(trans_name)
     cmd = 'mne coreg --high-res-head -d %s -s %s -f %s' % (
         '/home/nwilming/fs_subject_dir', 'S%02i' % subject, hs_ref)
-    print cmd
+    print(cmd)
     os.system(cmd)
     # mne.gui.coregistration(inst=hs_ref, subject='S%02i' % subject,
     #                       subjects_dir='/home/nwilming/fs_subject_dir')
@@ -322,7 +343,7 @@ def head_movement(epochs):
                 'y': ['HLC0021', 'HLC0022', 'HLC0023'],
                 'z': ['HLC0031', 'HLC0032', 'HLC0033']}
     channel_ids = {}
-    for key, names in channels.iteritems():
+    for key, names in channels.items():
         ids = [np.where([n in ch for ch in ch_names])[0][0] for n in names]
         channel_ids[key] = ids
 
@@ -362,7 +383,7 @@ def head_loc(epochs):
                 'y': ['HLC0021', 'HLC0022', 'HLC0023'],
                 'z': ['HLC0031', 'HLC0032', 'HLC0033']}
     channel_ids = {}
-    for key, names in channels.iteritems():
+    for key, names in channels.items():
         ids = [np.where([n in ch for ch in ch_names])[0][0] for n in names]
         channel_ids[key] = ids
 
@@ -474,7 +495,7 @@ def circumcenter(coil1, coil2, coil3):
 
 
 def ensure_iter(input):
-    if isinstance(input, basestring):
+    if isinstance(input, str):
         yield input
     else:
         try:

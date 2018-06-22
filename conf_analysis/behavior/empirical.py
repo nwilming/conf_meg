@@ -1,10 +1,7 @@
 import pandas as pd
 import numpy as np
-import seaborn as sns
-sns.set_style('ticks')
 import glob
 from scipy.io import loadmat
-import statsmodels.api as sm
 from sklearn import linear_model
 import patsy
 import time
@@ -15,11 +12,22 @@ from . import metadata, keymap
 from joblib import Memory
 from os.path import basename, join
 
-try:
-    import matplotlib
-    import pylab as plt
-except:
-    pass
+import os
+if 'DISPLAY' in os.environ.keys():
+    try:
+        print('Still trying to import')
+        import statsmodels.api as sm
+        import matplotlib
+        import pylab as plt
+        gs = matplotlib.gridspec.GridSpec(1, 3)
+        import seaborn as sns
+        sns.set_style('ticks')
+
+    except:
+        gs = None
+else:
+    print('Not importing pylab')
+    gs = None
 
 memory = Memory(cachedir=metadata.cachedir, verbose=0)
 
@@ -188,7 +196,7 @@ def acc(data, field='correct'):
     return data[field].mean()
 
 
-def pk(df, gs=matplotlib.gridspec.GridSpec(1, 3), row=0):
+def pk(df, gs=gs, row=0):
     plt.subplot(gs[row, 0])
     conf_kernels(df)
     plt.plot([0.5, 9.5], [0.5, 0.5], 'k--')

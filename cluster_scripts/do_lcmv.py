@@ -7,9 +7,15 @@ import os
 from pymeg import tfr
 
 
-def lcmvfilename(subject, session, F, BEM):
-    filename = '/home/nwilming/conf_meg/sr_freq_labeled_%s/S%i-SESS%i-F%f-lcmv.hdf' % (
-        BEM, subject, session, np.around(F, 2))
+def lcmvfilename(subject, session, BEM):
+    filename = '/home/nwilming/conf_meg/sr_freq_labeled_%s/S%i-SESS%i-lcmv.hdf' % (
+        BEM, subject, session)
+    return filename
+
+
+def srfilename(subject, session, BEM):
+    filename = '/home/nwilming/conf_meg/source_recon_%s/S%i-SESS%i.stc' % (
+        BEM, subject, session)
     return filename
 
 
@@ -19,40 +25,30 @@ def modification_date(filename):
 
 
 def execute(subjid, session, kws):
-    if 'lowest_freq' not in kws.keys():
-        kws['lowest_freq'] = None
-    force = False
-    if 'force' in kws.keys():
-        force = True
     p = None
     F = None
     BEM = 'three_layer'
     if 'BEM' in kws.keys():
         BEM = kws['BEM']
-    if 'F' in kws.keys():
-        cycles, tb = 8., 2.
-        Fact = float(kws['F'])
-        print('Constructing TFR filter with F=',
-              Fact, 'cycles', cycles, 'time_bandwidth', tb)
-        p = lcmv.get_power_estimator(Fact, cycles, tb, sf=600.)
-        _, _, ts, fs = tfr.taper_data(
-            Fact, cycles=cycles, time_bandwidth=tb)[0]
-        lowest_freq = Fact - 1.5 * fs
-        run(subjid, session, p, lowest_freq, Fact, BEM=BEM)
-    else:
-        run(subjid, session, None, kws['lowest_freq'], F, BEM=BEM)
+
+    estimators = (lcmv.get_broadband_estimator(),
+                  lcmv.get_highF_estimator(),
+                  lcmv.get_lowF_estimator())
+
+    run(subjid, session, BEM=BEM)
 
 
-def run(subjid, session, p, lowest_freq, F, BEM='three_layer'):
+def run(subjid, session, estimators, BEM='three_layer'):
 
-    accum = lcmv.AccumSR(subjid, session,
-                         lowest_freq, F, BEM=BEM, prefix=BEM)
+    accum = lcmv.AccumSR(subjid,
+                         srfilename(subjis, session, BEM),
+                         'F', 55)
+
     filename = lcmvfilename(subjid, session, F, BEM)
     epochs = lcmv.extract(
-        subjid, session, func=p, accumulator=accum,
-        lowest_freq=lowest_freq, BEM=BEM)
-    # else:
-    #    return
+        subjid, session, func=estimators, accumulator=accum,
+        BEM=BEM)
+
     if epochs is not None:
         epochs.to_hdf(filename, 'epochs')
     accum.save_averaged_sr()
@@ -60,9 +56,9 @@ def run(subjid, session, p, lowest_freq, F, BEM='three_layer'):
 
 
 def list_tasks(**kws):
-    for BEM in ['single_layer']:
+    for BEM in ['three_layer']:
         if BEM == 'three_layer':
-            subs = [6, 7]
+            subs = [3]
         else:
             subs = [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         for f in subs:
@@ -70,7 +66,7 @@ def list_tasks(**kws):
                 if 'F' in kws.keys() and kws['F'] == 'determine':
                     yield f, session, kws
                 else:
-                    for F in range(15, 75, 5):
+                    for F in range(5, 75, 5):
                         params = kws.copy()
                         params['F'] = F
                         params['BEM'] = BEM

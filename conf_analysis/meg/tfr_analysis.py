@@ -7,11 +7,11 @@ from conf_analysis.meg import preprocessing
 import mne
 import pandas as pd
 import numpy as np
-import cPickle
-import pylab as plt
-import seaborn as sns
+import pickle
+#import pylab as plt
+#import seaborn as sns
 from pymeg import tfr
-sns.set_style('ticks')
+#sns.set_style('ticks')
 
 from joblib import Memory
 memory = Memory(cachedir=metadata.cachedir)
@@ -181,7 +181,7 @@ def plot_avg_freq(resp, freqs=slice(60, 90)):
 @memory.cache
 def get_gamma_specific_data(snum, df, cluster, baseline=None, freqs=None):
     if isinstance(cluster, list):
-        loc = cPickle.load(open(
+        loc = pickle.load(open(
             '/home/nwilming/conf_analysis/localizer_results/lrbg_%i_gamma.pickle' % snum))
         channels = []
         froi = []
@@ -225,7 +225,7 @@ def response_specific_cr(avg, meta, edges=6, dt=slice(0, 10)):
         mc = np.mean(cvals.ravel())
         t = np.min(np.abs(np.percentile(cvals.ravel(), [1, 99]) - 0.5))
         spec_edges = np.linspace(mc - t, mc + t, edges)
-        print(mc, np.mean(m.contrast), spec_edges)
+        print((mc, np.mean(m.contrast), spec_edges))
         c = contrast_response(avg.loc[(index,), :], m, spec_edges, dt=dt)
         c.loc[:, 'side'] = mr
         c.set_index('side', append=True, inplace=True)

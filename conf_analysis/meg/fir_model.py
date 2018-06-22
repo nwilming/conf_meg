@@ -7,6 +7,8 @@ amplitude of each response is assumed to be modulated by contrast.
 import numpy as np
 import pandas as pd
 
+from math import gamma
+
 from itertools import product
 
 from . import srplots
@@ -450,7 +452,7 @@ def subject_sa(subject, F=[40, 45, 50, 55, 60, 65, 70],
     acc_real, acc_pred = [], []
     for f, area in product(F, areas):
         if not subject_fit.is_cached(subject, f, area):
-            print 'Skipping', subject, f, area
+            print('Skipping', subject, f, area)
             continue
         data, contrast, params = subject_fit(subject, f, area)
         sa = sample_aligned(data, contrast, params,
@@ -477,7 +479,7 @@ def subject_sa(subject, F=[40, 45, 50, 55, 60, 65, 70],
 
 def make_all_sub_sa():
     out_sa, out_sp = [], []
-    for subject in [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
+    for subject in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
         sa, sp = subject_sa(subject)
         out_sa.append(sa)
         out_sp.append(sp)
@@ -662,33 +664,95 @@ def mv_crf_model(power, contrast):
         return model
 
 
-def mv_model_eval(contrast, power, amplitude, slope, offset, sigma):
-    mu = amplitude * \
-        (expit(
-            slope * (contrast[:, np.newaxis] + offset)) - 0.5)
-
-    return np.array([mvnorm.pdf(power, mean=mu[ii, :], cov=sigma)
-                     for ii in range(len(contrast))])
+def mv_model_eval(contrast, power, magnitude=0, P=0, Q=1, c50=50,
+                  sigma=None, NU=1):
+    mu = crf(contrast * 100, magnitude, P, Q, c50)
+    return np.stack([mvstudentt(power, mu[ii], sigma, NU) for ii in range(len(mu))])
 
 
 def invert(trace, X, contrast, thin=10):
-    ampl, slope, off = trace['amplitude'][::thin], trace[
-        'slope'][::thin], trace['offset'][::thin]
-
-    sigma = trace['sigma']
     pC = pc(contrast)
     out = np.zeros((len(contrast), X.shape[0]))
-    for ii in range(ampl.shape[0]):
-        y = mv_model_eval(contrast, X, ampl[ii], slope[ii], off[ii], sigma[ii])
-        y = y / y.sum(1)[:, np.newaxis]
-        out += np.log(y)
-    return out / (ii + 1)
+    cnt = 0
+    for ii in range(0, trace[list(trace.keys())[0]].shape[0], thin):
+        params = dict((k, trace[k][ii, :]) for k in list(trace.keys()))
+        y = mv_model_eval(contrast, X, **params)
+        y = y / y.sum(0)[np.newaxis, :]
+        out += y * pC
+        cnt += 1.
+    out = out / cnt
+    return out / out.sum(0)[np.newaxis, :]
 
 
 def pc(x, t=0.05):
     y = (norm.pdf(x, 0.5 + t, 0.05) + norm.pdf(x, 0.5 + t, 0.1) + norm.pdf(x, 0.5 + t, 0.15) +
          norm.pdf(x, 0.5 - t, 0.05) + norm.pdf(x, 0.5 - t, 0.1) + norm.pdf(x, 0.5 - t, 0.15))
     return y / y.sum()
+
+
+def mvstudentt(x, mu, Sigma, df):
+    '''
+    Multivariate t-student density. Returns the density
+    of the function at points specified by x.
+
+    input:
+        x = parameter (n-d numpy array; will be forced to 2d)
+        mu = mean (d dimensional numpy array)
+        Sigma = scale matrix (dxd numpy array)
+        df = degrees of freedom
+
+    Edited from: http://stackoverflow.com/a/29804411/3521179
+    '''
+
+    x = np.atleast_2d(x)  # requires x as 2d
+    nD = Sigma.shape[0]  # dimensionality
+
+    numerator = gamma(1.0 * (nD + df) / 2.0)
+
+    denominator = (
+        gamma(1.0 * df / 2.0) *
+        np.power(df * np.pi, 1.0 * nD / 2.0) *
+        np.power(np.linalg.det(Sigma), 1.0 / 2.0) *
+        np.power(
+            1.0 + (1.0 / df) *
+            np.diagonal(
+                np.dot(np.dot(x - mu, np.linalg.inv(Sigma)), (x - mu).T)
+            ),
+            1.0 * (nD + df) / 2.0
+        )
+    )
+
+    return 1.0 * numerator / denominator
+
+
+def read_chain(chain, burn=1000, thin=10):
+    cols = [('magnitude', (-1, 7)), ('P', (-1, 7)), ('Q__', (-1, 7)),
+            ('sigma', (-1, 7, 7)), ('NU', (-1, 1)), ('c50', (-1, 7))]
+    df = pd.read_csv(chain)
+    del df['NU_lowerbound__']
+    out = {}
+    for col, shape in cols:
+        idcol = [True if x.startswith(col) else False for x in df.columns]
+        out[col.replace('__', '')] = df.loc[
+            burn::thin, idcol].values.reshape(shape)
+    return out
+
+
+def plot_pred(trace, idx, step=slice(None, None, 10)):
+    import pylab as plt
+    P = trace['P'].squeeze()[step, idx]
+    Q = trace['Q'].squeeze()[step, idx]
+    M = trace['magnitude'].squeeze()[step, idx]
+    C = trace['c50'].squeeze()[step, idx]
+    sigma = trace['sigma'].squeeze()[step, idx, idx]
+    x = np.linspace(1, 100, 100)
+    for p, q, m, c in zip(P, Q, M, C):
+        y = crf(x, m, p, q, c)
+        plt.plot(x, y, 'k', alpha=0.05)
+    y = crf(x, m.mean(), p.mean(), q.mean(), c.mean())
+    plt.plot(x, y, 'r', lw=2)
+    plt.fill_between(x, y - sigma.mean(), y +
+                     sigma.mean(), alpha=0.25, zorder=-1)
 
 
 def get_trace_for_subject(subject, area):
@@ -708,6 +772,35 @@ def get_trace_for_subject(subject, area):
     import cPickle
     cPickle.dump({'model': mdl, 'trace': trace}, open(
         'mvnorm_CRF_S%i_%s_trace.pkl' % (subject, area), 'w'))
+
+
+def get_decoded_contrast(sa, trace, cc=np.linspace(0, 1, 26)):
+    power = pd.pivot_table(sa, values='power', index='sample_id', columns='F')
+    contrast = pd.pivot_table(sa, values='contrast', index='sample_id')
+    pcd = invert(trace, power.values, contrast.values)
+    decoded_contrast = np.dot(pcd.values, pcd.columns.values)
+    return pcd, contrast, decoded_contrast
+
+
+def get_single_decoded_contrast(subject, area, trace_path,
+                                cc=np.linspace(0, 1, 51), burn=1000, thin=10):
+    import pandas as pd
+    import glob
+    sa = pd.DataFrame(
+        '/home/nwilming/fixed_individual_sample_gp_sltd_remove_overlap.hdf')
+    sa = sa.query('subject==%i & area=="%s"' % (subject, area))
+    fnames = glob.glob(join(base_path, 'mvnorm_CRF_S%i_%s_trace' %
+                            subject, area, 'chain-*.csv'))
+    out = [read_chain(fname, burn, thin) for fname in fnames]
+    keys = list(out[0].keys())
+    out = dict((k, np.concatenate([o[k] for o in out])) for k in keys)
+    return get_decoded_contrast(sa, out, cc=cc)
+
+
+def get_all_decoded_contrasts(sa, trace_path, cc=np.linspace(0, 1, 51)):
+    from os.path import join
+    for (subject, area), data in sa.groupby(['subject', 'area']):
+        pass
 
 '''
 Plots
@@ -746,18 +839,10 @@ def crf2(x, m, p, q, c):
 
 def old_crf(x, m, p, q, c):
     c = float(c)
-
     k = (m * (x**p)) / (x**(p + q) + c**(p + q))
-    kmax = (m * (100.**p)) / (100.**(p + q) + c**(p + q))
+    ck = (m * (c**p)) / (c**(p + q) + c**(p + q))    
+    return k-ck
 
-    if k[-1] < k.max():
-        # dk = dx_crf(x, m, p, q, c)
-        root = float(mpmath.findroot(lambda x: dx_crf(x, m, p, q, c), 50))
-        kmax = (m * (root**p)) / (root**(p + q) + c**(p + q))
-        k = k / kmax
-    else:
-        k = k / kmax
-    return m * k - m / 2.
 
 
 def dx_crf(x, m, p, q, c):
@@ -772,12 +857,12 @@ Precomputing
 
 
 def foo(x):
-    print x
+    print(x)
 
 
 def precompute_fits():
     from pymeg import parallel
-    subs = range(1, 16)
+    subs = list(range(1, 16))
     funcs = ['stld']
     areas = ['V1-lh', 'V2-lh', 'V3-lh', 'V1-rh', 'V2-rh', 'V3-rh']
     from itertools import product

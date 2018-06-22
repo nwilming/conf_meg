@@ -95,7 +95,7 @@ def posterior_predictive_check(betas, X, subject, data, colors=sns.color_palette
 
     for ns, color in zip(list(range(3)), colors):
         plt.plot(x, true[:, ns], color='k', lw=2.5, alpha=0.75)
-        print(colors[ns])
+        print((colors[ns]))
         plt.plot(x, true[:, ns], color=colors[ns], lw=2)
 
     print('Howdy')

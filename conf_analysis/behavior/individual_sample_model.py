@@ -184,7 +184,7 @@ def get_all_subs(d, models=[True, False], iter=5000):
     '''
     Estimate the bayesian model for all subjects and save results.
     '''
-    import cPickle
+    import pickle
     res = []
     for s, kd in d.groupby('snum'):
         for var in models:
@@ -197,7 +197,7 @@ def get_all_subs(d, models=[True, False], iter=5000):
                 GR = pm.diagnostics.gelman_rubin(trace)
 
                 fname = 's%i_var%s_modeltrace.pickle' % (s, var)
-                cPickle.dump({'trace': trace, 'model': model, 'dic': dic,
+                pickle.dump({'trace': trace, 'model': model, 'dic': dic,
                               'waic': waic.WAIC, 'waic_se': waic.WAIC_se,
                               'p_waic': waic.p_WAIC, 'bpic': bpic,
                               'gelman_rubin': GR},
@@ -303,7 +303,7 @@ def plot_bayes_model(df, params, model='variance',
     resp1 = 0 * np.ones((len(bins[0]) - 1, len(bins[1]) - 1)).astype(float)
     resp2 = 0 * np.ones((len(bins[0]) - 1, len(bins[1]) - 1)).astype(float)
 
-    print 'Using %i models' % (len(params))
+    print('Using %i models' % (len(params)))
     for row in params:
         ps = expit(func(*row, contrast=contrast))
         response = bernoulli.rvs(ps).astype(bool)
@@ -327,9 +327,9 @@ def plot_bayes_model(df, params, model='variance',
 
 
 def plot_subject(d, df, start=1000, row=None, gs=None):
-    print np.unique(df['var'])
+    print(np.unique(df['var']))
     df = df.iloc[start:, :]
-    print np.unique(df['var'])
+    print(np.unique(df['var']))
     if row is None or gs is None:
         import matplotlib
         gs = matplotlib.gridspec.GridSpec(1, 6)
@@ -604,12 +604,12 @@ def err(modelargs, **kwargs):
     Kwargs needs to contain:
         contrast, confidence, responses
     '''
-    if 'func' in kwargs.keys():
+    if 'func' in list(kwargs.keys()):
         model = kwargs['func']
 
     y = model(*modelargs, contrast=kwargs['contrast'])
     if np.any(np.isnan(y)):
-        print 'NAN prediction'
+        print('NAN prediction')
         return np.inf
     yy = expit(y)
     yy = np.maximum(yy, np.finfo(float).eps)
@@ -617,12 +617,12 @@ def err(modelargs, **kwargs):
     v = -np.sum((1 - kwargs['responses']) *
                 np.log(1 - yy) + kwargs['responses'] * np.log(yy))
     if np.isnan(v):
-        print modelargs, v
+        print(modelargs, v)
         1 / 0
     return v  # +v
 
 
-@deprecated
+
 def sigmoid_transformer(x, a, b):
     '''
     x is in range (-1, 1)
@@ -678,7 +678,7 @@ def conf_err(modelargs, **kwargs):
     Kwargs needs to contain:
         contrast, confidence, responses, func
     '''
-    if 'func' in kwargs.keys():
+    if 'func' in list(kwargs.keys()):
         model = kwargs['func']
 
     y = model(*modelargs, contrast=kwargs['contrast'])
