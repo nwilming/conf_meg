@@ -478,12 +478,12 @@ def SVMCV(params):
 
 
 def get_subject(subject, area, epoch='stimulus', time=(0, 1),
-                est_vals=(30, 100), est_key='F', log10=True,
+                est_vals=(30, 100), est_key='F',
                 baseline_epoch='stimulus', baseline=(-0.35, 0)):
     meta = preprocessing.get_meta_for_subject(subject, epoch)
     data = pd.concat([
         get_session(subject, session, area, epoch=epoch, time=time,
-                    est_vals=est_vals, est_key=est_key, log10=log10,
+                    est_vals=est_vals, est_key=est_key,
                     baseline_epoch=baseline_epoch, baseline=baseline)
         for session in [0, 1, 2, 3]])
     meta.set_index('hash', inplace=True)
@@ -492,10 +492,10 @@ def get_subject(subject, area, epoch='stimulus', time=(0, 1),
 
 #@memory.cache
 def get_session(subject, session, area, epoch='stimulus', time=(0, 1),
-                est_vals=(30, 100), est_key='F', log10=True,
+                est_vals=(30, 100), est_key='F',
                 baseline_epoch='stimulus', baseline=(-0.35, 0)):
     df = get_all_areas(subject, session, epoch=epoch, time=time,
-                       est_vals=est_vals, est_key=est_key, log10=log10,
+                       est_vals=est_vals, est_key=est_key,
                        baseline_epoch=baseline_epoch, baseline=baseline)
     if not any([a in df.columns for a in ensure_iter(area)]):
         raise RuntimeError(
@@ -523,45 +523,24 @@ def get_tableau(meta, dresp, areas={'lh': 'M1-lh', 'rh': 'M1-rh'},
     # dresp = dresp.reset_index().loc[:, rois].query('est_key=="F"')
     # dresp.set_index(['trial', 'time', 'est_key', 'est_val'], inplace=True)
     dresp = dresp.reset_index().set_index('trial')
-    if dbase is not None:
-        dbase = dbase.reset_index().set_index('trial')
     plt.clf()
-    kbase = None
-    if (dbase is not None) and not late:
-        kbase = (dbase.groupby('est_val').mean())
-        sbase = (dbase
-                 .groupby(['est_val', 'time'])
-                 .mean()
-                 .groupby('est_val')
-                 .std())
+
+    meta = meta.loc[np.unique(dresp.index.values), :]
     for i, (resp, area) in enumerate(zip(options,
                                          [areas['lh'], areas['rh'],
                                           areas['lh'], areas['rh']])):
         plt.subplot(2, 2, i + 1)
 
-        data = dresp.loc[meta.loc[meta.loc[:, field] == resp, :].index, :]
+        index = meta.query('%s==%i' % (field, resp)).index
+        data = dresp.loc[index, :]
 
         k = pd.pivot_table(data, values=area,
                            index='est_val', columns='time')
+        
         dtmin, dtmax = k.columns.min(), k.columns.max()
-        if (dbase is not None) and late:
-            kbase = (dbase
-                     .loc[meta.loc[meta.loc[:, field]
-                                   == resp, :].index, :]
-                     .groupby('est_val').mean())
-            sbase = (dbase
-                     .loc[meta.loc[meta.loc[:, field] == resp, :].index, :]
-                     .groupby(['est_val', 'time'])
-                     .mean()
-                     .groupby('est_val')
-                     .std())
-        if kbase is not None:
-            k = ((k.values - kbase.loc[k.index.values,
-                                       area].values[:, np.newaxis])
-                 / sbase.loc[k.index.values, area].values[:, np.newaxis])
-
+        dfmin, dfmax = k.index.min(), k.index.max()
         plt.imshow(np.flipud(k), cmap='RdBu_r',
-                   aspect='auto', extent=[dtmin, dtmax, 10, 100], **kwargs)
+                   aspect='auto', extent=[dtmin, dtmax, dfmin, dfmax], **kwargs)
         plt.text(0, 20, '%s:%i, HEMI=%s' % (field, resp, area))
         if i == 0:
             plt.title('LH')
@@ -574,29 +553,27 @@ def get_path(epoch, subject, session, cache=False):
     from os.path import join
     from glob import glob
 
-    if 'RRZ_LOCAL_TMPDIR' in list(os.environ.keys()):
-        path = '/work/faty014/MEG/'
-    else:
-        path = '/home/nwilming/conf_meg/'
     if not cache:
+        path = metadata.sr_labeled
         if epoch == 'stimulus':
             filenames = glob(
-                join(path, 'sr_labeled/S%i-SESS%i-stimulus-F-chunk*-lcmv.hdf' % (
+                join(path, 'S%i-SESS%i-stimulus-F-chunk*-lcmv.hdf' % (
                     subject, session)))
         elif epoch == 'response':
             filenames = glob(
-                join(path, 'sr_labeled/S%i-SESS%i-response-F-chunk*-lcmv.hdf' % (
+                join(path, 'S%i-SESS%i-response-F-chunk*-lcmv.hdf' % (
                     subject, session)))
         else:
             raise RuntimeError('Do not understand epoch %s' % epoch)
     else:
+        path = metadata.sraggregates
         if epoch == 'stimulus':
             filenames = join(
-                path, 'sr_labeled', 'aggregates', 'S%i-SESS%i-stimulus-lcmv.hdf' % (
+                path,  'S%i-SESS%i-stimulus-lcmv.hdf' % (
                     subject, session))
         elif epoch == 'response':
             filenames = join(
-                path, 'sr_labeled/', 'aggregates', 'S%i-SESS%i-response-lcmv.hdf' % (
+                path, 'S%i-SESS%i-response-lcmv.hdf' % (
                     subject, session))
     return filenames
 
@@ -606,17 +583,26 @@ def get_all_areas(subject, session, epoch='stimulus', time=(-1.5, 1),
                   baseline_epoch='stimulus', baseline=(-0.35, 0)):
     df = get_aggregates(subject, session, epoch=epoch,
                         baseline_epoch=baseline_epoch, baseline=baseline)
-
     df.query('%f<time & time<%f & est_key=="%s" & %f<=est_val & est_val<=%f' %
              (time[0], time[1], est_key, est_vals[0], est_vals[1]),
              inplace=True)
     return df
 
 
+def submit_aggregates(cluster='uke'):
+    from pymeg import parallel
+    for subject, epoch, session in product(range(1, 16),
+                                           ['stimulus', 'response'],
+                                           range(4)):
+        parallel.pmap(get_aggregates, [(subject, session, epoch)],
+                      name='agg' + str(session) + epoch + str(subject),
+                      tasks=5, memory=40
+                      )
+
+
 def get_aggregates(subject, session, epoch='stimulus',
                    baseline_epoch='stimulus', baseline=(-0.35, 0)):
-    est_key = 'F'
-    est_vals = (10, 150)
+    est_key = 'F'    
     cachefile = get_path(epoch, subject, session, cache=True)
     try:
         return pd.read_hdf(cachefile, 'epochs')
@@ -626,25 +612,23 @@ def get_aggregates(subject, session, epoch='stimulus',
     meta = preprocessing.get_meta_for_subject(subject, epoch)
     meta = meta.set_index('hash')
     df = pd.concat([pd.read_hdf(f) for f in filenames])
-
     df = np.log10(df) * 10
 
     # This is the place where baselining should be carried out (i.e. before
     # averaging across areas)
     if baseline is not None:
         if not baseline == epoch:
-            filenames = get_path('stimulus', subject, session)
-
+            filenames = get_path('stimulus', subject, session, cache=False)
             dbase = pd.concat([pd.read_hdf(f) for f in filenames])
             dbase = np.log10(dbase) * 10
         else:
             dbase = df
         dbase = dbase.query(
-            '%f<time & time<%f & est_key=="%s" & %f<=est_val & est_val<=%f' %
-            (baseline[0], baseline[1], est_key, est_vals[0], est_vals[1]))
+            '%f<time & time<%f & est_key=="%s"' %
+            (baseline[0], baseline[1], est_key))
 
-    df.query('est_key=="%s" & %f<=est_val & est_val<=%f' %
-             (est_key, est_vals[0], est_vals[1]),
+    df.query('est_key=="%s" ' %
+             (est_key),
              inplace=True)
 
     if baseline is not None:
@@ -691,7 +675,8 @@ def get_aggregates(subject, session, epoch='stimulus',
         [df.loc[:, (x, y)].mean(1) for x, y in zip(left, right)],
         1)
     havg.columns = [x + '_Havg' for x in left]
-    df = pd.concat((lateralized.reset_index(), df.reset_index(),
+    assert(len(havg) == len(lateralized) == len(df))
+    df = pd.concat((df.reset_index(), lateralized.reset_index(),
                     havg.reset_index()), 1)
     df = df.loc[:, ~df.columns.duplicated()]
     df.to_hdf(cachefile, 'epochs')
