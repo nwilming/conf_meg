@@ -327,11 +327,18 @@ def stats_test(data, n_permutations=1000):
 def get_tfr_stack(data, area, baseline=None, tslice=slice(-0.25, 1.35)):
     stack = []
     for sub, ds in data.groupby('sub'):
-        stack.append(get_tfr(ds, area, tslice=tslice).values)
+        try:
+            stack.append(get_tfr(ds, area, tslice=tslice).values)
+        except ValueError:
+            print('No data fpr sub %i, area %s' % (sub, area))
+
     return np.stack(stack)
 
 
 def get_tfr(data, area, baseline=None, tslice=slice(-0.25, 1.35)):
+    data = data.loc[:, area].dropna()
+    if len(data) == 0:
+        raise ValueError('No data for this %s'%area)
     k = pd.pivot_table(data.reset_index(), values=area,
                        index='est_val', columns='time')
     if baseline is not None:

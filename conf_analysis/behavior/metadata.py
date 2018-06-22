@@ -16,14 +16,18 @@ if socket.gethostname().startswith('node'):
             or ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys()))):
         cachedir = '/work/faty014/cache_dir'
         preprocessed = '/work/faty014/MEG/preprocessed'
+        sr_labeled = '/work/faty014/MEG/sr_labeled/'
+        sraggregates = '/work/faty014/MEG/sr_labeled/aggregates'
     else:
         cachedir = '/home/nwilming/conf_data/cache/'
         preprocessed = '/home/nwilming/conf_meg/'
-    print(cachedir)
+        sr_labeled = '/home/nwilming/conf_meg/sr_labeled/'
+        sraggregates = '/home/nwilming/conf_meg/sr_labeled/aggregates'    
 elif 'lisa.surfsara' in socket.gethostname():
     home = '/home/nwilming/'
     project = '/home/nwilming/conf_analysis/'
-    cachedir = '/home/nwilming'
+    cachedir = '/nfs/nwilming'
+    aggregates = '/nfs/nwilming/MEG/sr_labeled'
 else:
     home = '/Users/nwilming/'
     project = '/Users/nwilming/u/conf_analysis/'
