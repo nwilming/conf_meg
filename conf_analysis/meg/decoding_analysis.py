@@ -34,44 +34,34 @@ from joblib import Memory
 
 if 'RRZ_LOCAL_TMPDIR' in os.environ.keys():
     memory = Memory(cachedir=os.environ['RRZ_LOCAL_TMPDIR'])
-
+if 'TMPDIR' in os.environ.keys():
+    tmpdir = os.environ['TMPDIR']
+    memory = Memory(cachedir=tmpdir)
 else:
     memory = Memory(cachedir=metadata.cachedir)
 
 areas = [
-    # Frontal areas:
-    'ACC', 'f_inf_orbital', 'Sf_sup', 'f_inf_Triangul',
-    'frontopol', 'Sf_middle', 'Gf_middle',  # 'frontomargin',
-    'Gf_sup', 'Sf_inf', 'f_inf_opercular',
-    # Visual Clusters:
-    'vfcIPS_occ', 'vfcTO', 'vfcLO', 'vfcIPS_dorsal', 'vfcSPL',
-    'vfcPHC', 'vfcVO', 'vfcvisual', 'vfcFEF', 'vfcV3ab',
-    # Choice areas:
-    'aIPS1', 'M1', 'IPS_Pces'
+    'vfcvisual', 'vfcVO', 'vfcPHC', 'vfcV3ab',
+    'vfcTO', 'vfcLO', 'vfcIPS_occ', 'vfcIPS_dorsal',
+    'vfcSPL',  'vfcFEF', 'IPS_Pces', 'M1', 'aIPS1',
+    'LIP', 'Area6_dorsal_medial', 'Area6_anterior',
+    'A10', 'A6si', 'PEF', '55b', '8Av',
+    '8Ad', '9p', '8Bl', '8C', 'p9-46v', '46',
+    '9-46d', 'a10p', 'a47r', 'p32', 's32', 'a24',
+    '9m', 'd32', 'a32pr', 'p32pr', '24dv', 'p24pr',
 ]
 
 avgs = [x + '-lh_Havg' for x in areas]
 lateralized = [x + '-lh_L-R' for x in areas]
 pairs = [(x + '-lh', x + '-rh') for x in areas]
 
-plot_areas = ['vfcvisual', 'vfcIPS_occ', 'vfcIPS_dorsal', 'vfcSPL', 'vfcFEF',
-              'vfcV3ab', 'vfcLO', 'vfcTO',
-              'vfcVO', 'vfcPHC',
-              # Choice areas:
-              'aIPS1', 'M1', 'IPS_Pces',
-              'ACC']
-
-plot_avgs = [x + '-lh_Havg' for x in plot_areas]
-plot_lateralized = [x + '-lh_L-R' for x in plot_areas]
-plot_pairs = [(x + '-lh', x + '-rh') for x in plot_areas]
-
 areas = avgs + lateralized + pairs
 n_jobs = 1
 
 
-def submit(cluster='slurm'):
+def submit(cluster='PBS'):
     decoders = ['MIDC_split', 'MIDC_nosplit',
-                'SIDE_split', 'SIDE_nosplit',
+                'SIDE_nosplit',
                 'CONF_signed', 'CONF_unsigned']
     from pymeg import parallel
     if cluster == 'slurm':
@@ -79,12 +69,9 @@ def submit(cluster='slurm'):
                        ssh_to=None, home='/work/faty014', walltime='11:50:55',
                        cluster='SLURM')
     else:
-        pmap = partial(parallel.pmap, nodes=1, tasks=1, memory=15,
-                       ssh_to=None,  walltime=24)
+        pmap = partial(parallel.pmap, nodes=1, tasks=1, memory=31,
+                       ssh_to=None,  walltime=72, env='py36')
 
-    for subject in range(1, 16):
-        pmap(run_AA, [(subject, 'SSD', 'stimulus')],
-             name='DCDSSDStimulus' + str(subject))
     for subject, epoch, decoder in product(range(1, 16),
                                            ['stimulus', 'response'],
                                            decoders):
@@ -92,28 +79,41 @@ def submit(cluster='slurm'):
              name='DCD' + decoder + epoch + str(subject),
              )
 
+    for subject in range(1, 16):
+        pmap(run_AA, [(subject, 'SSD', 'stimulus')],
+             name='DCDSSDStimulus' + str(subject))
 
-def run_AA(subject, decoder, epoch, ntasks=1):
+
+def run_AA(subject, decoder, epoch, ntasks=16):
     from multiprocessing import Pool
     p = Pool(ntasks)
+    print('Starting pool of workers')
     latencies = {'stimulus': [-0.5, 1.35], 'response': [-1, 0.5]}
     time = latencies[epoch]
-    pd.concat([
-        get_all_areas(subject, session, epoch=epoch, time=time,
-                      est_vals=[10, 100], est_key='F', log10=True,
+    est_vals = (10, 150)
+
+    data = pd.concat([
+        get_all_areas(subject, session, epoch=epoch, time=(-1.5, 1),
+                      est_vals=(10, 150), est_key='F',
                       baseline_epoch='stimulus', baseline=(-0.35, 0))
-        for session in [0, 1, 2, 3]])
-    pd.concat([
-        get_all_areas(subject, session, epoch=epoch, time=time,
-                      est_vals=[-1, -1], est_key='BB', log10=True,
-                      baseline_epoch='stimulus', baseline=(-0.35, 0))
-        for session in [0, 1, 2, 3]])
+        for session in range(4)])
+    tasks = []
+    for area in areas:
+        # subject, area, epoch='stimulus', time=(0, 1),
+        # est_vals=(30, 100), est_key='F',
+        # baseline_epoch='stimulus', baseline=(-0.35, 0),
+        # data=None
+        get_subject(subject, area, epoch=epoch, time=time,
+                    est_vals=est_vals, data=data)
+    #p.starmap(get_subject, tasks, chunksize=ntasks)
+    del data
     print('Done caching')
+
     args = []
-    for est_key, est_vals in zip(['F', 'BB'], [(10, 100), (-1, -1)]):
+    for est_key, est_vals in zip(['F'], [est_vals]):
         for area in areas:
             args.append((subject, decoder, epoch, area, est_key, est_vals))
-    scores = p.starmap(run_single_area, args)
+    scores = p.starmap(run_single_area, args, chunksize=ntasks)
     scores = [s for s in scores if s is not None]
     scores = pd.concat(scores)
 
@@ -121,7 +121,7 @@ def run_AA(subject, decoder, epoch, ntasks=1):
             or ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys()))):
         outpath = '/work/faty014/MEG/sr_decoding/'
     else:
-        outpath = '/home/nwilming/conf_meg/sr_decoding/'
+        outpath = '/nfs/nwilming/MEG/sr_decoding/'
     filename = outpath + '/concat_S%i-%s-%s-decoding.hdf' % (
         subject, decoder, epoch)
     scores.to_hdf(filename, 'decoding')
@@ -129,8 +129,8 @@ def run_AA(subject, decoder, epoch, ntasks=1):
     return scores
 
 
-def run_single_area(subject, decoder, epoch, area, est_key='F', est_vals=[10, 100],
-                    ignore_errors=True):
+def run_single_area(subject, decoder, epoch, area, est_key='F', est_vals=[10, 150],
+                    ignore_errors=False):
     try:
         return run_decoder(subject, decoder, area, epoch)
     except:
@@ -140,7 +140,7 @@ def run_single_area(subject, decoder, epoch, area, est_key='F', est_vals=[10, 10
             raise
 
 
-def run_decoder(subject, decoder, area, epoch, est_key='F', est_vals=[10, 100]):
+def run_decoder(subject, decoder, area, epoch, est_key='F', est_vals=[10, 150]):
     '''
     Run a specific type decoding on a subject's data set
 
@@ -163,7 +163,8 @@ def run_decoder(subject, decoder, area, epoch, est_key='F', est_vals=[10, 100]):
         if (('RRZ_TMPDIR' in list(os.environ.keys())) or
                 ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys()))):
             path = '/work/faty014/MEG/'
-        elif 'lisa.surf' in socket.gethostname():
+
+        elif 'lisa.surfsara' in socket.gethostname():
             path = '/nfs/nwilming/MEG/'
         else:
             path = '/home/nwilming/conf_meg/'
@@ -480,15 +481,26 @@ def SVMCV(params):
     return RandomizedSearchCV(svm.SVC(), params, n_iter=50, n_jobs=4)
 
 
+@memory.cache(ignore=['data'])
 def get_subject(subject, area, epoch='stimulus', time=(0, 1),
                 est_vals=(30, 100), est_key='F',
-                baseline_epoch='stimulus', baseline=(-0.35, 0)):
+                baseline_epoch='stimulus', baseline=(-0.35, 0),
+                data=None):
+    if data is None:
+        data = pd.concat([
+            get_session(subject, session, area, epoch=epoch, time=time,
+                        est_vals=est_vals, est_key=est_key,
+                        baseline_epoch=baseline_epoch, baseline=baseline)
+            for session in [0, 1, 2, 3]])
+    else:
+        col_select = list(area) + ['est_val', 'est_key', 'time', 'trial']
+        data = data.reindex(col_select, axis=1)
+        Q = '(%f<=time) & (time<=%f) & (%f<=est_val) & (est_val<= %f) & (est_key=="%s")' % (
+            time[0], time[1], est_vals[0], est_vals[1], est_key)
+        data = data.query(Q)
+
     meta = preprocessing.get_meta_for_subject(subject, epoch)
-    data = pd.concat([
-        get_session(subject, session, area, epoch=epoch, time=time,
-                    est_vals=est_vals, est_key=est_key,
-                    baseline_epoch=baseline_epoch, baseline=baseline)
-        for session in [0, 1, 2, 3]])
+
     meta.set_index('hash', inplace=True)
     return data, meta.loc[np.unique(data.trial), :]
 
@@ -539,7 +551,7 @@ def get_tableau(meta, dresp, areas={'lh': 'M1-lh', 'rh': 'M1-rh'},
 
         k = pd.pivot_table(data, values=area,
                            index='est_val', columns='time')
-        
+
         dtmin, dtmax = k.columns.min(), k.columns.max()
         dfmin, dfmax = k.index.min(), k.index.max()
         plt.imshow(np.flipud(k), cmap='RdBu_r',
@@ -605,12 +617,13 @@ def submit_aggregates(cluster='uke'):
 
 def get_aggregates(subject, session, epoch='stimulus',
                    baseline_epoch='stimulus', baseline=(-0.35, 0)):
-    est_key = 'F'    
+    est_key = 'F'
     cachefile = get_path(epoch, subject, session, cache=True)
-    try:
-        return pd.read_hdf(cachefile, 'epochs')
-    except IOError:
-        pass
+
+    # try:
+    return pd.read_hdf(cachefile, 'epochs')
+    # except IOError:
+
     filenames = get_path(epoch, subject, session, cache=False)
     meta = preprocessing.get_meta_for_subject(subject, epoch)
     meta = meta.set_index('hash')

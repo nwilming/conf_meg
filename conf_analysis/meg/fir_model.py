@@ -767,10 +767,10 @@ def get_trace_for_subject(subject, area):
     with mdl:
         savedir = 'mvnorm_CRF_S%i_%s_trace' % (subject, area)
         db = pm.backends.Text(savedir)
-        trace = pm.sample(4500, tune=1000, cores=4, njobs=4,
-                          trace=db, init='advi+adapt_diag')
-    import pickle
-    pickle.dump({'model': mdl, 'trace': trace}, open(
+        trace = pm.sample(4500, tune=1500, cores=4, njobs=4,
+                          trace=db)
+    import cPickle
+    cPickle.dump({'model': mdl, 'trace': trace}, open(
         'mvnorm_CRF_S%i_%s_trace.pkl' % (subject, area), 'w'))
 
 

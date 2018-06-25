@@ -27,7 +27,8 @@ elif 'lisa.surfsara' in socket.gethostname():
     home = '/home/nwilming/'
     project = '/home/nwilming/conf_analysis/'
     cachedir = '/nfs/nwilming'
-    aggregates = '/nfs/nwilming/MEG/sr_labeled'
+    sraggregates = '/nfs/nwilming/MEG/sr_labeled'
+    preprocessed = '/nfs/nwilming/MEG/preprocessed/'
 else:
     home = '/Users/nwilming/'
     project = '/Users/nwilming/u/conf_analysis/'
