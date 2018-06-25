@@ -748,10 +748,40 @@ def ensure_iter(input):
             yield input
 
 
+def get_decoding_data(path):
+    import glob
+    files = glob.glob('/home/nwilming/conf_meg/sr_decoding/concat_S*')
+    df = pd.concat([pd.read_hdf(f) for f in files])
+    df = df.reset_index().set_index(
+        ['Classifier', 'epoch', 'est_key', 'latency', 'mc<0.5', 'signal', 'subject', 'area'])
+    return df.unstack('area')
+
+
+def plot_interesting_areas(data, dtype='Lateralized',
+                           signals={'MIDC_split': '#E9003A', 'SIDE_nosplit': '#FF5300',
+                                    'CONF_signed': '#00AB6F', 'CONF_unsigned': '#58E000'},
+                           title='', classifier='SCVlin'):
+    interesting_areas = ['visual', 'FEF', 'IPS_Pces', 'M1', 'aIPS1', 'Area6_dorsal_medial',
+                         'Area6_anterior', 'A6si', 'PEF', '55b', '8av', '8C', '24dv']
+    areas = []
+
+    if dtype == 'Lateralized':
+        cols = [x for x in data.columns if '_L-R' in x]
+    elif dtype == 'Pairs':
+        cols = [x for x in data.columns if ('lh' in x) and ('rh' in x)]
+    else:
+        cols = [x for x in data.columns if '_Havg' in x]
+    print(cols)
+    areas = [x for x in cols if any([i in x for i in interesting_areas])]
+    #print(areas)
+    data = data.query('Classifier=="%s"' % classifier)
+    plot_set(areas, data, title=title)
+
+
 def plot_set(area_set, data,
              signals={'MIDC_split': '#E9003A', 'SIDE_nosplit': '#FF5300',
                       'CONF_signed': '#00AB6F', 'CONF_unsigned': '#58E000'},
-             title='', classifier='SCVlin'):
+             title=''):
     import matplotlib
     import seaborn as sns
     import pylab as plt
@@ -760,7 +790,7 @@ def plot_set(area_set, data,
         for signal, color in signals.items():
             try:
                 plot_decoding_results(data, signal, area, stim_ax=gs[
-                    0, 0], resp_ax=gs[0, 1], color=color, classifier=classifier,
+                    0, 0], resp_ax=gs[0, 1], color=color,
                     offset=i * 0.5)
             except RuntimeError:
                 print('RuntimeError for area %s, signal %s' % (area, signal))
@@ -780,9 +810,13 @@ def plot_set(area_set, data,
     plt.ylim(ylim[0] - 0.1, ylim[1])
 
 
-def plot_decoding_results(data, signal, area, classifier='SCVlin',
-                          stim_ax=None, resp_ax=None, value='test_roc_auc', color='b',
+def plot_decoding_results(data, signal, area,
+                          stim_ax=None, resp_ax=None,  color='b',
                           offset=0):
+    '''
+    Data is a df that has areas as columns and at least subjct, classifier, latency and signal as index.
+    Values of the dataframe encode the measure of choice to plot.
+    '''
     import warnings
     warnings.filterwarnings("ignore")
     import pylab as plt
@@ -791,23 +825,24 @@ def plot_decoding_results(data, signal, area, classifier='SCVlin',
         stim_ax = plt.gca()
     if resp_ax is None:
         stim_ax = plt.gca()
-
-    select_string = 'Classifier=="%s" & signal=="%s" & area=="%s"' % (
-        classifier, signal, area)
+    data = data.loc[:, area]
+    select_string = 'signal=="%s"' % (signal)
     areaname = (str(area).replace('vfc', '')
                 .replace('-lh', '')
                 .replace('-rh', '')
                 .replace('_Havg', '')
                 .replace('_Lateralized', ''))
-    data = data.query(select_string)
-
+    data = data.reset_index().query(select_string)
+    if '_split' in signal:
+        data = data.groupby(['subject', 'epoch', 'latency']
+                            ).mean().reset_index()
     stimulus = data.query('epoch=="stimulus"').reset_index()
-    stimulus.loc[:, value] += offset
+    stimulus.loc[:, area] += offset
 
     response = data.query('epoch=="response"').reset_index()
-    response.loc[:, value] += offset
+    response.loc[:, area] += offset
     stim_ax = plt.subplot(stim_ax)
-    sns.tsplot(stimulus, time='latency', value=value,
+    sns.tsplot(stimulus, time='latency', value=area,
                unit='subject', ax=stim_ax, color=color)
     #plt.ylim([0.1, 0.9])
     plt.axhline(0.5 + offset, color='k')
@@ -818,10 +853,34 @@ def plot_decoding_results(data, signal, area, classifier='SCVlin',
     plt.ylabel('')
     resp_ax = plt.subplot(resp_ax)
 
-    sns.tsplot(response, time='latency', value=value,
+    sns.tsplot(response, time='latency', value=area,
                unit='subject', ax=resp_ax, color=color)
     plt.plot(dx, dy + offset, color='k')
     plt.yticks([])
     plt.ylabel('')
     #plt.ylim([0.1, 0.9])
     plt.axhline(0.5 + offset, color='k')
+
+
+def data(labeldata, aparc_file, label_column, value_column):
+    import nibabel as nib
+    # First load parcellation
+    labels, ctab, names = nib.freesurfer.read_annot(aparc_file)
+
+    # convert names from bytes to str
+    str_names = [str(i) for i in names]
+    str_names = [i[2:-1] if i == "b'???'" else i[4:-1] for i in str_names]
+
+    # sort labeldata array by order of original label names
+    labeldata[label_column] = labeldata[label_column].astype('category')
+    labeldata[label_column].cat.set_categories(str_names, inplace=True)
+    labeldata = labeldata.sort_values(by=label_column)
+
+    data = labeldata[value_column]
+    return data[labels]
+
+
+def plot(surface, data, hemisphere='lh', surf='inflated', views=['lat', 'med'], background='white'):
+    brain = Brain(surface, hemisphere=hemisphere, surf=surf,
+                  views=views, background=background)
+    brain.add_data(data, min=0, max=.1, thresh=.001, colormap="Reds", alpha=.7)
