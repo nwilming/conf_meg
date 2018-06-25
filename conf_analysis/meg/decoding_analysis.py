@@ -159,9 +159,12 @@ def run_decoder(subject, decoder, area, epoch, est_key='F', est_vals=[10, 100]):
     epoch : str, 'stimulus' or 'response'
     '''
     def get_save_path(subject, decoder, area, epoch):
+        import socket
         if (('RRZ_TMPDIR' in list(os.environ.keys())) or
                 ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys()))):
             path = '/work/faty014/MEG/'
+        elif 'lisa.surf' in socket.gethostname():
+            path = '/nfs/nwilming/MEG/'
         else:
             path = '/home/nwilming/conf_meg/'
         filename = 'sr_decoding/S%i-%s-%s-%s-decoding.hdf' % (
