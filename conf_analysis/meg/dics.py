@@ -105,7 +105,7 @@ def get_tfr_array(meta, freq=(0, 100), channel=None, tmin=None, tmax=None,
             read_epochs.append(e)
             dfs.append(out['data'])
         except RuntimeError as e:
-            print e
+            print(e)
             assert e.msg.contains('None of the requested epochs are')
     return freqs, times, np.concatenate(read_epochs), np.concatenate(dfs, 0)
 
@@ -116,10 +116,10 @@ def make_csds(epochs,  f, times, t_noise, f_smooth, subject):
     Compute Beamformer filters for time-points in TFR.
     '''
     fmin, fmax = f - f_smooth, f + f_smooth
-    print "Computing noise csd"
+    print("Computing noise csd")
     noise_csd = get_noise_csd(epochs, fmin, fmax, t_noise)
 
-    print "Computing data csd with"
+    print("Computing data csd with")
     data_csd = mne_csd_epochs(epochs, 'multitaper',
                               fmin=fmin,
                               fmax=fmax,
@@ -158,7 +158,7 @@ def apply_dics_filter(data_csd, F, meta, filename, subject, n_jobs=1):
     A = dics_filter(forward, data_csd)
     del forward, bem, source, trans
 
-    print 'Applying in parallel'
+    print('Applying in parallel')
 
     meta.loc[:, 'linear_index'] = np.arange(num_epochs)
 
@@ -291,7 +291,7 @@ def get_label_dataframe(meta, data, index, times, source, labels,
     for label in labels:
         try:
             vertices, d_label = extract_label(data, source, label)
-            print d_label.shape
+            print(d_label.shape)
             d_label = d_label[idx_array, :, :]
             if baseline is not None:
                 d_label = baseline(meta, d_label, meta.index.values, times)

@@ -3,8 +3,9 @@ Do some decoding stuff.
 '''
 from conf_analysis.meg import preprocessing, tfr_analysis
 from conf_analysis.behavior import metadata
-from sklearn import cross_validation, svm, pipeline, preprocessing as skpre
+from sklearn import svm, pipeline, preprocessing as skpre
 from sklearn import decomposition
+#from sklearn import cross_validation -- Commented out, needs rewrite with model_selection module
 import numpy as np
 import pandas as pd
 from joblib import Memory
@@ -39,7 +40,7 @@ def decode(classifier, data, labels, train_time, predict_times,
            relabel_times=False,
            obs_average=None):
     '''
-    Apply a classifier to data [epochs x channels xtime] and predict labels with cross validation.
+    Apply a classifier to data [epochs x channels x time] and predict labels with cross validation.
     Train classifier from data at data[:, :, train_time] and apply to all
     indices in predict_times. Indices are interpreted as an index into
     the data matrix.
@@ -321,7 +322,7 @@ def tfr_apply_decoder(func, snum, epoch, label,
 
     labels = [lval[indices[0][i]] for i in m.index.values]
     # Assert correct labelling
-    rs = dict((v, k) for k, v in indices[0].items())
+    rs = dict((v, k) for k, v in list(indices[0].items()))
 
     assert(
         all(
@@ -355,7 +356,7 @@ def tfr_generalization_matrix(epochs, labels,
     steps = [slice(t, t + dt) for t in range(data.shape[-1] - dt)]
     print(data.shape)
     print(steps)
-    relabel_times = dict((v, k) for k, v in indexers[-1].items())
+    relabel_times = dict((v, k) for k, v in list(indexers[-1].items()))
     decoder = lambda x: decode(clf, data, labels, x, [x], cv=cv,
                                relabel_times=relabel_times)
     return pd.concat([decoder(tt) for tt in steps])

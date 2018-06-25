@@ -81,10 +81,11 @@ def get_info(subject, session):
 
 @memory.cache
 def get_bem(subject, head_model='three_layer', ico=4, type='mne'):
+
     if head_model == 'three_layer':
         conductivity = (0.3, 0.006, 0.3)  # for three layers
     else:
-        conductivity = (0.3,)  # for single layer    
+        conductivity = (0.3,)  # for single layer
 
     if type == 'mne':
         model = mne.make_bem_model(
@@ -109,12 +110,25 @@ def get_leadfield(subject, session, head_model='three_layer'):
     Parameters
     head_model : str, 'three_layer' or 'single_layer'
     '''
+    from pymeg import source_reconstruction as pymegsr
+    raw_filename = metadata.get_raw_filename(subject, session)
+    epoch_filename = metadata.get_epoch_filename(
+        subject, session, 0, 'stimulus', 'fif')
+    trans = get_trans(subject, session)
+
+    return pymegsr.get_leadfield('S%02i' % subject, raw_filename,
+                                 epoch_filename, trans,
+                                 conductivity=(0.3, 0.006, 0.3),
+                                 bem_sub_path='bem_ft',
+                                 njobs=4)
+    '''
+
     src = get_source_space(subject)
     if head_model == 'three_layer':
-        bem = get_bem(subject, head_model=head_model, type='fieldtrip')    
+        bem = get_bem(subject, head_model=head_model, type='fieldtrip')
     else:
         bem = get_bem(subject, head_model=head_model, type='mne')
-    trans = get_trans(subject, session)
+    
     info = get_info(subject, session)
 
     fwd = mne.make_forward_solution(
@@ -124,71 +138,10 @@ def get_leadfield(subject, session, head_model='three_layer'):
         bem=bem,
         meg=True,
         eeg=False,
-        mindist=5.0,
-        n_jobs=2)
+        mindist=2.5,
+        n_jobs=4)
     return fwd, bem, fwd['src'], trans
-
-
-@memory.cache
-def get_labels(subject):
-    import glob
-    subject = 'S%02i' % subject
-    subject_dir = join(subjects_dir, subject)
-    labels = glob.glob(join(subject_dir, 'label', '*wang2015atlas*'))
-    return [mne.read_label(label, subject) for label in labels]
-
-
-def get_eccen_labels(subject):
-    import glob
-    subject = 'S%02i' % subject
-    subject_dir = join(subjects_dir, subject)
-    labels = glob.glob(join(subject_dir, 'label', '*eccen11*'))
-    return [mne.read_label(label, subject) for label in labels]
-
-
-def save_source_power(data, subject, filename):
-    import numpy as np
-    transform = lambda x: dict((d, np.asarray(k).ravel() if type(
-        k) == np.ndarray else k) for d, k in x.iteritems())
-    df = pd.concat([pd.DataFrame(transform(x)) for x in data])
-    df.loc[:, 'snum'] = subject
-    df.to_hdf(filename, 'srcpow')
-
-
-@memory.cache
-def get_stimulus_csd(epochs, noise_t=(0.25, 0.75), data_t=(0.75, 1.75),
-                     freq=(45, 65)):
-    from mne.time_frequency import csd_epochs
-    # Construct filter
-    noise_csd = csd_epochs(epochs,
-                           mode='multitaper', tmin=noise_t[0], tmax=noise_t[1],
-                           fmin=freq[0], fmax=freq[1], fsum=True)
-    data_csd = csd_epochs(epochs,
-                          mode='multitaper', tmin=data_t[0], tmax=data_t[1],
-                          fmin=freq[0], fmax=freq[1], fsum=True)
-    return noise_csd, data_csd
-
-
-def foo(source_epoch, labels, i, events):
-    d = []
-    for label in labels:
-        data = {}
-        hemi = 0 if 'lh' == label.hemi else 1
-        l_data = source_epoch.in_label(label)
-        data['hemi'] = hemi
-        if hemi == 0:
-            for vertex, vert_data in zip(l_data.vertices[0],
-                                         l_data.lh_data):
-                data[vertex] = vert_data
-        elif hemi == 1:
-            for vertex, vert_data in zip(l_data.vertices[1],
-                                         l_data.rh_data):
-                data[vertex] = vert_data
-
-        data['trial'] = events[i, 2]
-        data['time'] = source_epoch.times
-        d.append(pd.DataFrame(data))
-    return pd.concat(d)
+    '''
 
 
 def clear_cache():
@@ -196,9 +149,9 @@ def clear_cache():
 
 
 def make_fieldtrip_bem_model(subject, ico=4, conductivity=(0.3, 0.006, 0.3),
-                   subjects_dir=None, verbose=None):
+                             subjects_dir=None, verbose=None):
     """Create a BEM model for a subject.
-    
+
     Copied from MNE python, adapted to read surface from fieldtrip / spm
     segmentation.
     """
@@ -223,9 +176,8 @@ def make_fieldtrip_bem_model(subject, ico=4, conductivity=(0.3, 0.006, 0.3),
         surfaces = surfaces[:1]
         ids = ids[:1]
     surfaces = mne.bem._surfaces_to_bem(surfaces, ids, conductivity, ico)
-    mne.bem._check_bem_size(surfaces)    
+    mne.bem._check_bem_size(surfaces)
     return surfaces
-
 
 
 def add_volume_info(subject, surface, subjects_dir, volume='T1'):
@@ -238,13 +190,13 @@ def add_volume_info(subject, surface, subjects_dir, volume='T1'):
     mri_dir = op.join(subject_dir, 'mri')
     T1_mgz = op.join(mri_dir, volume + '.mgz')
     new_info = _extract_volume_info(T1_mgz)
-    print new_info.keys()
+    print(list(new_info.keys()))
     rr, tris, volume_info = read_surface(surface,
                                          read_metadata=True)
 
-    #volume_info.update(new_info)  # replace volume info, 'head' stays
-    print volume_info.keys()
+    # volume_info.update(new_info)  # replace volume info, 'head' stays
+    print(list(volume_info.keys()))
     import numpy as np
-    if 'head' not in volume_info.keys():
+    if 'head' not in list(volume_info.keys()):
         volume_info['head'] = np.array([2,  0, 20], dtype=np.int32)
     write_surface(surface, rr, tris, volume_info=volume_info)

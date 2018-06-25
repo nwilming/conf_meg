@@ -10,7 +10,7 @@ Log file for Power estimates:
 
 '''
 import numpy as np
-import pylab as plt
+#import pylab as plt
 import pandas as pd
 from conf_analysis.meg import preprocessing
 from conf_analysis.behavior import metadata
@@ -31,7 +31,7 @@ memory = Memory(cachedir=metadata.cachedir)
 def single_sub_contrast_indices(subject, folder='/home/nwilming/conf_meg/sr_freq_labeled_three_layer/'):
     df, meta = get_power(subject, decim=5)
     resp, tp = get_total_power(df)
-    print 'redo me'
+    print('redo me')
     sa = df.groupby('F').apply(
         lambda x: sample_aligned_power_AAA(x, meta))
     r = sa.groupby('F').apply(lambda x: contrast_integrated_averages(
@@ -73,7 +73,7 @@ def get_power(subject, session=None, decim=3, F=None,
         files = [file for file in files if 'SESS%i' % session in file]
     if F is not None:
         files = [file for file in files if str(F) in file]
-    print files
+    print(files)
     if len(files) == 0:
         raise RuntimeError(
             'No files found for sub %i, session %s; \n search path was: %s'
@@ -197,7 +197,7 @@ def plot_tuning_indices(averages, indices, tps):
     from matplotlib.gridspec import GridSpec
 
     gs = GridSpec(16, 3, hspace=0.05, wspace=0.3)
-    subs = [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    subs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     import seaborn as sns
     ce = {}
     for sub in subs:
@@ -249,7 +249,7 @@ def plot_tuning_indices(averages, indices, tps):
 
             plt.subplot(gs[sub, 1])
             _, F = subi.argmax()
-            print 'Center:', sub, '@', F, tps[sub]
+            print('Center:', sub, '@', F, tps[sub])
             l = pd.pivot_table(averages.query('F==%f & snum==%i' % (
                 F, sub)), columns='contrast', index='time', values='V1-lh')
             r = pd.pivot_table(averages.query('F==%f & snum==%i' % (
@@ -339,7 +339,7 @@ def plot_sample_aligned_power_all_areas(df, meta, edges, gs=None, plot_areas=['V
     cnt = 0
     plot_pos = {'V1-lh': (0, 0), 'V1-rh': (0, 1), 'V2-lh': (1, 0), 'V2-rh': (1, 1),
                 'V3-lh': (2, 0), 'V3-rh': (2, 1), 'hV4-lh': (3, 0), 'hV4-rh': (3, 1)}
-    for area, pos in plot_pos.iteritems():
+    for area, pos in plot_pos.items():
         if not any([a in area for a in plot_areas]):
             continue
         plt.subplot(gs[pos[0], pos[1]])
