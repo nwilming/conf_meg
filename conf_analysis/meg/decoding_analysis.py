@@ -300,14 +300,14 @@ def ssd_decoder(meta, data, area, latency=0.18):
                                    cv=10, scoring=metrics,
                                    return_train_score=False,
                                    n_jobs=n_jobs)
-            fit = clf(sample_data.values, target)
+            #fit = clf(sample_data.values, target)
             del score['fit_time']
             del score['score_time']
             score = {k: np.mean(v) for k, v in list(score.items())}
             score['latency'] = latency
             score['Classifier'] = name
             score['sample'] = sample_num
-            score['coefs'] = fit.coef_.astype(object)
+            #score['coefs'] = fit.coef_.astype(object)
             sample_scores.append(score)
 
     return pd.DataFrame(sample_scores)
