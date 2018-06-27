@@ -254,6 +254,10 @@ def ssd_decoder(meta, data, area, latency=0.18):
     # Contrast is the target
 
     # Map sample times to existing time points in data
+    from sklearn.metrics import make_scorer
+    from scipy.stats import linregress
+    slope_scorer = make_scorer(lambda x, y: linregress(x, y)[0])
+    corr_scorer = make_scorer(lambda x, y: np.corrcoef(x, y)[0, 1])
     sample_scores = []
     for sample_num, sample in enumerate(np.arange(0, 1, 0.1)):
         target_time_points = [sample + latency]
@@ -273,50 +277,38 @@ def ssd_decoder(meta, data, area, latency=0.18):
                  .unstack())
             X.append(x)
         sample_data = pd.concat(X, 1)
-
-        # Turn data into (trial*time X Frequency)
-        # data = (data.reset_index()
-        #            .loc[:, ['trial', 'time', 'est_val', area]]
-        #            .set_index(['trial', 'time', 'est_val'])
-        #            .unstack())
-        # data.sort_index(inplace=True)
         sample_data = sample_data.loc[(slice(None), target_time_points), :]
 
         # Buld target vector
         target = np.stack(meta.contrast_probe.values)[:, sample_num]
 
-        metrics = ['explained_variance', 'r2', 'neg_mean_squared_error']
-        # from sklearn.kernel_ridge import KernelRidge
-        # from sklearn.gaussian_process import GaussianProcessRegressor
+        metrics = {'explained_variance': 'explained_variance',
+                   'r2': 'r2',
+                   'slope': slope_scorer,
+                   'corr': corr_scorer}
+
         classifiers = {
-            #'SVR': svm.SVR(),
-            #'KRR': KernelRidge(kernel='rbf'), # Takes too long (>5 mins)
-            #'GPR': GaussianProcessRegressor(), # Takes too long
-            #'SGD': linear_model.SGDRegressor(max_iter=10),
             'OLS': linear_model.LinearRegression(),
             'Ridge': linear_model.RidgeCV()}
-        #'Lasso': linear_model.LassoCV()}
 
-        #import time
         for name, clf in list(classifiers.items()):
-            #start = time.time()
             clf = Pipeline([
                 ('Scaling', StandardScaler()),
                 (name, clf)
             ])
-            # print('Running', name, 'Latency', latency, end='')
             score = cross_validate(clf, sample_data.values, target,
                                    cv=10, scoring=metrics,
                                    return_train_score=False,
                                    n_jobs=n_jobs)
+            fit = clf(sample_data.values, target)
             del score['fit_time']
             del score['score_time']
             score = {k: np.mean(v) for k, v in list(score.items())}
             score['latency'] = latency
             score['Classifier'] = name
             score['sample'] = sample_num
+            score['coefs'] = fit.coef_.astype(object)
             sample_scores.append(score)
-            #print(' took: %3.2fs' % (time.time() - start))
 
     return pd.DataFrame(sample_scores)
 
