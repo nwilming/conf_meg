@@ -748,16 +748,90 @@ def ensure_iter(input):
             yield input
 
 
-def get_decoding_data(path):
+def plot_summary_results(data, cmap='RdBu_r', vmin=0, vmax=1,
+                         ex_sub='S04', measure='auc', epoch='response', classifier='svc'):
+    from pymeg import roi_clusters as rois, source_reconstruction as sr
+    from matplotlib import colors, cm
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    colortable = cm.get_cmap(cmap)
+    cmap = lambda x: colortable(norm(x))
+    #labels = sr.get_labels(ex_sub)
+    labels = sr.get_labels(
+        ex_sub, sdir='/Users/nwilming/cluster_home/fs_subject_dir')
+    lc = rois.labels_to_clusters(labels, rois.all_clusters, hemi='lh')
+
+    # 1 Response at t=0.06
+    for signal, dsignal in data.groupby('signal'):
+        if signal == 'SSD':
+            dsignal = dsignal.query('0.18<latency<0.185')
+
+        else:
+            dsignal = dsignal.query('0.065<latency<0.067')
+        plot_one_brain(dsignal, signal, lc, cmap, ex_sub=ex_sub,
+                       measure=measure, classifier=classifier,
+                       epoch=epoch)
+
+
+#@memory.cache
+def plot_one_brain(dsignal, signal, lc, cmap, ex_sub='S04', classifier='SCVlin',
+                   epoch='response', measure='auc'):
+    from surfer import Brain
+    brain = Brain(ex_sub, 'lh', 'inflated',  views=['lat'], background='w',
+                  subjects_dir='/Users/nwilming/cluster_home/fs_subject_dir')
+    ms = dsignal.groupby('latency').mean()
+    if (signal == 'CONF_signed') and (measure == 'accuracy'):
+        plot_labels_on_brain(brain, lc, ms.iloc[0], cmap)
+    if (signal == 'SSD'):
+        plot_labels_on_brain(brain, lc, ms.iloc[0], cmap)
+    else:
+        plot_labels_on_brain(brain, lc, ms.iloc[0], cmap)
+    return brain.save_montage('/Users/nwilming/Desktop/%s_montage_%s_%s_%s.png' %
+                              (signal, measure, classifier, epoch), [['par', 'fro'], ['lat', 'med']])
+
+
+def plot_labels_on_brain(brain, labels, data, cmap):
+    for label in data.index.values:
+        if label.startswith('(') and label.endswith(')'):
+            name = label.split(',')[0].replace(
+                '(', '').replace("'", '').replace(' ', '')
+
+            for clustername, lobjects in labels.items():
+                if clustername in name:
+                    value = data.loc[label]
+                    for l0 in lobjects:
+                        l0.color = cmap(value)
+                        # brain.add_data(l0.vertices * 0 + value, vertices=l0.vertices,
+                        #               min=min, max=max, colormap=colormap,
+                        #               smoothing_steps=1, thresh=thresh, alpha=0.8,
+                        #               )
+                        brain.add_label(l0, color=cmap(value), alpha=0.8)
+    brain.save_image('test.png')
+
+
+def get_decoding_data(path='/home/nwilming/conf_meg/'):
     import glob
-    files = glob.glob('/home/nwilming/conf_meg/sr_decoding/concat_S*')
-    df = pd.concat([pd.read_hdf(f) for f in files])
+    import os
+    #files = glob.glob(os.path.join(path, 'concat_S*'))
+    #df = pd.concat([pd.read_hdf(f) for f in files])
+    df = pd.read_hdf(os.path.join(path, 'all_decoding_results.hdf'))
     df = df.reset_index().set_index(
         ['Classifier', 'epoch', 'est_key', 'latency', 'mc<0.5', 'signal', 'subject', 'area'])
-    return df.unstack('area')
+    df = df.unstack('area').T
+    dt = []
+    for area in df.index.get_level_values('area'):
+        if '_L-R' in area:
+            dt.append('Lateralized')
+        elif '_Havg' in area:
+            dt.append('Average')
+        else:
+            dt.append('Pairs')
+    df.loc[:, 'atype'] = dt
+    df.set_index('atype', append=True, inplace=True)
+    df = df.swaplevel(1, 2)
+    return df.T
 
 
-def plot_interesting_areas(data, dtype='Lateralized',
+def plot_interesting_areas(data,
                            signals={'MIDC_split': '#E9003A', 'SIDE_nosplit': '#FF5300',
                                     'CONF_signed': '#00AB6F', 'CONF_unsigned': '#58E000'},
                            title='', classifier='SCVlin'):
@@ -765,15 +839,8 @@ def plot_interesting_areas(data, dtype='Lateralized',
                          'Area6_anterior', 'A6si', 'PEF', '55b', '8av', '8C', '24dv']
     areas = []
 
-    if dtype == 'Lateralized':
-        cols = [x for x in data.columns if '_L-R' in x]
-    elif dtype == 'Pairs':
-        cols = [x for x in data.columns if ('lh' in x) and ('rh' in x)]
-    else:
-        cols = [x for x in data.columns if '_Havg' in x]
-    print(cols)
-    areas = [x for x in cols if any([i in x for i in interesting_areas])]
-    #print(areas)
+    areas = [x for x in data.columns if any(
+        [i in x for i in interesting_areas])]
     data = data.query('Classifier=="%s"' % classifier)
     plot_set(areas, data, title=title)
 
@@ -801,7 +868,7 @@ def plot_set(area_set, data,
     x = [-0.5, -1, -1, -0.5]
     y = [0., 0.2, 0, 0.2]
     ylim = list(plt.ylim())
-    ylim[1] = i * 0.5 + 1
+    ylim[1] = len(area_set) * 0.5 + 1
     for i, (signal, color) in enumerate(signals.items()):
         plt.text(x[i], y[i], signal, color=color)
     plt.subplot(gs[0, 0])
@@ -883,4 +950,4 @@ def data(labeldata, aparc_file, label_column, value_column):
 def plot(surface, data, hemisphere='lh', surf='inflated', views=['lat', 'med'], background='white'):
     brain = Brain(surface, hemisphere=hemisphere, surf=surf,
                   views=views, background=background)
-    brain.add_data(data, min=0, max=.1, thresh=.001, colormap="Reds", alpha=.7)
+    #brain.add_data(data, min=0, max=1, colormap="Reds", alpha=1)
