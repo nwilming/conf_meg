@@ -254,68 +254,63 @@ def ssd_decoder(meta, data, area, latency=0.18):
     # Contrast is the target
 
     # Map sample times to existing time points in data
-    target_time_points = np.arange(0, 1, 0.1) + latency
-    times = np.unique(data.reset_index().time)
-    target_time_points = np.array(
-        [times[np.argmin(abs(times - t))] for t in target_time_points]
-    )
-    # Compute mean latency
-    latency = np.mean(target_time_points - np.arange(0, 1, 0.1))
-    # print('Latency:', latency, '->', target_time_points)
-    # Turn data into (trial X Frequency)
-    X = []
-    for a in ensure_iter(area):
-        x = (data.reset_index()
-             .loc[:, ['trial', 'time', 'est_val', a]]
-             .set_index(['trial', 'time', 'est_val'])
-             .unstack())
-        X.append(x)
-    data = pd.concat(X, 1)
+    from sklearn.metrics import make_scorer
+    from scipy.stats import linregress
+    slope_scorer = make_scorer(lambda x, y: linregress(x, y)[0])
+    corr_scorer = make_scorer(lambda x, y: np.corrcoef(x, y)[0, 1])
+    sample_scores = []
+    for sample_num, sample in enumerate(np.arange(0, 1, 0.1)):
+        target_time_points = [sample + latency]
+        times = np.unique(data.reset_index().time)
+        target_time_points = np.array(
+            [times[np.argmin(abs(times - t))] for t in target_time_points]
+        )
+        # Compute mean latency
+        latency = np.mean(target_time_points - sample)
+        # print('Latency:', latency, '->', target_time_points)
+        # Turn data into (trial X Frequency)
+        X = []
+        for a in ensure_iter(area):
+            x = (data.reset_index()
+                 .loc[:, ['trial', 'time', 'est_val', a]]
+                 .set_index(['trial', 'time', 'est_val'])
+                 .unstack())
+            X.append(x)
+        sample_data = pd.concat(X, 1)
+        sample_data = sample_data.loc[(slice(None), target_time_points), :]
 
-    # Turn data into (trial*time X Frequency)
-    # data = (data.reset_index()
-    #            .loc[:, ['trial', 'time', 'est_val', area]]
-    #            .set_index(['trial', 'time', 'est_val'])
-    #            .unstack())
-    # data.sort_index(inplace=True)
-    data = data.loc[(slice(None), target_time_points), :]
+        # Buld target vector
+        target = np.stack(meta.contrast_probe.values)[:, sample_num]
 
-    # Buld target vector
-    target = np.concatenate(meta.contrast_probe.values)
+        metrics = {'explained_variance': 'explained_variance',
+                   'r2': 'r2',
+                   'slope': slope_scorer,
+                   'corr': corr_scorer}
 
-    metrics = ['explained_variance', 'r2', 'neg_mean_squared_error']
-    # from sklearn.kernel_ridge import KernelRidge
-    # from sklearn.gaussian_process import GaussianProcessRegressor
-    classifiers = {
-        #'SVR': svm.SVR(),
-        #'KRR': KernelRidge(kernel='rbf'), # Takes too long (>5 mins)
-        #'GPR': GaussianProcessRegressor(), # Takes too long
-        #'SGD': linear_model.SGDRegressor(max_iter=10),
-        'OLS': linear_model.LinearRegression(),
-        'Ridge': linear_model.RidgeCV()}
-    #'Lasso': linear_model.LassoCV()}
+        classifiers = {
+            'OLS': linear_model.LinearRegression(),
+            'Ridge': linear_model.RidgeCV()}
 
-    scores = []
-    import time
-    for name, clf in list(classifiers.items()):
-        start = time.time()
-        clf = Pipeline([
-            ('Scaling', StandardScaler()),
-            (name, clf)
-        ])
-        # print('Running', name, 'Latency', latency, end='')
-        score = cross_validate(clf, data.values, target,
-                               cv=10, scoring=metrics,
-                               return_train_score=False,
-                               n_jobs=n_jobs)
-        del score['fit_time']
-        del score['score_time']
-        score = {k: np.mean(v) for k, v in list(score.items())}
-        score['latency'] = latency
-        score['Classifier'] = name
-        scores.append(score)
-        # print(' took: %3.2fs' % (time.time() - start))
-    return pd.DataFrame(scores)
+        for name, clf in list(classifiers.items()):
+            clf = Pipeline([
+                ('Scaling', StandardScaler()),
+                (name, clf)
+            ])
+            score = cross_validate(clf, sample_data.values, target,
+                                   cv=10, scoring=metrics,
+                                   return_train_score=False,
+                                   n_jobs=n_jobs)
+            #fit = clf(sample_data.values, target)
+            del score['fit_time']
+            del score['score_time']
+            score = {k: np.mean(v) for k, v in list(score.items())}
+            score['latency'] = latency
+            score['Classifier'] = name
+            score['sample'] = sample_num
+            #score['coefs'] = fit.coef_.astype(object)
+            sample_scores.append(score)
+
+    return pd.DataFrame(sample_scores)
 
 
 def midc_decoder(meta, data, area, latency=0, splitmc=True,
@@ -841,6 +836,7 @@ def plot_interesting_areas(data,
 
     areas = [x for x in data.columns if any(
         [i in x for i in interesting_areas])]
+
     data = data.query('Classifier=="%s"' % classifier)
     plot_set(areas, data, title=title)
 
