@@ -58,6 +58,22 @@ pairs = [(x + '-lh', x + '-rh') for x in areas]
 areas = avgs + lateralized + pairs
 n_jobs = 1
 
+n_trials = {1: {'stimulus': 1565, 'response': 245},
+            2: {'stimulus': 1852, 'response': 1697},
+            3: {'stimulus': 1725, 'response': 27},
+            4: {'stimulus': 1863, 'response': 1807},
+            5: {'stimulus': 1812, 'response': 877},
+            6: {'stimulus': 1128, 'response': 113},
+            7: {'stimulus': 1766, 'response': 1644},
+            8: {'stimulus': 1872, 'response': 1303},
+            9: {'stimulus': 1767, 'response': 1104},
+            10: {'stimulus': 1404, 'response': 1209},
+            11: {'stimulus': 1787, 'response': 1595},
+            12: {'stimulus': 1810, 'response': 1664},
+            13: {'stimulus': 1689, 'response': 1620},
+            14: {'stimulus': 1822, 'response': 1526},
+            15: {'stimulus': 1851, 'response': 1764}}
+
 
 def submit(cluster='PBS'):
     decoders = ['MIDC_split', 'MIDC_nosplit',
@@ -105,7 +121,7 @@ def run_AA(subject, decoder, epoch, ntasks=16):
         # data=None
         get_subject(subject, area, epoch=epoch, time=time,
                     est_vals=est_vals, data=data)
-    #p.starmap(get_subject, tasks, chunksize=ntasks)
+    # p.starmap(get_subject, tasks, chunksize=ntasks)
     del data
     print('Done caching')
 
@@ -300,14 +316,14 @@ def ssd_decoder(meta, data, area, latency=0.18):
                                    cv=10, scoring=metrics,
                                    return_train_score=False,
                                    n_jobs=n_jobs)
-            #fit = clf(sample_data.values, target)
+            # fit = clf(sample_data.values, target)
             del score['fit_time']
             del score['score_time']
             score = {k: np.mean(v) for k, v in list(score.items())}
             score['latency'] = latency
             score['Classifier'] = name
             score['sample'] = sample_num
-            #score['coefs'] = fit.coef_.astype(object)
+            # score['coefs'] = fit.coef_.astype(object)
             sample_scores.append(score)
 
     return pd.DataFrame(sample_scores)
@@ -743,26 +759,73 @@ def ensure_iter(input):
             yield input
 
 
-def plot_summary_results(data, cmap='RdBu_r', vmin=0, vmax=1,
-                         ex_sub='S04', measure='auc', epoch='response', classifier='svc'):
+def filter_latency(data, min, max):
+    lat = data.index.get_level_values('latency').values
+    return data.loc[(min < lat) & (lat < max), :]
+
+
+def make_brain_plots(data, atype='Pairs'):
+    # 1 AUC
+    auc_limits = {'MIDC_split': (0.3, 0.7), 'MIDC_nosplit': (0.3, 0.7),
+                  'CONF_signed': (0.3, 0.7), 'CONF_unsigned': (.3, 0.7),
+                  'SIDE_nosplit': (0.3, 0.7)}
+    '''
+    df = data.test_roc_auc.Pairs.query(
+        'epoch=="stimulus" & ~(signal=="SSD") & Classifier=="SCVlin"')
+    plot_summary_results(filter_latency(df, 0.15, 0.2),
+                         limits=auc_limits, epoch='stimulus', measure='auc')
+    df = data.test_roc_auc.Pairs.query(
+        'epoch=="response" & ~(signal=="SSD") & Classifier=="SCVlin"')
+    plot_summary_results(filter_latency(df, -0.05, 0.05),
+                         limits=auc_limits, epoch='response', measure='auc')
+    '''
+    df = data.test_roc_auc.loc[:, atype].query(
+        'epoch=="response" & ~(signal=="SSD") & Classifier=="SCVlin"')
+    plot_summary_results(filter_latency(df, 0.425, 0.475),
+                         limits=auc_limits, epoch='response_late_' + 'atype', measure='auc')
+    '''
+    acc_limits = {'MIDC_split': (-0.2, 0.2), 'MIDC_nosplit': (-0.2, 0.2),
+                  'CONF_signed': (-0.2, 0.2), 'CONF_unsigned': (-.2, 0.2),
+                  'SIDE_nosplit': (-0.2, 0.2)}
+    df = data.test_accuracy.Pairs.query(
+        'epoch=="stimulus" & ~(signal=="SSD") & Classifier=="SCVlin"')
+    plot_summary_results(filter_latency(df, -0.05, 0.05),
+                         limits=acc_limits, epoch='stimulus', measure='accuracy')
+    df = data.test_accuracy.Pairs.query(
+        'epoch=="response" & ~(signal=="SSD") & Classifier=="SCVlin"')
+    plot_summary_results(filter_latency(df, -0.05, 0.05),
+                         limits=acc_limits, epoch='response', measure='accuracy')
+
+    ssd_limits = {'SSD': (-0.05, 0.05)}
+    df = data.test_r2.Pairs.query(
+        'epoch=="stimulus" & (signal=="SSD") & Classifier=="Ridge"')
+    plot_summary_results(filter_latency(df, 0.15, 0.2),
+                         limits=ssd_limits, epoch='stimulus', measure='r2')
+    '''
+
+
+def plot_summary_results(data, cmap='RdBu_r',
+                         limits={'MIDC_split': (0.3, 0.7),
+                                 'MIDC_nosplit': (0.3, 0.7),
+                                 'CONF_signed': (0.3, 0.7),
+                                 'CONF_unsigned': (.3, 0.7),
+                                 'SIDE_nosplit': (0.3, 0.7),
+                                 'SSD': (-0.05, 0.05)},
+                         ex_sub='S04', measure='auc', epoch='response',
+                         classifier='svc'):
     from pymeg import roi_clusters as rois, source_reconstruction as sr
     from matplotlib import colors, cm
-    norm = colors.Normalize(vmin=vmin, vmax=vmax)
-    colortable = cm.get_cmap(cmap)
-    cmap = lambda x: colortable(norm(x))
-    #labels = sr.get_labels(ex_sub)
-    labels = sr.get_labels(
-        ex_sub, sdir='/Users/nwilming/cluster_home/fs_subject_dir')
+
+    # labels = sr.get_labels(ex_sub)
+    labels = sr.get_labels(ex_sub)
     lc = rois.labels_to_clusters(labels, rois.all_clusters, hemi='lh')
 
-    # 1 Response at t=0.06
     for signal, dsignal in data.groupby('signal'):
-        if signal == 'SSD':
-            dsignal = dsignal.query('0.18<latency<0.185')
-
-        else:
-            dsignal = dsignal.query('0.065<latency<0.067')
-        plot_one_brain(dsignal, signal, lc, cmap, ex_sub=ex_sub,
+        vmin, vmax = limits[signal]
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+        colortable = cm.get_cmap(cmap)
+        cfunc = lambda x: colortable(norm(x))
+        plot_one_brain(dsignal, signal, lc, cfunc, ex_sub=ex_sub,
                        measure=measure, classifier=classifier,
                        epoch=epoch)
 
@@ -771,59 +834,100 @@ def plot_summary_results(data, cmap='RdBu_r', vmin=0, vmax=1,
 def plot_one_brain(dsignal, signal, lc, cmap, ex_sub='S04', classifier='SCVlin',
                    epoch='response', measure='auc'):
     from surfer import Brain
-    brain = Brain(ex_sub, 'lh', 'inflated',  views=['lat'], background='w',
-                  subjects_dir='/Users/nwilming/cluster_home/fs_subject_dir')
-    ms = dsignal.groupby('latency').mean()
+    print('Creating Brain')
+    brain = Brain(ex_sub, 'lh', 'inflated',  views=['lat'], background='w')
+    # subjects_dir='/Users/nwilming/u/freesurfer_subjects/')
+    print('Created Brain')
+    ms = dsignal.mean()
     if (signal == 'CONF_signed') and (measure == 'accuracy'):
-        plot_labels_on_brain(brain, lc, ms.iloc[0], cmap)
+        plot_labels_on_brain(brain, lc, ms, cmap)
     if (signal == 'SSD'):
-        plot_labels_on_brain(brain, lc, ms.iloc[0], cmap)
+        plot_labels_on_brain(brain, lc, ms, cmap)
     else:
-        plot_labels_on_brain(brain, lc, ms.iloc[0], cmap)
+        plot_labels_on_brain(brain, lc, ms, cmap)
     return brain.save_montage('/Users/nwilming/Desktop/%s_montage_%s_%s_%s.png' %
                               (signal, measure, classifier, epoch), [['par', 'fro'], ['lat', 'med']])
 
 
 def plot_labels_on_brain(brain, labels, data, cmap):
+    already_plotted = []
     for label in data.index.values:
-        if label.startswith('(') and label.endswith(')'):
-            name = label.split(',')[0].replace(
-                '(', '').replace("'", '').replace(' ', '')
+        for clustername, lobjects in labels.items():
+            if clustername == label:
+                value = data.loc[label]
 
-            for clustername, lobjects in labels.items():
-                if clustername in name:
-                    value = data.loc[label]
-                    for l0 in lobjects:
-                        l0.color = cmap(value)
-                        # brain.add_data(l0.vertices * 0 + value, vertices=l0.vertices,
-                        #               min=min, max=max, colormap=colormap,
-                        #               smoothing_steps=1, thresh=thresh, alpha=0.8,
-                        #               )
-                        brain.add_label(l0, color=cmap(value), alpha=0.8)
+                for l0 in lobjects:
+                    if any(l0.name == x for x in already_plotted):
+                        import pdb
+                        pdb.set_trace()
+                    # print(('Addding', l0.name, cmap(value)))
+                    l0.color = cmap(value)
+                    already_plotted.append(l0.name)
+                    brain.add_label(l0, color=cmap(value), alpha=0.8)
     brain.save_image('test.png')
 
 
-def get_decoding_data(path='/home/nwilming/conf_meg/'):
+@memory.cache
+def _helper_getter(path):
     import glob
     import os
-    #files = glob.glob(os.path.join(path, 'concat_S*'))
-    #df = pd.concat([pd.read_hdf(f) for f in files])
     df = pd.read_hdf(os.path.join(path, 'all_decoding_results.hdf'))
     df = df.reset_index().set_index(
         ['Classifier', 'epoch', 'est_key', 'latency', 'mc<0.5', 'signal', 'subject', 'area'])
-    df = df.unstack('area').T
+    return df.unstack('area').T
+
+
+def get_decoding_data(path='/home/nwilming/conf_meg/'):
+    # files = glob.glob(os.path.join(path, 'concat_S*'))
+    # df = pd.concat([pd.read_hdf(f) for f in files])
+    df = _helper_getter(path)
     dt = []
+    areas = []
     for area in df.index.get_level_values('area'):
         if '_L-R' in area:
             dt.append('Lateralized')
+            areas.append(area.replace('-lh_L-R', ''))
         elif '_Havg' in area:
             dt.append('Average')
+            areas.append(area.replace('-lh_Havg', ''))
         else:
             dt.append('Pairs')
+            areas.append(area.split(',')[0].replace(
+                '(', '').replace(')', '').replace("'", '').replace('-lh', ''))
     df.loc[:, 'atype'] = dt
     df.set_index('atype', append=True, inplace=True)
     df = df.swaplevel(1, 2)
-    return df.T
+    df = df.T
+    df.columns.set_levels(areas, level='area', inplace=True)
+    idt = df.test_accuracy.index.get_level_values('signal') == 'CONF_signed'
+    df.loc[idt, 'test_accuracy'] = (df.loc[idt, 'test_accuracy'] - 0.25).values
+    df.loc[~idt, 'test_accuracy'] = (
+        df.loc[~idt, 'test_accuracy'] - 0.5).values
+    return df.query('~(subject==6)')
+
+
+def plot_signals(data, measure, classifier='svm', ylim=(0.45, 0.75)):
+    import pylab as plt
+    for epoch, de in data.groupby('epoch'):
+        print(de.shape)
+        g = plot_by_signal(de)
+        g.set_ylabels(r'$%s$' % measure)
+        g.set_xlabels(r'$time$')
+        g.set(ylim=ylim)
+        plt.savefig('/Users/nwilming/Desktop/%s_%s_%s_decoding.pdf' %
+                    (measure, classifier, epoch))
+
+
+def plot_by_signal(data, signals={'MIDC_split': '#E9003A', 'MIDC_nosplit': '#FF5300',
+                                  'CONF_signed': '#00AB6F', 'CONF_unsigned': '#58E000'}):
+    import pylab as plt
+    import seaborn as sns
+    idsig = data.index.get_level_values('signal').isin(signals.keys())
+    data = data.loc[idsig, :]
+    k = data.groupby(['latency', 'signal']).mean().stack().reset_index()
+    g = sns.FacetGrid(k, col='signal', col_wrap=2, hue='area', palette='magma')
+    g.map(plt.plot, 'latency', 0, alpha=0.8)
+    return g
 
 
 def plot_interesting_areas(data,
@@ -907,7 +1011,7 @@ def plot_decoding_results(data, signal, area,
     stim_ax = plt.subplot(stim_ax)
     sns.tsplot(stimulus, time='latency', value=area,
                unit='subject', ax=stim_ax, color=color)
-    #plt.ylim([0.1, 0.9])
+    # plt.ylim([0.1, 0.9])
     plt.axhline(0.5 + offset, color='k')
     dx, dy = np.array([0.0, 0.0]), np.array([.5, 0.75])
     plt.plot(dx, dy + offset, color='k')
@@ -921,29 +1025,5 @@ def plot_decoding_results(data, signal, area,
     plt.plot(dx, dy + offset, color='k')
     plt.yticks([])
     plt.ylabel('')
-    #plt.ylim([0.1, 0.9])
+    # plt.ylim([0.1, 0.9])
     plt.axhline(0.5 + offset, color='k')
-
-
-def data(labeldata, aparc_file, label_column, value_column):
-    import nibabel as nib
-    # First load parcellation
-    labels, ctab, names = nib.freesurfer.read_annot(aparc_file)
-
-    # convert names from bytes to str
-    str_names = [str(i) for i in names]
-    str_names = [i[2:-1] if i == "b'???'" else i[4:-1] for i in str_names]
-
-    # sort labeldata array by order of original label names
-    labeldata[label_column] = labeldata[label_column].astype('category')
-    labeldata[label_column].cat.set_categories(str_names, inplace=True)
-    labeldata = labeldata.sort_values(by=label_column)
-
-    data = labeldata[value_column]
-    return data[labels]
-
-
-def plot(surface, data, hemisphere='lh', surf='inflated', views=['lat', 'med'], background='white'):
-    brain = Brain(surface, hemisphere=hemisphere, surf=surf,
-                  views=views, background=background)
-    #brain.add_data(data, min=0, max=1, colormap="Reds", alpha=1)
