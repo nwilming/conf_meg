@@ -42,6 +42,25 @@ The following functions will reduce raw data to various different average TFRs.
 '''
 
 
+def transcode_columns(data):
+    data.columns.name = 'area'
+    areas, dt = [], []
+    for area in data.columns:
+        if '_Lateralized' in area:
+            dt.append('Lateralized')
+        elif '_Havg' in area:
+            dt.append('Average')
+        else:
+            dt.append('Single')
+        areas.append(area.replace(
+            '-lh_Havg', '').replace('-lh_Lateralized', ''))
+    idx = pd.MultiIndex.from_tuples(zip(dt, areas),
+                                    names=['atype', 'area'])
+    data.columns = idx.sort_values()
+    #data.columns = data.columns.sort_values()
+    return data
+
+
 def baseline(data, baseline_data, baseline=(-0.25, 0)):
     baseline_data = baseline_data.query('%f < time & time < %f' % baseline)
     m = baseline_data.mean()
@@ -105,8 +124,8 @@ def contrast_controlled_response_contrast(sub, epoch='stimulus',
 
 
 def response_contrast(subs=list(range(1, 16)), epoch='stimulus'):
-    return pd.concat(
-        [_prewarm_response_contrast(sub, epoch=epoch) for sub in subs])
+    return transcode_columns(pd.concat(
+        [_prewarm_response_contrast(sub, epoch=epoch) for sub in subs]))
 
 
 def submit_response_contrast():
@@ -338,7 +357,7 @@ def get_tfr_stack(data, area, baseline=None, tslice=slice(-0.25, 1.35)):
 def get_tfr(data, area, baseline=None, tslice=slice(-0.25, 1.35)):
     data = data.loc[:, area].dropna()
     if len(data) == 0:
-        raise ValueError('No data for this %s'%area)
+        raise ValueError('No data for this %s' % area)
     k = pd.pivot_table(data.reset_index(), values=area,
                        index='est_val', columns='time')
     if baseline is not None:
@@ -352,26 +371,24 @@ The following functions allow plotting of TFRs.
 
 
 def plot_set(response, stimulus, setname, setareas, minmax=(10, 20),
-             lateralize=False, stats=False,
-             response_tslice=slice(-0.5, 0.5),
+             stats=False,
+             response_tslice=slice(-1, 0.5),
              stimulus_tslice=slice(-0.25, 1.35),
-             new_figure=False):
+             new_figure=True):
     from matplotlib.gridspec import GridSpec
     import pylab as plt
 
     columns = response.columns
-    if lateralize:
-        columns = rois.filter_cols(columns, ['Lateralized'])
-    else:
-        columns = rois.filter_cols(columns, ['Havg'])
     areas = rois.filter_cols(columns, setareas)
-    # Setup gridspec to compare stimulus and response next to each other.
-    rows, cols = rois.layouts[setname]
+    # Setup gridspec to compare stimulus and response next to each other.    
+    cols = 3
+    rows = (len(areas)//cols)+1
+
     if new_figure:
-        plt.figure(figsize=(cols * 3.5, rows * 3.5))
+        plt.figure(figsize=(cols * 2.5, rows * 2.5))
 
     gs = GridSpec(2 * rows, 2 * cols, height_ratios=[140, 16] * rows,
-                  width_ratios=[1.55, 1] * cols)
+                  width_ratios=[1.55, 1.5] * cols)
     locations = []
 
     # First plot stimulus and comput stimulus positions in plot.
@@ -423,14 +440,14 @@ def plot_labels(data, areas, locations, gs, stats=True, minmax=(10, 20),
         else:
             plt.ylabel('Freq')
         plt.subplot(gs[row + 1, col])
-        ex_tfr = get_tfr(data.query('est_key=="LF"'), area, tslice=tslice)
-        s = get_tfr_stack(data.query('est_key=="LF"'), area, tslice=tslice)
-        if stats:
-            t, p, H0 = stats_test(s)
-            p = p.reshape(t.shape)
-        cbar = _plot_tfr(area, ex_tfr.columns.values, ex_tfr.index.values,
-                         s.mean(0), p, title_color='k', minmax=minmax[1])
-        cbar.remove()
+        #ex_tfr = get_tfr(data.query('est_key=="LF"'), area, tslice=tslice)
+        #s = get_tfr_stack(data.query('est_key=="LF"'), area, tslice=tslice)
+        #if stats:
+        #    t, p, H0 = stats_test(s)
+        #    p = p.reshape(t.shape)
+        #cbar = _plot_tfr(area, ex_tfr.columns.values, ex_tfr.index.values,
+        #                 s.mean(0), p, title_color='k', minmax=minmax[1])
+        #cbar.remove()
         # plt.xticks([0, 0.5, 1])
         if row == maxrow:
             plt.xlabel('time')

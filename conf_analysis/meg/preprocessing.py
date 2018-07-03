@@ -220,7 +220,7 @@ def get_meta(data, raw, snum, block, filename):
     return meta.drop(cols, axis=1), timing
 
 
-@memory.cache
+#@memory.cache
 def get_epochs_for_subject(snum, epoch, sessions=None):
     from itertools import product
 
