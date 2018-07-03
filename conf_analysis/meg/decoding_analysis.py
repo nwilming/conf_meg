@@ -764,7 +764,7 @@ def filter_latency(data, min, max):
     return data.loc[(min < lat) & (lat < max), :]
 
 
-def make_brain_plots(data, atype='Pairs'):
+def make_brain_plots(data, atype='Pairs', ssd_view=['cau']):
     # 1 AUC
     auc_limits = {'MIDC_split': (0.3, 0.7), 'MIDC_nosplit': (0.3, 0.7),
                   'CONF_signed': (0.3, 0.7), 'CONF_unsigned': (.3, 0.7),
@@ -778,12 +778,12 @@ def make_brain_plots(data, atype='Pairs'):
         'epoch=="response" & ~(signal=="SSD") & Classifier=="SCVlin"')
     plot_summary_results(filter_latency(df, -0.05, 0.05),
                          limits=auc_limits, epoch='response', measure='auc')
-    '''
+
     df = data.test_roc_auc.loc[:, atype].query(
         'epoch=="response" & ~(signal=="SSD") & Classifier=="SCVlin"')
     plot_summary_results(filter_latency(df, 0.425, 0.475),
                          limits=auc_limits, epoch='response_late_' + 'atype', measure='auc')
-    '''
+
     acc_limits = {'MIDC_split': (-0.2, 0.2), 'MIDC_nosplit': (-0.2, 0.2),
                   'CONF_signed': (-0.2, 0.2), 'CONF_unsigned': (-.2, 0.2),
                   'SIDE_nosplit': (-0.2, 0.2)}
@@ -795,13 +795,15 @@ def make_brain_plots(data, atype='Pairs'):
         'epoch=="response" & ~(signal=="SSD") & Classifier=="SCVlin"')
     plot_summary_results(filter_latency(df, -0.05, 0.05),
                          limits=acc_limits, epoch='response', measure='accuracy')
-
-    ssd_limits = {'SSD': (-0.05, 0.05)}
-    df = data.test_r2.Pairs.query(
-        'epoch=="stimulus" & (signal=="SSD") & Classifier=="Ridge"')
-    plot_summary_results(filter_latency(df, 0.15, 0.2),
-                         limits=ssd_limits, epoch='stimulus', measure='r2')
     '''
+    data_ssd = filter_latency(data.test_slope.Pairs.query(
+        'epoch=="stimulus" & (signal=="SSD") & Classifier=="Ridge"'), 0.18, 0.19)
+    for sample, sd in data_ssd.groupby('sample'):
+        ssd_limits = {'SSD': (-0.08, 0.08)}
+        plot_summary_results(sd, limits=ssd_limits,
+                             epoch='stimulus',
+                             measure='slope' + '_sample%i' % sample,
+                             views=ssd_view)
 
 
 def plot_summary_results(data, cmap='RdBu_r',
@@ -812,7 +814,8 @@ def plot_summary_results(data, cmap='RdBu_r',
                                  'SIDE_nosplit': (0.3, 0.7),
                                  'SSD': (-0.05, 0.05)},
                          ex_sub='S04', measure='auc', epoch='response',
-                         classifier='svc'):
+                         classifier='svc',
+                         views=[['par', 'fro'], ['lat', 'med']]):
     from pymeg import roi_clusters as rois, source_reconstruction as sr
     from matplotlib import colors, cm
 
@@ -825,14 +828,15 @@ def plot_summary_results(data, cmap='RdBu_r',
         norm = colors.Normalize(vmin=vmin, vmax=vmax)
         colortable = cm.get_cmap(cmap)
         cfunc = lambda x: colortable(norm(x))
-        plot_one_brain(dsignal, signal, lc, cfunc, ex_sub=ex_sub,
-                       measure=measure, classifier=classifier,
-                       epoch=epoch)
+        brain = plot_one_brain(dsignal, signal, lc, cfunc, ex_sub=ex_sub,
+                               measure=measure, classifier=classifier,
+                               epoch=epoch, views=views)
+    return brain
 
 
 #@memory.cache
 def plot_one_brain(dsignal, signal, lc, cmap, ex_sub='S04', classifier='SCVlin',
-                   epoch='response', measure='auc'):
+                   epoch='response', measure='auc', views=[['par', 'fro'], ['lat', 'med']]):
     from surfer import Brain
     print('Creating Brain')
     brain = Brain(ex_sub, 'lh', 'inflated',  views=['lat'], background='w')
@@ -845,8 +849,9 @@ def plot_one_brain(dsignal, signal, lc, cmap, ex_sub='S04', classifier='SCVlin',
         plot_labels_on_brain(brain, lc, ms, cmap)
     else:
         plot_labels_on_brain(brain, lc, ms, cmap)
-    return brain.save_montage('/Users/nwilming/Desktop/%s_montage_%s_%s_%s.png' %
-                              (signal, measure, classifier, epoch), [['par', 'fro'], ['lat', 'med']])
+    brain.save_montage('/Users/nwilming/Desktop/%s_montage_%s_%s_%s.png' %
+                       (signal, measure, classifier, epoch), views)
+    return brain
 
 
 def plot_labels_on_brain(brain, labels, data, cmap):
@@ -868,19 +873,30 @@ def plot_labels_on_brain(brain, labels, data, cmap):
 
 
 @memory.cache
-def _helper_getter(path):
-    import glob
+def _dcd_helper_getter(path):
     import os
     df = pd.read_hdf(os.path.join(path, 'all_decoding_results.hdf'))
     df = df.reset_index().set_index(
         ['Classifier', 'epoch', 'est_key', 'latency', 'mc<0.5', 'signal', 'subject', 'area'])
-    return df.unstack('area').T
+    df = df.query('~(signal=="SSD")')
+    df = df.unstack('area').T
+    return df
 
 
-def get_decoding_data(path='/home/nwilming/conf_meg/'):
-    # files = glob.glob(os.path.join(path, 'concat_S*'))
-    # df = pd.concat([pd.read_hdf(f) for f in files])
-    df = _helper_getter(path)
+@memory.cache
+def _ssd_helper_getter(path):
+    import os
+    ssd = pd.read_hdf(os.path.join(path, 'all_ssd_results.hdf'))
+    ssd.loc[:, 'latency'] = np.around(ssd.latency.astype(float), 4)
+    ssd = ssd.reset_index().set_index(
+        ['Classifier', 'epoch', 'est_key', 'latency', 'signal', 'subject', 'sample', 'area'])
+    ssd = ssd.loc[~ssd.index.duplicated(), :]
+    ssd = ssd.unstack('area').T
+
+    return ssd
+
+
+def recode(df):
     dt = []
     areas = []
     for area in df.index.get_level_values('area'):
@@ -899,11 +915,20 @@ def get_decoding_data(path='/home/nwilming/conf_meg/'):
     df = df.swaplevel(1, 2)
     df = df.T
     df.columns.set_levels(areas, level='area', inplace=True)
+    return df
+
+
+def get_decoding_data(path='/home/nwilming/conf_meg/'):
+    # files = glob.glob(os.path.join(path, 'concat_S*'))
+    # df = pd.concat([pd.read_hdf(f) for f in files])
+    df = recode(_dcd_helper_getter(path))
+    ssd = recode(_ssd_helper_getter(path))
+
     idt = df.test_accuracy.index.get_level_values('signal') == 'CONF_signed'
     df.loc[idt, 'test_accuracy'] = (df.loc[idt, 'test_accuracy'] - 0.25).values
     df.loc[~idt, 'test_accuracy'] = (
         df.loc[~idt, 'test_accuracy'] - 0.5).values
-    return df.query('~(subject==6)')
+    return df.query('~(subject==6)'), ssd
 
 
 def plot_signals(data, measure, classifier='svm', ylim=(0.45, 0.75)):
@@ -924,9 +949,30 @@ def plot_by_signal(data, signals={'MIDC_split': '#E9003A', 'MIDC_nosplit': '#FF5
     import seaborn as sns
     idsig = data.index.get_level_values('signal').isin(signals.keys())
     data = data.loc[idsig, :]
-    k = data.groupby(['latency', 'signal']).mean().stack().reset_index()
+    split = data.index.get_level_values('mc<0.5').values.astype(float)
+    
+    nosplit = data.loc[np.isnan(split), :].groupby(
+        ['latency', 'signal']).mean().stack().reset_index()
+    
+    concat_df = [nosplit]
+
+    for split_ind, dsignal in data.loc[~np.isnan(split)].groupby('mc<0.5'):
+        k = dsignal.groupby(['latency', 'signal']
+                            ).mean().stack().reset_index()
+        if not split_ind:
+            k.loc[:, 0] *= -1
+        k.columns = ['latency', 'signal', 'area', split_ind]
+        concat_df.append(k)
+    k = pd.concat(concat_df)
+    
     g = sns.FacetGrid(k, col='signal', col_wrap=2, hue='area', palette='magma')
     g.map(plt.plot, 'latency', 0, alpha=0.8)
+    g.map(plt.plot, 'latency', 1, alpha=0.8)
+
+    #    k = data.groupby(['latency', 'signal']).mean().stack().reset_index()
+    #    g = sns.FacetGrid(k, col='signal', col_wrap=2,
+    #                      hue='area', palette='magma')
+    #    g.map(plt.plot, 'latency', 0, alpha=0.8)
     return g
 
 
@@ -1027,3 +1073,52 @@ def plot_decoding_results(data, signal, area,
     plt.ylabel('')
     # plt.ylim([0.1, 0.9])
     plt.axhline(0.5 + offset, color='k')
+
+
+@memory.cache
+def do_stats(x):
+    from mne.stats import permutation_cluster_1samp_test
+    return permutation_cluster_1samp_test(
+        x, threshold=dict(start=0, step=0.2))
+
+
+def plot_ssd_per_sample(ssd, cmap='magma', alpha=0.05, latency=0.18):
+    import pylab as plt
+    import seaborn as sns
+    sns.set_style('ticks')
+    cmap = plt.get_cmap(cmap)
+    plt.figure(figsize=(6, 3.3))
+    for sample, ds in ssd.test_corr.Average.groupby('sample'):
+        k = ds.groupby(['subject', 'latency']).mean().reset_index()
+        k = pd.pivot_table(ds.reset_index(), columns='latency',
+                           index='subject', values='vfcvisual')
+        baseline = k.loc[:, :0].mean(axis=1)
+        baseline_corrected = k.sub(baseline, axis=0)
+
+        t_obs, clusters, cluster_pv, H0 = do_stats(baseline_corrected.values)
+        plt.plot(k.columns.values + 0.1 * sample,
+                 k.values.mean(0), color=cmap(sample / 10.))
+        sig_x = (k.columns.values + 0.1 * sample)[cluster_pv < alpha]
+        plt.plot(sig_x, sig_x * 0 - 0.0001 *
+                 np.mod(sample, 2), color=cmap(sample / 10))
+        plt.plot([0.1 * sample + latency, 0.1 * sample + latency],
+                 [0, 0.08], color='k', alpha=0.25, zorder=-1)
+    plt.xlabel(r'$time$')
+    plt.ylabel(r'$contrast \sim power$')
+    sns.despine(trim=True)
+    plt.tight_layout()
+    plt.savefig(
+        '/Users/nwilming/Dropbox/UKE/confidence_study/ssd_slopes_corr.svg')
+
+
+def extract_peak_slope(ssd, latency=0.18):
+    ulat = np.unique(ssd.index.get_level_values('latency'))
+    latency = ulat[np.argmin(np.abs(ulat - latency))]
+    print(latency)
+    ssd = ssd.query('latency==%f & Classifier=="Ridge"' %
+                    latency).test_slope.Average.loc[:, 'vfcvisual']
+    return ssd.reset_index().loc[:, ('subject', 'sample', 'vfcvisual')]
+
+
+def extract_kernels():
+    pass

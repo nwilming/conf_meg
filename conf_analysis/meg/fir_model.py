@@ -529,6 +529,7 @@ def contrast_integrated_averages(sa, centers=np.linspace(0.1, 0.9, 5),
     w = width / 2.
     for center in centers:
         idx = ((center - w) < contrast) & (contrast < (center + w))
+        print(sum(idx))
         r = sa.loc[idx, ('contrast', 'power')].mean()
         r.loc['contrast'] = center
         rows.append(r)
