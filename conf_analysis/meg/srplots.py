@@ -62,9 +62,7 @@ def compute_contrast_indices(subjects=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 
 def get_power(subject, session=None, decim=3, F=None,
               folder='/home/nwilming/conf_meg/sr_freq_labeled_three_layer/'):
-    '''
-    Tuning determines which frequency to load
-    '''
+
     from os.path import join
     sstring = join(folder, 'S%i-SESS*-lcmv.hdf' % (subject))
     files = glob(sstring)
