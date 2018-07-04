@@ -60,9 +60,13 @@ n_jobs = 1
 
 
 def submit(cluster='PBS'):
-    decoders = ['MIDC_split', 'MIDC_nosplit',
-                'SIDE_nosplit',
-                'CONF_signed', 'CONF_unsigned']
+    # decoders = ['MIDC_split', 'MIDC_nosplit',
+    #            'SIDE_nosplit',
+    #            'CONF_signed', 'CONF_unsigned']
+    #decoders = ['CONF_unsign_split']
+    decoders = ['SSD_delta_contrast',
+                'SSD_acc_contrast',
+                'SSD_acc_contrast_diff']
     from pymeg import parallel
     if cluster == 'slurm':
         pmap = partial(parallel.pmap, email=None, tasks=1, nodes=1, memory=60,
@@ -70,7 +74,7 @@ def submit(cluster='PBS'):
                        cluster='SLURM')
     else:
         pmap = partial(parallel.pmap, nodes=1, tasks=1, memory=31,
-                       ssh_to=None,  walltime=72, env='py36')
+                       ssh_to=None,  walltime=48, env='py36')
 
     for subject, epoch, decoder in product(range(1, 16),
                                            ['stimulus', 'response'],
@@ -79,9 +83,9 @@ def submit(cluster='PBS'):
              name='DCD' + decoder + epoch + str(subject),
              )
 
-    for subject in range(1, 16):
-        pmap(run_AA, [(subject, 'SSD', 'stimulus')],
-             name='DCDSSDStimulus' + str(subject))
+    # for subject in range(1, 16):
+    #    pmap(run_AA, [(subject, 'SSD', 'stimulus')],
+    #         name='DCDSSDStimulus' + str(subject))
 
 
 def run_AA(subject, decoder, epoch, ntasks=16):
@@ -196,6 +200,12 @@ def run_decoder(subject, decoder, area, epoch, est_key='F', est_vals=[10, 150]):
         meta.loc[:, 'confidence'] == 1).astype(int)
 
     decoders = {'SSD': ssd_decoder,
+                'SSD_delta_contrast': partial(
+                    ssd_decoder, target_value='delta_contrast'),
+                'SSD_acc_contrast': partial(
+                    ssd_decoder, target_value='acc_contrast'),
+                'SSD_acc_contrast_diff': partial(
+                    ssd_decoder, target_value='acc_contrast_diff'),
                 'MIDC_split': partial(midc_decoder, splitmc=True,
                                       target_col='response'),
                 'MIDC_nosplit': partial(midc_decoder, splitmc=False,
@@ -207,10 +217,12 @@ def run_decoder(subject, decoder, area, epoch, est_key='F', est_vals=[10, 150]):
                 'CONF_signed': partial(midc_decoder, splitmc=False,
                                        target_col='signed_confidence'),
                 'CONF_unsigned': partial(midc_decoder, splitmc=False,
-                                         target_col='unsigned_confidence')}
+                                         target_col='unsigned_confidence'),
+                'CONF_unsign_split': partial(midc_decoder, splitmc=True,
+                                             target_col='unsigned_confidence')}
 
     if decoder == 'SSD':
-        latencies = np.arange(-.1, 0.5, dt)
+        latencies = np.arange(-.1, 0.75, dt)
 
     assert(decoder in list(decoders.keys()))
     scores = []
@@ -238,7 +250,7 @@ def run_decoder(subject, decoder, area, epoch, est_key='F', est_vals=[10, 150]):
     return scores
 
 
-def ssd_decoder(meta, data, area, latency=0.18):
+def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
     '''
     Sensory signal decoder (SSD).
 
@@ -279,8 +291,26 @@ def ssd_decoder(meta, data, area, latency=0.18):
         sample_data = pd.concat(X, 1)
         sample_data = sample_data.loc[(slice(None), target_time_points), :]
 
-        # Buld target vector
-        target = np.stack(meta.contrast_probe.values)[:, sample_num]
+        # Build target vector
+        cvals = np.stack(meta.contrast_probe.values)
+        if target_value == 'contrast':
+            target = cvals[:, sample_num]
+        elif target_value == 'delta_contrast':
+            if sample_num == 0:
+                target = cvals[:, sample_num]
+            else:
+                target = cvals[:, sample_num] - cvals[:, sample_num - 1]
+        elif target_value == 'acc_contrast':
+            target = cvals[:, :(sample_num+1)].mean(1)
+        elif target_value == 'acc_contrast_diff':
+            if sample_num == 0:
+                target = cvals[:, sample_num]
+            else:
+                target = cvals[:, sample_num] - \
+                    cvals[:, :(sample_num)].mean(1)
+        else:
+            raise RuntimeError('Do not understand target: %s' % target)
+        import pdb; pdb.set_trace()
 
         metrics = {'explained_variance': 'explained_variance',
                    'r2': 'r2',
