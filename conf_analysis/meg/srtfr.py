@@ -59,7 +59,7 @@ def _eval(func, args, collect=False, **kw):
 
 @memory.cache
 def get_contrasts(contrasts, hemi, subject, session, epoch):
-    contrast = []
+    contrast_store = []
     if hemi == 'lat':
         if subject < 8:
             hemi = 'lh_is_ipsi'
@@ -70,8 +70,8 @@ def get_contrasts(contrasts, hemi, subject, session, epoch):
 
             res = get_contrast(contrast, conditions, weights,
                                hemi, subject, session, epoch, cache)
-            contrast.append(res)
-    return pd.concat(contrast)
+            contrast_store.append(res)
+    return pd.concat(contrast_store)
 
 
 @memory.cache(ignore=['cache'])
