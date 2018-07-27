@@ -326,7 +326,6 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
                     cvals[:, :(sample_num)].mean(1)
         else:
             raise RuntimeError('Do not understand target: %s' % target)
-        import pdb; pdb.set_trace()
 
         metrics = {'explained_variance': 'explained_variance',
                    'r2': 'r2',
