@@ -37,14 +37,20 @@ contrasts = {
 
 def submit_contrasts(collect=False):
     tasks = []
-    for subject in range(1, 2):
+    for subject in [1, 10]:
         for session in range(0, 4):
             tasks.append((contrasts, 'lat', subject, session, 'response'))
             tasks.append((contrasts,  'avg', subject, session, 'response'))
             tasks.append((contrasts, 'lat', subject, session, 'stimulus'))
             tasks.append((contrasts, 'avg', subject, session, 'stimulus'))
-    return [_eval(get_contrasts, task, collect=collect, walltime=2)
-            for task in tasks]
+    res = []
+    for task in tasks:
+        try:
+            r = _eval(get_contrasts, task, collect=collect, walltime=10)
+            res.append(r)
+        except RuntimeError:
+            print('Task', task, ' not available yet')
+    return res
 
 
 def _eval(func, args, collect=False, **kw):
@@ -52,9 +58,16 @@ def _eval(func, args, collect=False, **kw):
     Intermediate helper to toggle cluster vs non cluster
     """
     if not collect:
-        parallel.pmap(get_contrast, [args], **kw)
+        if not func.in_store(*args):
+            print('Submitting %s to %s for parallel execution' %
+                  (str(args), func))
+            parallel.pmap(func, [args], **kw)
     else:
-        return get_contrast(*args)
+        if func.in_store(*args):
+            print('Submitting %s to %s for collection' % (str(args), func))
+            return func(*args)
+        else:
+            raise RuntimeError('Result not available.')
 
 
 @memory.cache
