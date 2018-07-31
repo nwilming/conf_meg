@@ -154,6 +154,17 @@ def _prewarm_side_contrast(sub, epoch='stimulus', baseline_time=(-0.25, 0)):
 def contrast(sub, filter_dict, hand_mapping, contrast,
              epoch='stimulus', baseline_epoch='stimulus',
              baseline_time=(-0.25, 0)):
+    '''
+    Contrast computations.
+
+    When to apply the baseline? At the moment the baseline is applied for each 
+    group. That is, when there are two conditions, each condition is baseline
+    corrected seperatly. 
+
+    Alternatively one could compute the baseline from all trials. This is identical 
+    to the decoding baseline.
+    '''
+
     tfrs = []
 
     trial_list = list(filter_dict.values())
@@ -169,10 +180,7 @@ def contrast(sub, filter_dict, hand_mapping, contrast,
 
     for condition, tfr, base_tfr in zip(condition_names, condition_tfrs, baseline_tfrs):
         tfr.loc[:, 'condition'] = condition
-        # tfr.set_index('condition', append=True, inplace=True)
         base_tfr.loc[:, 'condition'] = condition
-        # base_tfr.set_index('condition', append=True, inplace=True)
-        # Baseline correct here
         tfr = tfr.reset_index().set_index(
             ['sub', 'est_key', 'est_val', 'condition', 'time'])
         base_tfr.set_index('condition', append=True, inplace=True)
@@ -186,7 +194,6 @@ def contrast(sub, filter_dict, hand_mapping, contrast,
             groups.append(group)
 
         tfr = pd.concat(groups)
-        # left, right = rois.lh(tfr.columns), rois.rh(tfr.columns)
         left, right = sorted(rois.lh(tfr.columns)), sorted(
             rois.rh(tfr.columns))
         if len(left) < len(right):
@@ -220,13 +227,101 @@ def contrast(sub, filter_dict, hand_mapping, contrast,
 
         tfrs.append(pd.concat([tfr, lateralized, havg], 1))
     tfrs = pd.concat(tfrs, 0)
-    # cond1 = tfrs.query('condition=="%s"' % contrast[0])
-    # cond2 = tfrs.query('condition=="%s"' % contrast[1])
-    # delta = (cond1.reset_index(level='condition', drop=True) -
-    #         cond2.reset_index(level='condition', drop=True))
-    # delta.loc[:, 'condition'] = 'diff'
-    # delta.set_index('condition', append=True, inplace=True)
-    return tfrs  # pd.concat([tfrs, delta], )
+    return tfrs
+
+
+def new_contrast(sub, filter_dict, hand_mapping, contrast,
+                 epoch='stimulus', baseline_epoch='stimulus',
+                 baseline_time=(-0.25, 0)):
+    '''
+    Contrast computations.
+
+    When to apply the baseline? At the moment the baseline is applied for each
+    group. That is, when there are two conditions, each condition is baseline
+    corrected seperatly.
+
+    Alternatively one could compute the baseline from all trials. This is
+    identical to the decoding baseline.
+    '''
+
+    tfrs = get_baselined_groups(filter_dict, sub, epoch=epoch,
+                                baseline_epoch=baseline_epoch,
+                                baseline_time=baseline_time)
+
+    lat_base = get_baselined_groups(filter_dict, sub, epoch='stimulus',
+                                    baseline_epoch=baseline_epoch,
+                                    baseline_time=baseline_time)
+
+    for (condition, tfr), (_, base_tfr) in zip(tfrs.items(), lat_base.items()):
+
+        left, right = sorted(rois.lh(tfr.columns)), sorted(
+            rois.rh(tfr.columns))
+        if len(left) < len(right):
+            right = sorted(l.replace('lh', 'rh') for l in left)
+        elif len(left) > len(right):
+            left = sorted(l.replace('rh', 'lh') for l in right)
+
+        # Now compute lateralisation
+        if hand_mapping is not None:
+            if hand_mapping[condition] == 'lh_is_ipsi':
+                ipsi, contra = left, right
+            elif hand_mapping[condition] == 'rh_is_ipsi':
+                ipsi, contra = right, left
+            else:
+                raise RuntimeError('Do not understand hand mapping')
+            lateralized = rois.lateralize(tfr, ipsi, contra)
+            base_lateralized = rois.lateralize(base_tfr, ipsi, contra)
+            
+
+        # Averge hemispheres
+        left, right = sorted(rois.lh(tfr.columns)), sorted(
+            rois.rh(tfr.columns))
+        if len(left) > len(right):
+            right = sorted(l.replace('lh', 'rh') for l in left)
+        elif len(left) < len(right):
+            left = sorted(l.replace('rh', 'lh') for l in right)
+        havg = pd.concat(
+            [tfr.loc[:, (x, y)].mean(1) for x, y in zip(left, right)],
+            1)
+        havg.columns = [x + '_Havg' for x in left]
+
+        tfrs.append(pd.concat([tfr, lateralized, havg], 1))
+    tfrs = pd.concat(tfrs, 0)
+    return tfrs
+
+
+def get_baselined_groups(filter_dict, sub, epoch='stimulus',
+                         baseline_epoch='stimulus', baseline_time=(-0.25, 0)):
+    '''
+    Load baselined response groups.
+    '''
+    trial_list = list(filter_dict.values())
+    condition_names = list(filter_dict.keys())
+    # Load data for each condition
+    condition_tfrs, weights = load_sub_grouped_weighted(
+        sub, trial_list, epoch=epoch)
+
+    # Load baseline data
+    all_trials = reduce(lambda x, y: x + y, trial_list)
+    base_tfr, weights = load_sub_grouped_weighted(
+        sub, [all_trials], epoch=baseline_epoch)
+    tfrs = {}
+    for condition, tfr in zip(condition_names, condition_tfrs):
+        tfr.loc[:, 'condition'] = condition
+        base_tfr.loc[:, 'condition'] = condition
+        tfr = tfr.reset_index().set_index(
+            ['sub', 'est_key', 'est_val', 'condition', 'time'])
+        base_tfr.set_index('condition', append=True, inplace=True)
+        groups = []
+        base_tfr = base_tfr.reset_index().set_index(
+            ['sub', 'est_key', 'est_val', 'condition', 'time'])
+        for gp, group in tfr.groupby(['sub', 'est_key',
+                                      'est_val', 'condition']):
+            base = base_tfr.loc[gp, :]
+            group = baseline(group, base, baseline=baseline_time)
+            groups.append(group)
+        tfrs[condition] = pd.concat(groups)
+    return tfrs
 
 
 def load_sub_grouped_weighted(sub, trials, epoch='stimulus'):
@@ -281,15 +376,9 @@ def load_sub_session_grouped(sub, session, trial_list, epoch='stimulus',
     else:
         raise RuntimeError('Do not understand epoch %s' % epoch)
     df = pd.concat([pd.read_hdf(f) for f in filenames])
-    # Has index trial time est_key est_val
-    # df.set_index(['trial', 'time',
-    #              'est_key', 'est_val'], inplace=True)
     if log10:
         df = np.log10(df) * 10
-
-    df = rois.reduce(df).reset_index()  # Reduce to visual clusters
-
-    #all_trials = df.loc[:, 'trial']
+    df = rois.reduce(df).reset_index()
     conditions = []
     weights = []
     stds = []
@@ -336,9 +425,12 @@ def get_tfr_stack(data, area, baseline=None, tslice=slice(-0.25, 1.35)):
 
 
 def get_tfr(data, area, baseline=None, tslice=slice(-0.25, 1.35)):
-    data = data.loc[:, area].dropna()
+    if type(data) == pd.DataFrame:
+        data = data.loc[:, area].dropna()
+    else:
+        data = data.dropna()
     if len(data) == 0:
-        raise ValueError('No data for this %s'%area)
+        raise ValueError('No data for this %s' % area)
     k = pd.pivot_table(data.reset_index(), values=area,
                        index='est_val', columns='time')
     if baseline is not None:
@@ -440,11 +532,11 @@ def plot_labels(data, areas, locations, gs, stats=True, minmax=(10, 20),
             plt.xticks([])
 
 
-def plot_tfr(data, area, ps=None, minmax=None, title_color='k'):
-    tfr = get_tfr(data, area)
-    tfr_values = get_tfr_stack(data, area).mean(0)
-    _plot_tfr(area, tfr.columns.values, tfr.index.values,
-              tfr_values, ps, title_color=title_color, minmax=minmax)
+def plot_tfr(data, area, ps=None, minmax=None, title_color='k', tslice=slice(-0.35, 1.35)):
+    tfr = get_tfr(data, area, tslice=tslice)
+    tfr_values = get_tfr_stack(data, area, tslice=tslice).mean(0)
+    return _plot_tfr(area, tfr.columns.values, tfr.index.values,
+                     tfr_values, ps, title_color=title_color, minmax=minmax)
 
 
 def _plot_tfr(area, columns, index, tfr_values, ps, title_color='k',
@@ -462,27 +554,26 @@ def _plot_tfr(area, columns, index, tfr_values, ps, title_color='k',
 
     plt.gca().xaxis.set_major_locator(plt.MultipleLocator(0.5))
     plt.gca().xaxis.set_minor_locator(plt.MultipleLocator(0.5))
-    sns.despine(ax=plt.gca(), bottom=True)
     cbar = plt.colorbar()
     cbar.set_ticks([np.ceil(-minmax), np.floor(minmax)])
     if ps is not None:
         plt.contour(ps, [0.05], extent=[columns[0], columns[-1], index[0] - di, index[-1] + di],
                     origin='lower')
 
-    tarea = (area
-             .replace('lh.JWDG.', '')
-             .replace('lh.a2009s.', '')
-             .replace('rh.JWDG.', '')
-             .replace('rh.a2009s.', '')
-             .replace('lh.wang2015atlas.', '')
-             .replace('rh.wang2015atlas.', '')
-             .replace('-lh_Lateralized', '')
-             .replace('-lh_Havg', ''))
-
     plt.xlim(columns[0], columns[-1])
     plt.xticks([0])
     if index.max() > 30:
-        plt.title(tarea, color=title_color)
+        if title_color is not None:
+            tarea = (area
+                     .replace('lh.JWDG.', '')
+                     .replace('lh.a2009s.', '')
+                     .replace('rh.JWDG.', '')
+                     .replace('rh.a2009s.', '')
+                     .replace('lh.wang2015atlas.', '')
+                     .replace('rh.wang2015atlas.', '')
+                     .replace('-lh_Lateralized', '')
+                     .replace('-lh_Havg', ''))
+            plt.title(tarea, color=title_color)
         plt.yticks([10,  50, 100,  150])
         plt.ylim([10 - di, 150 + di])
     else:
