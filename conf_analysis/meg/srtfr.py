@@ -20,9 +20,12 @@ import os
 import pandas as pd
 from conf_analysis.meg import preprocessing
 from pymeg.contrast_tfr import Cache, compute_contrast, augment_data
+from pymeg import contrast_tfr
 from pymeg import parallel
 from joblib import Memory
 
+logger = contrast_tfr.logging.getLogger()
+logger.setLevel(contrast_tfr.logging.INFO)
 
 memory = Memory(cachedir=os.environ['PYMEG_CACHE_DIR'], verbose=0)
 
@@ -37,7 +40,7 @@ contrasts = {
 
 def submit_contrasts(collect=False):
     tasks = []
-    for subject in [1, 10]:
+    for subject in [1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15]:
         for session in range(0, 4):
             tasks.append((contrasts, 'lat', subject, session, 'response'))
             tasks.append((contrasts,  'avg', subject, session, 'response'))
@@ -46,7 +49,7 @@ def submit_contrasts(collect=False):
     res = []
     for task in tasks:
         try:
-            r = _eval(get_contrasts, task, collect=collect, walltime=10)
+            r = _eval(get_contrasts, task, collect=collect, walltime=2)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
@@ -65,13 +68,17 @@ def _eval(func, args, collect=False, **kw):
     else:
         if func.in_store(*args):
             print('Submitting %s to %s for collection' % (str(args), func))
-            return func(*args)
+            df = func(*args)
+            df.loc[:, 'epoch'] = args[-1]
+            df.set_index(['epoch', 'cluster'], inplace=True, append=True)
+            return df
         else:
             raise RuntimeError('Result not available.')
 
 
 @memory.cache
 def get_contrasts(contrasts, hemi, subject, session, epoch):
+    print('...')
     contrast_store = []
     if hemi == 'lat':
         if subject < 8:
@@ -89,6 +96,7 @@ def get_contrasts(contrasts, hemi, subject, session, epoch):
 
 @memory.cache(ignore=['cache'])
 def get_contrast(name, conditions, weights, hemi, subject, session, epoch, cache):
+    print('...')
     stim = '/nfs/nwilming/MEG/sr_labeled/S%i-SESS%i-stimulus*.hdf' % (
         subject, session)
     resp = '/nfs/nwilming/MEG/sr_labeled/S%i-SESS%i-response*.hdf' % (
@@ -100,10 +108,10 @@ def get_contrast(name, conditions, weights, hemi, subject, session, epoch, cache
     meta = augment_data(meta, response_left, stimulus)
     if session == 'stimulus':
         contrast = compute_contrast(conditions, weights, hemi, stim, stim,
-                                    meta, (-0.25, 0), n_jobs=15, cache=cache)
+                                    meta, (-0.25, 0), n_jobs=1, cache=cache)
     else:
         contrast = compute_contrast(conditions, weights, hemi, resp, stim,
-                                    meta, (-0.25, 0), n_jobs=15, cache=cache)
+                                    meta, (-0.25, 0), n_jobs=1, cache=cache)
     contrast.loc[:, 'subject'] = subject
     contrast.loc[:, 'session'] = session
     contrast.loc[:, 'contrast'] = name
