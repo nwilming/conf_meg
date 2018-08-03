@@ -48,10 +48,7 @@ def submit_contrasts(collect=False):
     tasks = []
     for subject in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
         for session in range(0, 4):
-            tasks.append((contrasts, 'lat', subject, session, 'response'))
-            tasks.append((contrasts,  'avg', subject, session, 'response'))
-            tasks.append((contrasts, 'lat', subject, session, 'stimulus'))
-            tasks.append((contrasts, 'avg', subject, session, 'stimulus'))
+            tasks.append((contrasts,  subject, session))            
     res = []
     for task in tasks:
         try:
@@ -75,33 +72,19 @@ def _eval(func, args, collect=False, **kw):
         if func.in_store(*args):
             print('Submitting %s to %s for collection' % (str(args), func))
             df = func(*args)
-            df.loc[:, 'epoch'] = args[-1]
-            df.set_index(['epoch', 'cluster'], inplace=True, append=True)
             return df
         else:
             raise RuntimeError('Result not available.')
 
 
-@memory.cache
-def get_contrasts(contrasts, hemi, subject, session, epoch):
-    print('...')
-    contrast_store = []
-    if hemi == 'lat':
-        if subject < 8:
-            hemi = 'lh_is_ipsi'
-        else:
-            hemi = 'rh_is_ipsi'
-    with Cache() as cache:
-        for (contrast, (conditions, weights)) in contrasts.items():
+@memory.cache()
+def get_contrasts(contrasts, subject, session):
 
-            res = get_contrast(contrast, conditions, weights,
-                               hemi, subject, session, epoch, cache)
-            contrast_store.append(res)
-    return pd.concat(contrast_store)
-
-
-@memory.cache(ignore=['cache'])
-def get_contrast(name, conditions, weights, hemi, subject, session, epoch, cache):
+    if subject < 8:
+        hemi = 'lh_is_ipsi'
+    else:
+        hemi = 'rh_is_ipsi'
+    hemis = [hemi, 'avg']
     from os.path import join
     stim = join(data_path, 'sr_labeled/S%i-SESS%i-stimulus*.hdf' % (
         subject, session))
@@ -112,18 +95,21 @@ def get_contrast(name, conditions, weights, hemi, subject, session, epoch, cache
     response_left = meta.response == 1
     stimulus = meta.side == 1
     meta = augment_data(meta, response_left, stimulus)
-    if session == 'stimulus':
-        contrast = compute_contrast(conditions, weights, hemi, stim, stim,
+    cps = []
+    with Cache() as cache:
+        contrast = compute_contrast(contrasts, hemis, stim, stim,
                                     meta, (-0.25, 0), n_jobs=1, cache=cache)
-    else:
-        contrast = compute_contrast(conditions, weights, hemi, resp, stim,
+        contrast.loc[:, 'epoch'] = 'stimulus'
+        cps.append(contrast)
+        contrast = compute_contrast(contrasts, hemis, resp, stim,
                                     meta, (-0.25, 0), n_jobs=1, cache=cache)
+        contrast.loc[:, 'epoch'] = 'response'
+    contrast = pd.concat(cps)
+    del cps
     contrast.loc[:, 'subject'] = subject
     contrast.loc[:, 'session'] = session
-    contrast.loc[:, 'contrast'] = name
-    contrast.loc[:, 'hemi'] = hemi
     contrast.set_index(['subject', 'session', 'contrast',
-                        'hemi'], append=True, inplace=True)
+                        'hemi', 'epoch'], append=True, inplace=True)
     return contrast
 
 
