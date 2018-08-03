@@ -105,7 +105,7 @@ def get_contrast(name, conditions, weights, hemi, subject, session, epoch, cache
     from os.path import join
     stim = join(data_path, 'sr_labeled/S%i-SESS%i-stimulus*.hdf' % (
         subject, session))
-    resp = join(data_path, '/nfs/nwilming/MEG/sr_labeled/S%i-SESS%i-response*.hdf' % (
+    resp = join(data_path, 'sr_labeled/S%i-SESS%i-response*.hdf' % (
         subject, session))
 
     meta = preprocessing.get_meta_for_subject(subject, 'stimulus')
