@@ -27,6 +27,12 @@ from joblib import Memory
 logger = contrast_tfr.logging.getLogger()
 logger.setLevel(contrast_tfr.logging.INFO)
 
+
+if 'TMPDIR' in os.environ.keys():
+    data_path = '/nfs/nwilming/MEG/'
+else:
+    data_path = '/home/nwilming/conf_meg/'
+
 memory = Memory(cachedir=os.environ['PYMEG_CACHE_DIR'], verbose=0)
 
 
@@ -40,7 +46,7 @@ contrasts = {
 
 def submit_contrasts(collect=False):
     tasks = []
-    for subject in [1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15]:
+    for subject in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
         for session in range(0, 4):
             tasks.append((contrasts, 'lat', subject, session, 'response'))
             tasks.append((contrasts,  'avg', subject, session, 'response'))
@@ -96,11 +102,11 @@ def get_contrasts(contrasts, hemi, subject, session, epoch):
 
 @memory.cache(ignore=['cache'])
 def get_contrast(name, conditions, weights, hemi, subject, session, epoch, cache):
-    print('...')
-    stim = '/nfs/nwilming/MEG/sr_labeled/S%i-SESS%i-stimulus*.hdf' % (
-        subject, session)
-    resp = '/nfs/nwilming/MEG/sr_labeled/S%i-SESS%i-response*.hdf' % (
-        subject, session)
+    from os.path import join
+    stim = join(data_path, 'sr_labeled/S%i-SESS%i-stimulus*.hdf' % (
+        subject, session))
+    resp = join(data_path, '/nfs/nwilming/MEG/sr_labeled/S%i-SESS%i-response*.hdf' % (
+        subject, session))
 
     meta = preprocessing.get_meta_for_subject(subject, 'stimulus')
     response_left = meta.response == 1
