@@ -23,9 +23,11 @@ from pymeg.contrast_tfr import Cache, compute_contrast, augment_data
 from pymeg import contrast_tfr
 from pymeg import parallel
 from joblib import Memory
+import logging
 
+logging.getLogger().setLevel(logging.INFO)
 logger = contrast_tfr.logging.getLogger()
-logger.setLevel(contrast_tfr.logging.INFO)
+logger.setLevel(logging.INFO)
 
 
 if 'TMPDIR' in os.environ.keys():
@@ -50,9 +52,9 @@ def submit_contrasts(collect=False):
         for session in range(0, 4):
             tasks.append((contrasts,  subject, session))
     res = []
-    for task in tasks[2:3]:
+    for task in tasks:
         try:
-            r = _eval(get_contrasts, task, collect=collect, walltime=2)
+            r = _eval(get_contrasts, task, collect=collect, walltime='45:00', memory=50)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
@@ -78,7 +80,7 @@ def _eval(func, args, collect=False, **kw):
 
 
 @memory.cache(ignore=['scratch'])
-def get_contrasts(contrasts, subject, session, scratch=False):
+def get_contrasts(contrasts, subject, session, scratch=True):
 
     if subject < 8:
         hemi = 'lh_is_ipsi'
@@ -97,11 +99,13 @@ def get_contrasts(contrasts, subject, session, scratch=False):
         tmpdir = os.environ['TMPDIR']
         command = ('cp {stim} {tmpdir} & cp {resp} {tmpdir}'
                    .format(stim=stim, resp=resp, tmpdir=tmpdir))
+        logging.info('Copying data with following command: %s'%command)
         p = run(command, shell=True, check=True)
         stim = join(data_path, tmpdir, 'S%i-SESS%i-stimulus*.hdf' % (
             subject, session))
         resp = join(data_path, tmpdir, 'S%i-SESS%i-response*.hdf' % (
             subject, session))
+        logging.info('Copied data')
 
     meta = preprocessing.get_meta_for_subject(subject, 'stimulus')
     response_left = meta.response == 1
