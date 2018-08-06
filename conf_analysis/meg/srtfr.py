@@ -20,9 +20,20 @@ import os
 import pandas as pd
 from conf_analysis.meg import preprocessing
 from pymeg.contrast_tfr import Cache, compute_contrast, augment_data
+from pymeg import contrast_tfr
 from pymeg import parallel
 from joblib import Memory
+import logging
 
+logging.getLogger().setLevel(logging.INFO)
+logger = contrast_tfr.logging.getLogger()
+logger.setLevel(logging.INFO)
+
+
+if 'TMPDIR' in os.environ.keys():
+    data_path = '/nfs/nwilming/MEG/'
+else:
+    data_path = '/home/nwilming/conf_meg/'
 
 memory = Memory(cachedir=os.environ['PYMEG_CACHE_DIR'], verbose=0)
 
@@ -38,16 +49,13 @@ contrasts = {
 
 def submit_contrasts(collect=False):
     tasks = []
-    for subject in [1, 10]:
+    for subject in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
         for session in range(0, 4):
-            tasks.append((contrasts, 'lat', subject, session, 'response'))
-            tasks.append((contrasts,  'avg', subject, session, 'response'))
-            tasks.append((contrasts, 'lat', subject, session, 'stimulus'))
-            tasks.append((contrasts, 'avg', subject, session, 'stimulus'))
+            tasks.append((contrasts,  subject, session))
     res = []
     for task in tasks:
         try:
-            r = _eval(get_contrasts, task, collect=collect, walltime=10)
+            r = _eval(get_contrasts, task, collect=collect, walltime='45:00', memory=50)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
@@ -66,51 +74,59 @@ def _eval(func, args, collect=False, **kw):
     else:
         if func.in_store(*args):
             print('Submitting %s to %s for collection' % (str(args), func))
-            return func(*args)
+            df = func(*args)
+            return df
         else:
             raise RuntimeError('Result not available.')
 
 
-@memory.cache
-def get_contrasts(contrasts, hemi, subject, session, epoch):
-    contrast_store = []
-    if hemi == 'lat':
-        if subject < 8:
-            hemi = 'lh_is_ipsi'
-        else:
-            hemi = 'rh_is_ipsi'
-    with Cache() as cache:
-        for (contrast, (conditions, weights)) in contrasts.items():
+@memory.cache(ignore=['scratch'])
+def get_contrasts(contrasts, subject, session, scratch=True):
 
-            res = get_contrast(contrast, conditions, weights,
-                               hemi, subject, session, epoch, cache)
-            contrast_store.append(res)
-    return pd.concat(contrast_store)
+    if subject < 8:
+        hemi = 'lh_is_ipsi'
+    else:
+        hemi = 'rh_is_ipsi'
+    hemis = [hemi, 'avg']
+    from os.path import join
+    stim = join(data_path, 'sr_labeled/S%i-SESS%i-stimulus*.hdf' % (
+        subject, session))
+    resp = join(data_path, 'sr_labeled/S%i-SESS%i-response*.hdf' % (
+        subject, session))
 
-
-@memory.cache(ignore=['cache'])
-def get_contrast(name, conditions, weights, hemi, subject, session, epoch, cache):
-    stim = '/nfs/nwilming/MEG/sr_labeled/S%i-SESS%i-stimulus*.hdf' % (
-        subject, session)
-    resp = '/nfs/nwilming/MEG/sr_labeled/S%i-SESS%i-response*.hdf' % (
-        subject, session)
+    if scratch:
+        from subprocess import run
+        import os
+        tmpdir = os.environ['TMPDIR']
+        command = ('cp {stim} {tmpdir} & cp {resp} {tmpdir}'
+                   .format(stim=stim, resp=resp, tmpdir=tmpdir))
+        logging.info('Copying data with following command: %s'%command)
+        p = run(command, shell=True, check=True)
+        stim = join(data_path, tmpdir, 'S%i-SESS%i-stimulus*.hdf' % (
+            subject, session))
+        resp = join(data_path, tmpdir, 'S%i-SESS%i-response*.hdf' % (
+            subject, session))
+        logging.info('Copied data')
 
     meta = preprocessing.get_meta_for_subject(subject, 'stimulus')
     response_left = meta.response == 1
     stimulus = meta.side == 1
     meta = augment_data(meta, response_left, stimulus)
-    if session == 'stimulus':
-        contrast = compute_contrast(conditions, weights, hemi, stim, stim,
-                                    meta, (-0.25, 0), n_jobs=15, cache=cache)
-    else:
-        contrast = compute_contrast(conditions, weights, hemi, resp, stim,
-                                    meta, (-0.25, 0), n_jobs=15, cache=cache)
+    cps = []
+    with Cache() as cache:
+        contrast = compute_contrast(contrasts, hemis, stim, stim,
+                                    meta, (-0.25, 0), n_jobs=1, cache=cache)
+        contrast.loc[:, 'epoch'] = 'stimulus'
+        cps.append(contrast)
+        contrast = compute_contrast(contrasts, hemis, resp, stim,
+                                    meta, (-0.25, 0), n_jobs=1, cache=cache)
+        contrast.loc[:, 'epoch'] = 'response'
+    contrast = pd.concat(cps)
+    del cps
     contrast.loc[:, 'subject'] = subject
     contrast.loc[:, 'session'] = session
-    contrast.loc[:, 'contrast'] = name
-    contrast.loc[:, 'hemi'] = hemi
     contrast.set_index(['subject', 'session', 'contrast',
-                        'hemi'], append=True, inplace=True)
+                        'hemi', 'epoch'], append=True, inplace=True)
     return contrast
 
 
