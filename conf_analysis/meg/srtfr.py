@@ -48,9 +48,9 @@ def submit_contrasts(collect=False):
     tasks = []
     for subject in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
         for session in range(0, 4):
-            tasks.append((contrasts,  subject, session))            
+            tasks.append((contrasts,  subject, session))
     res = []
-    for task in tasks:
+    for task in tasks[2:3]:
         try:
             r = _eval(get_contrasts, task, collect=collect, walltime=2)
             res.append(r)
@@ -77,8 +77,8 @@ def _eval(func, args, collect=False, **kw):
             raise RuntimeError('Result not available.')
 
 
-@memory.cache()
-def get_contrasts(contrasts, subject, session):
+@memory.cache(ignore=['scratch'])
+def get_contrasts(contrasts, subject, session, scratch=False):
 
     if subject < 8:
         hemi = 'lh_is_ipsi'
@@ -90,6 +90,18 @@ def get_contrasts(contrasts, subject, session):
         subject, session))
     resp = join(data_path, 'sr_labeled/S%i-SESS%i-response*.hdf' % (
         subject, session))
+
+    if scratch:
+        from subprocess import run
+        import os
+        tmpdir = os.environ['TMPDIR']
+        command = ('cp {stim} {tmpdir} & cp {resp} {tmpdir}'
+                   .format(stim=stim, resp=resp, tmpdir=tmpdir))
+        p = run(command, shell=True, check=True)
+        stim = join(data_path, tmpdir, 'S%i-SESS%i-stimulus*.hdf' % (
+            subject, session))
+        resp = join(data_path, tmpdir, 'S%i-SESS%i-response*.hdf' % (
+            subject, session))
 
     meta = preprocessing.get_meta_for_subject(subject, 'stimulus')
     response_left = meta.response == 1
