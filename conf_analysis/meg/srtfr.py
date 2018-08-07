@@ -120,6 +120,7 @@ def get_contrasts(contrasts, subject, session, scratch=True):
         contrast = compute_contrast(contrasts, hemis, resp, stim,
                                     meta, (-0.25, 0), n_jobs=1, cache=cache)
         contrast.loc[:, 'epoch'] = 'response'
+        cps.append(contrast)
     contrast = pd.concat(cps)
     del cps
     contrast.loc[:, 'subject'] = subject
