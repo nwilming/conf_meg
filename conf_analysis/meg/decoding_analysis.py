@@ -317,7 +317,7 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
             else:
                 target = cvals[:, sample_num] - cvals[:, sample_num - 1]
         elif target_value == 'acc_contrast':
-            target = cvals[:, :(sample_num+1)].mean(1)
+            target = cvals[:, :(sample_num + 1)].mean(1)
         elif target_value == 'acc_contrast_diff':
             if sample_num == 0:
                 target = cvals[:, sample_num]
@@ -631,6 +631,41 @@ def get_path(epoch, subject, session, cache=False):
                 path, 'S%i-SESS%i-response-lcmv.hdf' % (
                     subject, session))
     return filenames
+
+
+def aggregate_files(globstring, hemis):
+    from glob import glob
+    tfr_data = pd.concat([pd.read_hdf(f) for f in glob(globstring)])
+    return new_aggregates(tfr_data, hemis)
+
+
+def new_aggregates(tfr_data, hemis):
+    """Aggregate individual areas into clusters.
+    """
+    from pymeg import atlas_glasser
+    all_clusters, _, _, _ = atlas_glasser.get_clusters()
+    cluster_contrasts = []
+    for hemi, cluster in product(hemis, all_clusters.keys()):
+        tfrs_rh = [area for area in all_clusters[cluster] if 'rh' in area]
+        tfrs_lh = [area for area in all_clusters[cluster] if 'lh' in area]
+
+        left = tfr_data.loc[:, tfrs_lh].groupby(
+            ['freq', 'area', 'time', 'trial']).mean().mean(1)
+        right = tfr_data.loc[:, tfrs_rh].groupby(
+            ['freq', 'area', 'time', 'trial']).mean().mean(1)
+
+        hemi_name = 'Lateralized'
+        if hemi == 'lh_is_ipsi':
+            tfrs = left - right
+        elif hemi == 'rh_is_ipsi':
+            tfrs = right - left
+        else:
+            hemi_name = 'Averaged'
+            tfrs = (right + left) / 2
+        tfrs.loc[:, 'cluster'] = cluster
+        tfrs.loc[:, 'hemi'] = hemi_name
+        cluster_contrasts.append(tfrs)
+    return pd.concat(cluster_contrasts)
 
 
 def get_all_areas(subject, session, epoch='stimulus', time=(-1.5, 1),
@@ -979,10 +1014,10 @@ def plot_by_signal(data, signals={'MIDC_split': '#E9003A', 'MIDC_nosplit': '#FF5
     idsig = data.index.get_level_values('signal').isin(signals.keys())
     data = data.loc[idsig, :]
     split = data.index.get_level_values('mc<0.5').values.astype(float)
-    
+
     nosplit = data.loc[np.isnan(split), :].groupby(
         ['latency', 'signal']).mean().stack().reset_index()
-    
+
     concat_df = [nosplit]
 
     for split_ind, dsignal in data.loc[~np.isnan(split)].groupby('mc<0.5'):
@@ -993,7 +1028,7 @@ def plot_by_signal(data, signals={'MIDC_split': '#E9003A', 'MIDC_nosplit': '#FF5
         k.columns = ['latency', 'signal', 'area', split_ind]
         concat_df.append(k)
     k = pd.concat(concat_df)
-    
+
     g = sns.FacetGrid(k, col='signal', col_wrap=2, hue='area', palette='magma')
     g.map(plt.plot, 'latency', 0, alpha=0.8)
     g.map(plt.plot, 'latency', 1, alpha=0.8)
