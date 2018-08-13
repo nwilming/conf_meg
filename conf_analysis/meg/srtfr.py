@@ -49,12 +49,13 @@ contrasts = {
 def submit_contrasts(collect=False):
     tasks = []
     for subject in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
-        for session in range(0, 4):
-            tasks.append((contrasts,  subject, session))
+        # for session in range(0, 4):
+        tasks.append((contrasts,  subject))
     res = []
     for task in tasks:
         try:
-            r = _eval(get_contrasts, task, collect=collect, walltime='45:00', memory=50)
+            r = _eval(get_contrasts, task, collect=collect,
+                      walltime='01:30:00', memory=60)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
@@ -80,7 +81,8 @@ def _eval(func, args, collect=False, **kw):
 
 
 @memory.cache(ignore=['scratch'])
-def get_contrasts(contrasts, subject, session, scratch=True):
+def get_contrasts(contrasts, subject, baseline_per_condition=False,
+                  scratch=False):
 
     if subject < 8:
         hemi = 'lh_is_ipsi'
@@ -88,10 +90,12 @@ def get_contrasts(contrasts, subject, session, scratch=True):
         hemi = 'rh_is_ipsi'
     hemis = [hemi, 'avg']
     from os.path import join
-    stim = join(data_path, 'sr_labeled/S%i-SESS%i-stimulus*.hdf' % (
-        subject, session))
-    resp = join(data_path, 'sr_labeled/S%i-SESS%i-response*.hdf' % (
-        subject, session))
+    stim, resp = [], []
+    for session in range(0, 4):
+        stim.append(join(data_path, 'sr_labeled/S%i-SESS%i-stimulus*.hdf' % (
+            subject, session)))
+        resp.append(join(data_path, 'sr_labeled/S%i-SESS%i-response*.hdf' % (
+            subject, session)))
 
     if scratch:
         from subprocess import run
@@ -99,7 +103,7 @@ def get_contrasts(contrasts, subject, session, scratch=True):
         tmpdir = os.environ['TMPDIR']
         command = ('cp {stim} {tmpdir} & cp {resp} {tmpdir}'
                    .format(stim=stim, resp=resp, tmpdir=tmpdir))
-        logging.info('Copying data with following command: %s'%command)
+        logging.info('Copying data with following command: %s' % command)
         p = run(command, shell=True, check=True)
         stim = join(data_path, tmpdir, 'S%i-SESS%i-stimulus*.hdf' % (
             subject, session))
@@ -113,19 +117,25 @@ def get_contrasts(contrasts, subject, session, scratch=True):
     meta = augment_data(meta, response_left, stimulus)
     cps = []
     with Cache() as cache:
-        contrast = compute_contrast(contrasts, hemis, stim, stim,
-                                    meta, (-0.25, 0), n_jobs=1, cache=cache)
+        contrast = compute_contrast(
+            contrasts, hemis, stim, stim,
+            meta, (-0.25, 0),
+            baseline_per_condition=baseline_per_condition,
+            n_jobs=1, cache=cache)
         contrast.loc[:, 'epoch'] = 'stimulus'
         cps.append(contrast)
-        contrast = compute_contrast(contrasts, hemis, resp, stim,
-                                    meta, (-0.25, 0), n_jobs=1, cache=cache)
+        contrast = compute_contrast(
+            contrasts, hemis, resp, stim,
+            meta, (-0.25, 0),
+            baseline_per_condition=baseline_per_condition,
+            n_jobs=1, cache=cache)
         contrast.loc[:, 'epoch'] = 'response'
         cps.append(contrast)
     contrast = pd.concat(cps)
     del cps
     contrast.loc[:, 'subject'] = subject
-    contrast.loc[:, 'session'] = session
-    contrast.set_index(['subject', 'session', 'contrast',
+    #contrast.loc[:, 'session'] = session
+    contrast.set_index(['subject',  'contrast',
                         'hemi', 'epoch'], append=True, inplace=True)
     return contrast
 
