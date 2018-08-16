@@ -55,7 +55,7 @@ def submit_contrasts(collect=False):
     for task in tasks:
         try:
             r = _eval(get_contrasts, task, collect=collect,
-                      walltime='01:30:00', memory=60)
+                      walltime='01:30:00', tasks=3, memory=60)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
