@@ -33,7 +33,7 @@ def submit():
     from itertools import product
     for subject, session, epoch, signal in product(
             range(1, 16), range(4), ['stimulus', 'response'],
-            ['F']):
+            ['LF']):
 
         parallel.pmap(
             extract, [(subject, session, epoch, signal)],
@@ -128,7 +128,7 @@ def extract(subject, session, epoch_type='stimulus', signal_type='BB',
 
     # Now chunk Reconstruction into blocks of ~100 trials to save Memory
     fois = np.arange(10, 150, 5)
-    lfois = np.arange(1, 15, 2)
+    lfois = np.arange(1, 10, 1)
     tfr_params = {
         'F': {'foi': fois, 'cycles': fois * 0.1, 'time_bandwidth': 2,
               'n_jobs': 1, 'est_val': fois, 'est_key': 'F'},
