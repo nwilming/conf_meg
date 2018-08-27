@@ -32,12 +32,12 @@ def submit():
     from pymeg import parallel
     from itertools import product
     for subject, session, epoch, signal in product(
-            range(1, 16), range(4), ['stimulus', 'response'],
+            [3,6,7,8,15], range(4), ['stimulus', 'response'],
             ['LF']):
 
         parallel.pmap(
             extract, [(subject, session, epoch, signal)],
-            walltime=10, memory=40, nodes=1, tasks=4,
+            walltime='10:00:00', memory=40, nodes=1, tasks=4,
             name='SR' + str(subject) + '_' + str(session) + epoch,
             ssh_to=None)
 

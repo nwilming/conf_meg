@@ -35,7 +35,7 @@ if 'TMPDIR' in os.environ.keys():
 else:
     data_path = '/home/nwilming/conf_meg/'
 
-memory = Memory(cachedir=os.environ['PYMEG_CACHE_DIR'], verbose=0)
+memory = Memory(location=os.environ['PYMEG_CACHE_DIR'], verbose=0)
 
 
 contrasts = {
@@ -134,7 +134,7 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False,
     contrast = pd.concat(cps)
     del cps
     contrast.loc[:, 'subject'] = subject
-    #contrast.loc[:, 'session'] = session
+
     contrast.set_index(['subject',  'contrast',
                         'hemi', 'epoch'], append=True, inplace=True)
     return contrast
