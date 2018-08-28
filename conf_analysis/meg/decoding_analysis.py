@@ -32,14 +32,15 @@ from conf_analysis.meg import preprocessing
 
 from pymeg import roi_clusters as rois
 
+
 from joblib import Memory
 
-if 'RRZ_LOCAL_TMPDIR' in os.environ.keys():
-    memory = Memory(cachedir=os.environ['RRZ_LOCAL_TMPDIR'])
+if 'TMPDIR' in os.environ.keys():
+    memory = Memory(cachedir=os.environ['TMPDIR'])
     inpath = '/nfs/nwilming/MEG/sr_labeled/aggs'
     outpath = '/nfs/nwilming/MEG/sr_decoding/'
-if 'TMPDIR' in os.environ.keys():
-    tmpdir = os.environ['TMPDIR']
+elif 'RRZ_LOCAL_TMPDIR' in os.environ.keys():
+    tmpdir = os.environ['RRZ_LOCAL_TMPDIR']
     outpath = '/work/faty014/MEG/sr_labeled/aggs/'
     outpath = '/work/faty014/MEG/sr_decoding/'
     memory = Memory(cachedir=tmpdir)
@@ -91,15 +92,20 @@ def decoders():
                                          target_col='unsigned_confidence')}
 
 
+def set_n_threads(n):
+    import os
+    os.environ['OPENBLAS_NUM_THREADS'] = str(n)
+    os.environ['MKL_NUM_THREADS'] = str(n)
+    os.environ['OMP_NUM_THREADS'] = str(n)
+
+
 def submit(cluster='PBS'):
+    from pymeg import parallel
     # decoders = ['MIDC_split', 'MIDC_nosplit',
     #            'SIDE_nosplit',
     #            'CONF_signed', 'CONF_unsigned']
     # decoders = ['CONF_unsign_split']
-    decoders = ['SSD_delta_contrast',
-                'SSD_acc_contrast',
-                'SSD_acc_contrast_diff']
-    from pymeg import parallel
+    decoder = decoders().keys()
     if cluster == 'slurm':
         pmap = partial(parallel.pmap, email=None, tasks=1, nodes=1, memory=60,
                        ssh_to=None, home='/work/faty014', walltime='11:50:55',
@@ -108,11 +114,11 @@ def submit(cluster='PBS'):
         pmap = partial(parallel.pmap, nodes=1, tasks=1, memory=31,
                        ssh_to=None,  walltime='48:00:00', env='py36')
 
-    for subject, epoch, decoder in product(range(1, 16),
-                                           ['stimulus', 'response'],
-                                           decoders):
-        pmap(run_AA, [(subject, decoder, epoch)],
-             name='DCD' + decoder + epoch + str(subject),
+    for subject, epoch, dcd in product(range(1, 16),
+                                       ['stimulus', 'response'],
+                                       decoder):
+        pmap(run_decoder, [(subject, dcd, epoch)],
+             name='DCD' + dcd + epoch + str(subject),
              )
 
     # for subject in range(1, 16):
@@ -136,6 +142,7 @@ def augment_meta(meta):
 
 def run_decoder(subject, decoder, epoch, ntasks=16,
                 hemis=['Lateralized', 'Averaged', 'Pair']):
+    set_n_threads(1)
     from multiprocessing import Pool
     from glob import glob
     from pymeg import atlas_glasser, aggregate_sr as asr
@@ -235,73 +242,73 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
 
     from sklearn.metrics import make_scorer
     from scipy.stats import linregress
-    slope_scorer=make_scorer(lambda x, y: linregress(x, y)[0])
-    corr_scorer=make_scorer(lambda x, y: np.corrcoef(x, y)[0, 1])
-    meta=meta.set_index('hash')
-    sample_scores=[]
+    slope_scorer = make_scorer(lambda x, y: linregress(x, y)[0])
+    corr_scorer = make_scorer(lambda x, y: np.corrcoef(x, y)[0, 1])
+    meta = meta.set_index('hash')
+    sample_scores = []
 
     for sample_num, sample in enumerate(np.arange(0, 1, 0.1)):
         # Map sample times to existing time points in data
-        target_time_point=sample + latency
-        times=data.columns.get_level_values('time').values
-        target_time_point=times[np.argmin(abs(times - target_time_point))]
+        target_time_point = sample + latency
+        times = data.columns.get_level_values('time').values
+        target_time_point = times[np.argmin(abs(times - target_time_point))]
 
         # Compute mean latency
-        latency=target_time_point - sample
+        latency = target_time_point - sample
 
         # Turn data into (trial X Frequency)
-        X=[]
+        X = []
         for a in ensure_iter(area):
-            x=pd.pivot_table(data.query('cluster=="%s"' % a), index='trial',
+            x = pd.pivot_table(data.query('cluster=="%s"' % a), index='trial',
                                columns='freq', values=target_time_point)
             X.append(x)
-        sample_data=pd.concat(X, 1)
+        sample_data = pd.concat(X, 1)
 
         # Build target vector
-        cvals=np.stack(meta.loc[sample_data.index, 'contrast_probe'].values)
+        cvals = np.stack(meta.loc[sample_data.index, 'contrast_probe'].values)
         if target_value == 'contrast':
-            target=cvals[:, sample_num]
+            target = cvals[:, sample_num]
         elif target_value == 'delta_contrast':
             if sample_num == 0:
-                target=cvals[:, sample_num]
+                target = cvals[:, sample_num]
             else:
-                target=cvals[:, sample_num] - cvals[:, sample_num - 1]
+                target = cvals[:, sample_num] - cvals[:, sample_num - 1]
         elif target_value == 'acc_contrast':
-            target=cvals[:, :(sample_num + 1)].mean(1)
+            target = cvals[:, :(sample_num + 1)].mean(1)
         elif target_value == 'acc_contrast_diff':
             if sample_num == 0:
-                target=cvals[:, sample_num]
+                target = cvals[:, sample_num]
             else:
-                target=cvals[:, sample_num] - \
+                target = cvals[:, sample_num] - \
                     cvals[:, :(sample_num)].mean(1)
         else:
             raise RuntimeError('Do not understand target: %s' % target)
 
-        metrics={'explained_variance': 'explained_variance',
+        metrics = {'explained_variance': 'explained_variance',
                    'r2': 'r2',
                    'slope': slope_scorer,
                    'corr': corr_scorer}
 
-        classifiers={
+        classifiers = {
             'OLS': linear_model.LinearRegression(),
             'Ridge': linear_model.RidgeCV()}
 
         for name, clf in list(classifiers.items()):
-            clf=Pipeline([
+            clf = Pipeline([
                 ('Scaling', StandardScaler()),
                 (name, clf)
             ])
-            score=cross_validate(clf, sample_data.values, target,
+            score = cross_validate(clf, sample_data.values, target,
                                    cv=10, scoring=metrics,
                                    return_train_score=False,
                                    n_jobs=n_jobs)
             # fit = clf(sample_data.values, target)
             del score['fit_time']
             del score['score_time']
-            score={k: np.mean(v) for k, v in list(score.items())}
-            score['latency']=latency
-            score['Classifier']=name
-            score['sample']=sample_num
+            score = {k: np.mean(v) for k, v in list(score.items())}
+            score['latency'] = latency
+            score['Classifier'] = name
+            score['sample'] = sample_num
             # score['coefs'] = fit.coef_.astype(object)
             sample_scores.append(score)
 
@@ -327,42 +334,42 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
     signals, and to 'Lateralized' for motor dependent choice signals
     (MDDC).
     '''
-    meta=meta.set_index('hash')
+    meta = meta.set_index('hash')
     # Map to nearest time point in data
-    times=data.columns.get_level_values('time').values
-    target_time_point=times[np.argmin(abs(times - latency))]
+    times = data.columns.get_level_values('time').values
+    target_time_point = times[np.argmin(abs(times - latency))]
     logging.info('Selecting next available time point: %02.2f' %
                  target_time_point)
-    data=data.loc[:, target_time_point]
+    data = data.loc[:, target_time_point]
 
     # Turn data into (trial X Frequency)
-    X=[]
+    X = []
     for a in ensure_iter(area):
-        x=pd.pivot_table(data.query('cluster=="%s"' % a), index='trial',
+        x = pd.pivot_table(data.query('cluster=="%s"' % a), index='trial',
                            columns='freq', values=target_time_point)
         X.append(x)
-    data=pd.concat(X, 1)
-    meta=meta.loc[data.index, :]
-    scores=[]
+    data = pd.concat(X, 1)
+    meta = meta.loc[data.index, :]
+    scores = []
     if splitmc:
         for mc, sub_meta in meta.groupby(meta.mc < 0.5):
             # Align data and meta
             # sub_meta = meta
             # sub_data = data
 
-            sub_data=data.loc[sub_meta.index, :]
-            sub_meta=sub_meta.loc[sub_data.index, :]
+            sub_data = data.loc[sub_meta.index, :]
+            sub_meta = sub_meta.loc[sub_data.index, :]
             # Buld target vector
-            target=(sub_meta.loc[sub_data.index, target_col]).astype(int)
+            target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
             logging.info('Class balance: %0.2f, Nr. of samples: %i' % ((target == 1).astype(
                 float).mean(), len(target)))
-            score=categorize(target, sub_data, target_time_point)
-            score.loc[:, 'mc<0.5']=mc
+            score = categorize(target, sub_data, target_time_point)
+            score.loc[:, 'mc<0.5'] = mc
             scores.append(score)
         return pd.concat(scores)
     else:
         # Buld target vector
-        target=(meta.loc[data.index, target_col]).astype(int)
+        target = (meta.loc[data.index, target_col]).astype(int)
         logging.info('Class balance: %0.2f, Nr. of samples: %i' % ((target == 1).astype(
             float).mean(), len(target)))
 
@@ -390,12 +397,12 @@ def categorize(target, data, latency):
     if not all(target.index.values == data.index.values):
         raise RuntimeError('Target and data not aligned with same index.')
 
-    target=target.values
-    data=data.values
+    target = target.values
+    data = data.values
     # Determine prediction target:
-    y_type=type_of_target(target)
+    y_type = type_of_target(target)
     if y_type == 'multiclass':
-        metrics={'roc_auc': make_scorer(multiclass_roc,
+        metrics = {'roc_auc': make_scorer(multiclass_roc,
                                           average='weighted'),
                    'accuracy': 'accuracy'}
         #'recall': make_scorer(recall_score,
@@ -403,32 +410,32 @@ def categorize(target, data, latency):
         #'precision': make_scorer(precision_score,
         #                         average='weighted')}
     else:
-        metrics=['roc_auc', 'accuracy', 'precision', 'recall']
-    classifiers={
+        metrics = ['roc_auc', 'accuracy', 'precision', 'recall']
+    classifiers = {
         'SCVrbf': svm.SVC(kernel='rbf'),
         'SCVlin': svm.SVC(kernel='linear'),
         'LDA': discriminant_analysis.LinearDiscriminantAnalysis(
             shrinkage='auto', solver='eigen'),
         'RForest': RandomForestClassifier()}
 
-    scores=[]
+    scores = []
     for name, clf in list(classifiers.items()):
-        clf=Pipeline([
+        clf = Pipeline([
             ('Scaling', StandardScaler()),
             #('PCA', PCA(n_components=20)),
             ('Upsampler', RandomOverSampler(sampling_strategy='minority')),
             (name, clf)
         ])
         # print('Running', name)
-        score=cross_validate(clf, data, target,
+        score = cross_validate(clf, data, target,
                                cv=10, scoring=metrics,
                                return_train_score=False,
                                n_jobs=n_jobs)
         del score['fit_time']
         del score['score_time']
-        score={k: np.mean(v) for k, v in list(score.items())}
-        score['latency']=latency
-        score['Classifier']=name
+        score = {k: np.mean(v) for k, v in list(score.items())}
+        score['latency'] = latency
+        score['Classifier'] = name
         scores.append(score)
     return pd.DataFrame(scores)
 
@@ -446,27 +453,27 @@ def get_tableau(meta, dresp, areas={'lh': 'M1-lh', 'rh': 'M1-rh'},
     Computes the response lateralization 'Tableau', i.e. Hemishphere*response
     plot.s
     '''
-    rois=list(areas.values()) + ['time', 'trial', 'est_key', 'est_val']
+    rois = list(areas.values()) + ['time', 'trial', 'est_key', 'est_val']
     import pylab as plt
     # dresp = dresp.reset_index().loc[:, rois].query('est_key=="F"')
     # dresp.set_index(['trial', 'time', 'est_key', 'est_val'], inplace=True)
-    dresp=dresp.reset_index().set_index('trial')
+    dresp = dresp.reset_index().set_index('trial')
     plt.clf()
 
-    meta=meta.loc[np.unique(dresp.index.values), :]
+    meta = meta.loc[np.unique(dresp.index.values), :]
     for i, (resp, area) in enumerate(zip(options,
                                          [areas['lh'], areas['rh'],
                                           areas['lh'], areas['rh']])):
         plt.subplot(2, 2, i + 1)
 
-        index=meta.query('%s==%i' % (field, resp)).index
-        data=dresp.loc[index, :]
+        index = meta.query('%s==%i' % (field, resp)).index
+        data = dresp.loc[index, :]
 
-        k=pd.pivot_table(data, values=area,
+        k = pd.pivot_table(data, values=area,
                            index='est_val', columns='time')
 
-        dtmin, dtmax=k.columns.min(), k.columns.max()
-        dfmin, dfmax=k.index.min(), k.index.max()
+        dtmin, dtmax = k.columns.min(), k.columns.max()
+        dfmin, dfmax = k.index.min(), k.index.max()
         plt.imshow(np.flipud(k), cmap='RdBu_r',
                    aspect='auto', extent=[dtmin, dtmax, dfmin, dfmax], **kwargs)
         plt.text(0, 20, '%s:%i, HEMI=%s' % (field, resp, area))
@@ -482,25 +489,25 @@ def get_path(epoch, subject, session, cache=False):
     from glob import glob
 
     if not cache:
-        path=metadata.sr_labeled
+        path = metadata.sr_labeled
         if epoch == 'stimulus':
-            filenames=glob(
+            filenames = glob(
                 join(path, 'S%i-SESS%i-stimulus-F-chunk*-lcmv.hdf' % (
                     subject, session)))
         elif epoch == 'response':
-            filenames=glob(
+            filenames = glob(
                 join(path, 'S%i-SESS%i-response-F-chunk*-lcmv.hdf' % (
                     subject, session)))
         else:
             raise RuntimeError('Do not understand epoch %s' % epoch)
     else:
-        path=metadata.sraggregates
+        path = metadata.sraggregates
         if epoch == 'stimulus':
-            filenames=join(
+            filenames = join(
                 path,  'S%i-SESS%i-stimulus-lcmv.hdf' % (
                     subject, session))
         elif epoch == 'response':
-            filenames=join(
+            filenames = join(
                 path, 'S%i-SESS%i-response-lcmv.hdf' % (
                     subject, session))
     return filenames
@@ -520,19 +527,19 @@ def submit_aggregates(cluster='uke'):
 def aggregate(subject, session, epoch):
     from pymeg import aggregate_sr as asr
     from os.path import join
-    stim=(
+    stim = (
         '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-stimulus-*-chunk*-lcmv.hdf' % (
             subject, session))
-    resp=(
+    resp = (
         '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-response-*-chunk*-lcmv.hdf' % (
             subject, session))
 
     if epoch == 'stimulus':
-        agg=asr.aggregate_files(stim, stim, (-0.25, 0))
+        agg = asr.aggregate_files(stim, stim, (-0.25, 0))
     elif epoch == 'response':
-        agg=asr.aggregate_files(stim, stim, (-0.25, 0))
+        agg = asr.aggregate_files(stim, stim, (-0.25, 0))
 
-    filename=join(
+    filename = join(
         '/home/nwilming/conf_meg/sr_labeled/aggs/',
         'S%i_SESS%i_%s_agg.hdf' % (subject, session, epoch))
     asr.agg2hdf(agg, filename)
@@ -550,13 +557,13 @@ def ensure_iter(input):
 
 
 def filter_latency(data, min, max):
-    lat=data.index.get_level_values('latency').values
+    lat = data.index.get_level_values('latency').values
     return data.loc[(min < lat) & (lat < max), :]
 
 
 def make_brain_plots(data, atype='Pairs', ssd_view=['cau']):
     # 1 AUC
-    auc_limits={'MIDC_split': (0.3, 0.7), 'MIDC_nosplit': (0.3, 0.7),
+    auc_limits = {'MIDC_split': (0.3, 0.7), 'MIDC_nosplit': (0.3, 0.7),
                   'CONF_signed': (0.3, 0.7), 'CONF_unsigned': (.3, 0.7),
                   'SIDE_nosplit': (0.3, 0.7)}
     '''
@@ -586,10 +593,10 @@ def make_brain_plots(data, atype='Pairs', ssd_view=['cau']):
     plot_summary_results(filter_latency(df, -0.05, 0.05),
                          limits=acc_limits, epoch='response', measure='accuracy')
     '''
-    data_ssd=filter_latency(data.test_slope.Pairs.query(
+    data_ssd = filter_latency(data.test_slope.Pairs.query(
         'epoch=="stimulus" & (signal=="SSD") & Classifier=="Ridge"'), 0.18, 0.19)
     for sample, sd in data_ssd.groupby('sample'):
-        ssd_limits={'SSD': (-0.08, 0.08)}
+        ssd_limits = {'SSD': (-0.08, 0.08)}
         plot_summary_results(sd, limits=ssd_limits,
                              epoch='stimulus',
                              measure='slope' + '_sample%i' % sample,
@@ -610,15 +617,15 @@ def plot_summary_results(data, cmap='RdBu_r',
     from matplotlib import colors, cm
 
     # labels = sr.get_labels(ex_sub)
-    labels=sr.get_labels(ex_sub)
-    lc=rois.labels_to_clusters(labels, rois.all_clusters, hemi='lh')
+    labels = sr.get_labels(ex_sub)
+    lc = rois.labels_to_clusters(labels, rois.all_clusters, hemi='lh')
 
     for signal, dsignal in data.groupby('signal'):
-        vmin, vmax=limits[signal]
-        norm=colors.Normalize(vmin=vmin, vmax=vmax)
-        colortable=cm.get_cmap(cmap)
-        cfunc=lambda x: colortable(norm(x))
-        brain=plot_one_brain(dsignal, signal, lc, cfunc, ex_sub=ex_sub,
+        vmin, vmax = limits[signal]
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+        colortable = cm.get_cmap(cmap)
+        cfunc = lambda x: colortable(norm(x))
+        brain = plot_one_brain(dsignal, signal, lc, cfunc, ex_sub=ex_sub,
                                measure=measure, classifier=classifier,
                                epoch=epoch, views=views)
     return brain
@@ -629,10 +636,10 @@ def plot_one_brain(dsignal, signal, lc, cmap, ex_sub='S04', classifier='SCVlin',
                    epoch='response', measure='auc', views=[['par', 'fro'], ['lat', 'med']]):
     from surfer import Brain
     print('Creating Brain')
-    brain=Brain(ex_sub, 'lh', 'inflated',  views=['lat'], background='w')
+    brain = Brain(ex_sub, 'lh', 'inflated',  views=['lat'], background='w')
     # subjects_dir='/Users/nwilming/u/freesurfer_subjects/')
     print('Created Brain')
-    ms=dsignal.mean()
+    ms = dsignal.mean()
     if (signal == 'CONF_signed') and (measure == 'accuracy'):
         plot_labels_on_brain(brain, lc, ms, cmap)
     if (signal == 'SSD'):
@@ -645,18 +652,18 @@ def plot_one_brain(dsignal, signal, lc, cmap, ex_sub='S04', classifier='SCVlin',
 
 
 def plot_labels_on_brain(brain, labels, data, cmap):
-    already_plotted=[]
+    already_plotted = []
     for label in data.index.values:
         for clustername, lobjects in labels.items():
             if clustername == label:
-                value=data.loc[label]
+                value = data.loc[label]
 
                 for l0 in lobjects:
                     if any(l0.name == x for x in already_plotted):
                         import pdb
                         pdb.set_trace()
                     # print(('Addding', l0.name, cmap(value)))
-                    l0.color=cmap(value)
+                    l0.color = cmap(value)
                     already_plotted.append(l0.name)
                     brain.add_label(l0, color=cmap(value), alpha=0.8)
     brain.save_image('test.png')
@@ -665,30 +672,30 @@ def plot_labels_on_brain(brain, labels, data, cmap):
 @memory.cache
 def _dcd_helper_getter(path):
     import os
-    df=pd.read_hdf(os.path.join(path, 'all_decoding_results.hdf'))
-    df=df.reset_index().set_index(
+    df = pd.read_hdf(os.path.join(path, 'all_decoding_results.hdf'))
+    df = df.reset_index().set_index(
         ['Classifier', 'epoch', 'est_key', 'latency', 'mc<0.5', 'signal', 'subject', 'area'])
-    df=df.query('~(signal=="SSD")')
-    df=df.unstack('area').T
+    df = df.query('~(signal=="SSD")')
+    df = df.unstack('area').T
     return df
 
 
 @memory.cache
 def _ssd_helper_getter(path):
     import os
-    ssd=pd.read_hdf(os.path.join(path, 'all_ssd_results.hdf'))
-    ssd.loc[:, 'latency']=np.around(ssd.latency.astype(float), 4)
-    ssd=ssd.reset_index().set_index(
+    ssd = pd.read_hdf(os.path.join(path, 'all_ssd_results.hdf'))
+    ssd.loc[:, 'latency'] = np.around(ssd.latency.astype(float), 4)
+    ssd = ssd.reset_index().set_index(
         ['Classifier', 'epoch', 'est_key', 'latency', 'signal', 'subject', 'sample', 'area'])
-    ssd=ssd.loc[~ssd.index.duplicated(), :]
-    ssd=ssd.unstack('area').T
+    ssd = ssd.loc[~ssd.index.duplicated(), :]
+    ssd = ssd.unstack('area').T
 
     return ssd
 
 
 def recode(df):
-    dt=[]
-    areas=[]
+    dt = []
+    areas = []
     for area in df.index.get_level_values('area'):
         if '_L-R' in area:
             dt.append('Lateralized')
@@ -700,10 +707,10 @@ def recode(df):
             dt.append('Pairs')
             areas.append(area.split(',')[0].replace(
                 '(', '').replace(')', '').replace("'", '').replace('-lh', ''))
-    df.loc[:, 'atype']=dt
+    df.loc[:, 'atype'] = dt
     df.set_index('atype', append=True, inplace=True)
-    df=df.swaplevel(1, 2)
-    df=df.T
+    df = df.swaplevel(1, 2)
+    df = df.T
     df.columns.set_levels(areas, level='area', inplace=True)
     return df
 
@@ -711,12 +718,12 @@ def recode(df):
 def get_decoding_data(path='/home/nwilming/conf_meg/'):
     # files = glob.glob(os.path.join(path, 'concat_S*'))
     # df = pd.concat([pd.read_hdf(f) for f in files])
-    df=recode(_dcd_helper_getter(path))
-    ssd=recode(_ssd_helper_getter(path))
+    df = recode(_dcd_helper_getter(path))
+    ssd = recode(_ssd_helper_getter(path))
 
-    idt=df.test_accuracy.index.get_level_values('signal') == 'CONF_signed'
-    df.loc[idt, 'test_accuracy']=(df.loc[idt, 'test_accuracy'] - 0.25).values
-    df.loc[~idt, 'test_accuracy']=(
+    idt = df.test_accuracy.index.get_level_values('signal') == 'CONF_signed'
+    df.loc[idt, 'test_accuracy'] = (df.loc[idt, 'test_accuracy'] - 0.25).values
+    df.loc[~idt, 'test_accuracy'] = (
         df.loc[~idt, 'test_accuracy'] - 0.5).values
     return df.query('~(subject==6)'), ssd
 
@@ -725,7 +732,7 @@ def plot_signals(data, measure, classifier='svm', ylim=(0.45, 0.75)):
     import pylab as plt
     for epoch, de in data.groupby('epoch'):
         print(de.shape)
-        g=plot_by_signal(de)
+        g = plot_by_signal(de)
         g.set_ylabels(r'$%s$' % measure)
         g.set_xlabels(r'$time$')
         g.set(ylim=ylim)
@@ -737,25 +744,25 @@ def plot_by_signal(data, signals={'MIDC_split': '#E9003A', 'MIDC_nosplit': '#FF5
                                   'CONF_signed': '#00AB6F', 'CONF_unsigned': '#58E000'}):
     import pylab as plt
     import seaborn as sns
-    idsig=data.index.get_level_values('signal').isin(signals.keys())
-    data=data.loc[idsig, :]
-    split=data.index.get_level_values('mc<0.5').values.astype(float)
+    idsig = data.index.get_level_values('signal').isin(signals.keys())
+    data = data.loc[idsig, :]
+    split = data.index.get_level_values('mc<0.5').values.astype(float)
 
-    nosplit=data.loc[np.isnan(split), :].groupby(
+    nosplit = data.loc[np.isnan(split), :].groupby(
         ['latency', 'signal']).mean().stack().reset_index()
 
-    concat_df=[nosplit]
+    concat_df = [nosplit]
 
     for split_ind, dsignal in data.loc[~np.isnan(split)].groupby('mc<0.5'):
-        k=dsignal.groupby(['latency', 'signal']
+        k = dsignal.groupby(['latency', 'signal']
                             ).mean().stack().reset_index()
         if not split_ind:
             k.loc[:, 0] *= -1
-        k.columns=['latency', 'signal', 'area', split_ind]
+        k.columns = ['latency', 'signal', 'area', split_ind]
         concat_df.append(k)
-    k=pd.concat(concat_df)
+    k = pd.concat(concat_df)
 
-    g=sns.FacetGrid(k, col='signal', col_wrap=2, hue='area', palette='magma')
+    g = sns.FacetGrid(k, col='signal', col_wrap=2, hue='area', palette='magma')
     g.map(plt.plot, 'latency', 0, alpha=0.8)
     g.map(plt.plot, 'latency', 1, alpha=0.8)
 
@@ -770,14 +777,14 @@ def plot_interesting_areas(data,
                            signals={'MIDC_split': '#E9003A', 'SIDE_nosplit': '#FF5300',
                                     'CONF_signed': '#00AB6F', 'CONF_unsigned': '#58E000'},
                            title='', classifier='SCVlin'):
-    interesting_areas=['visual', 'FEF', 'IPS_Pces', 'M1', 'aIPS1', 'Area6_dorsal_medial',
+    interesting_areas = ['visual', 'FEF', 'IPS_Pces', 'M1', 'aIPS1', 'Area6_dorsal_medial',
                          'Area6_anterior', 'A6si', 'PEF', '55b', '8av', '8C', '24dv']
-    areas=[]
+    areas = []
 
-    areas=[x for x in data.columns if any(
+    areas = [x for x in data.columns if any(
         [i in x for i in interesting_areas])]
 
-    data=data.query('Classifier=="%s"' % classifier)
+    data = data.query('Classifier=="%s"' % classifier)
     plot_set(areas, data, title=title)
 
 
@@ -788,7 +795,7 @@ def plot_set(area_set, data,
     import matplotlib
     import seaborn as sns
     import pylab as plt
-    gs=matplotlib.gridspec.GridSpec(1, 2)
+    gs = matplotlib.gridspec.GridSpec(1, 2)
     for i, area in enumerate(area_set):
         for signal, color in signals.items():
             try:
@@ -801,10 +808,10 @@ def plot_set(area_set, data,
     plt.suptitle(title)
 
     # Add legend
-    x=[-0.5, -1, -1, -0.5]
-    y=[0., 0.2, 0, 0.2]
-    ylim=list(plt.ylim())
-    ylim[1]=len(area_set) * 0.5 + 1
+    x = [-0.5, -1, -1, -0.5]
+    y = [0., 0.2, 0, 0.2]
+    ylim = list(plt.ylim())
+    ylim[1] = len(area_set) * 0.5 + 1
     for i, (signal, color) in enumerate(signals.items()):
         plt.text(x[i], y[i], signal, color=color)
     plt.subplot(gs[0, 0])
@@ -825,36 +832,36 @@ def plot_decoding_results(data, signal, area,
     import pylab as plt
     import seaborn as sns
     if stim_ax is None:
-        stim_ax=plt.gca()
+        stim_ax = plt.gca()
     if resp_ax is None:
-        stim_ax=plt.gca()
-    data=data.loc[:, area]
-    select_string='signal=="%s"' % (signal)
-    areaname=(str(area).replace('vfc', '')
+        stim_ax = plt.gca()
+    data = data.loc[:, area]
+    select_string = 'signal=="%s"' % (signal)
+    areaname = (str(area).replace('vfc', '')
                 .replace('-lh', '')
                 .replace('-rh', '')
                 .replace('_Havg', '')
                 .replace('_Lateralized', ''))
-    data=data.reset_index().query(select_string)
+    data = data.reset_index().query(select_string)
     if '_split' in signal:
-        data=data.groupby(['subject', 'epoch', 'latency']
+        data = data.groupby(['subject', 'epoch', 'latency']
                             ).mean().reset_index()
-    stimulus=data.query('epoch=="stimulus"').reset_index()
+    stimulus = data.query('epoch=="stimulus"').reset_index()
     stimulus.loc[:, area] += offset
 
-    response=data.query('epoch=="response"').reset_index()
+    response = data.query('epoch=="response"').reset_index()
     response.loc[:, area] += offset
-    stim_ax=plt.subplot(stim_ax)
+    stim_ax = plt.subplot(stim_ax)
     sns.tsplot(stimulus, time='latency', value=area,
                unit='subject', ax=stim_ax, color=color)
     # plt.ylim([0.1, 0.9])
     plt.axhline(0.5 + offset, color='k')
-    dx, dy=np.array([0.0, 0.0]), np.array([.5, 0.75])
+    dx, dy = np.array([0.0, 0.0]), np.array([.5, 0.75])
     plt.plot(dx, dy + offset, color='k')
     plt.text(-0.75, 0.6 + offset, areaname)
     plt.yticks([])
     plt.ylabel('')
-    resp_ax=plt.subplot(resp_ax)
+    resp_ax = plt.subplot(resp_ax)
 
     sns.tsplot(response, time='latency', value=area,
                unit='subject', ax=resp_ax, color=color)
@@ -876,19 +883,19 @@ def plot_ssd_per_sample(ssd, cmap='magma', alpha=0.05, latency=0.18):
     import pylab as plt
     import seaborn as sns
     sns.set_style('ticks')
-    cmap=plt.get_cmap(cmap)
+    cmap = plt.get_cmap(cmap)
     plt.figure(figsize=(6, 3.3))
     for sample, ds in ssd.test_corr.Average.groupby('sample'):
-        k=ds.groupby(['subject', 'latency']).mean().reset_index()
-        k=pd.pivot_table(ds.reset_index(), columns='latency',
+        k = ds.groupby(['subject', 'latency']).mean().reset_index()
+        k = pd.pivot_table(ds.reset_index(), columns='latency',
                            index='subject', values='vfcvisual')
-        baseline=k.loc[:, :0].mean(axis=1)
-        baseline_corrected=k.sub(baseline, axis=0)
+        baseline = k.loc[:, :0].mean(axis=1)
+        baseline_corrected = k.sub(baseline, axis=0)
 
-        t_obs, clusters, cluster_pv, H0=do_stats(baseline_corrected.values)
+        t_obs, clusters, cluster_pv, H0 = do_stats(baseline_corrected.values)
         plt.plot(k.columns.values + 0.1 * sample,
                  k.values.mean(0), color=cmap(sample / 10.))
-        sig_x=(k.columns.values + 0.1 * sample)[cluster_pv < alpha]
+        sig_x = (k.columns.values + 0.1 * sample)[cluster_pv < alpha]
         plt.plot(sig_x, sig_x * 0 - 0.0001 *
                  np.mod(sample, 2), color=cmap(sample / 10))
         plt.plot([0.1 * sample + latency, 0.1 * sample + latency],
@@ -902,10 +909,10 @@ def plot_ssd_per_sample(ssd, cmap='magma', alpha=0.05, latency=0.18):
 
 
 def extract_peak_slope(ssd, latency=0.18):
-    ulat=np.unique(ssd.index.get_level_values('latency'))
-    latency=ulat[np.argmin(np.abs(ulat - latency))]
+    ulat = np.unique(ssd.index.get_level_values('latency'))
+    latency = ulat[np.argmin(np.abs(ulat - latency))]
     print(latency)
-    ssd=ssd.query('latency==%f & Classifier=="Ridge"' %
+    ssd = ssd.query('latency==%f & Classifier=="Ridge"' %
                     latency).test_slope.Average.loc[:, 'vfcvisual']
     return ssd.reset_index().loc[:, ('subject', 'sample', 'vfcvisual')]
 
