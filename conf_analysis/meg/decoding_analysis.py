@@ -79,9 +79,7 @@ def decoders():
             'MIDC_split': partial(midc_decoder, splitmc=True,
                                   target_col='response'),
             'MIDC_nosplit': partial(midc_decoder, splitmc=False,
-                                    target_col='response'),
-            'SIDE_split': partial(midc_decoder, splitmc=True,
-                                  target_col='side'),
+                                    target_col='response'),            
             'SIDE_nosplit': partial(midc_decoder, splitmc=False,
                                     target_col='side'),
             'CONF_signed': partial(midc_decoder, splitmc=False,
@@ -114,7 +112,7 @@ def submit(cluster='PBS'):
         pmap = partial(parallel.pmap, nodes=1, tasks=1, memory=31,
                        ssh_to=None,  walltime='48:00:00', env='py36')
 
-    for subject, epoch, dcd in product(range(1, 16),
+    for subject, epoch, dcd in product(range(2, 16),
                                        ['stimulus', 'response'],
                                        decoder):
         pmap(run_decoder, [(subject, dcd, epoch)],
@@ -139,8 +137,8 @@ def augment_meta(meta):
         meta.loc[:, 'confidence'] == 1).astype(int)
     return meta
 
-
-def run_decoder(subject, decoder, epoch, ntasks=16,
+@memory.cache
+def run_decoder(subject, decoder, epoch, ntasks=1,
                 hemis=['Lateralized', 'Averaged', 'Pair']):
     set_n_threads(1)
     from multiprocessing import Pool
@@ -151,8 +149,8 @@ def run_decoder(subject, decoder, epoch, ntasks=16,
     filenames = glob(join(inpath, 'S%i_*_%s_agg.hdf' % (subject, epoch)))
 
     meta = augment_meta(
-        preprocessing.get_meta_for_subject(subject, epoch))
-
+        preprocessing.get_meta_for_subject(subject, 'stimulus'))
+    #meta = meta.dropna(subset=['contrast_probe'])
     args = []
     for area, hemi in product(areas, hemis):
         if hemi == 'Pair':
@@ -208,12 +206,10 @@ def apply_decoder(meta, agg, decoder, latencies=None):
             s = decoder(meta, agg, area, latency=latency)
             scores.append(s)
         except:
-            logging.exception(''''Error in run_decoder:
-        # Subject: %i
+            logging.exception(''''Error in run_decoder:        
         # Decoder: %s
-        # Epoch: %s
         # Area: %s
-        # Latency: %f)''' % (decoder, area, latency))
+        # Latency: %f)''' % (str(decoder), area, latency))
             raise
     res = pd.concat(scores)
     logging.info('Applying decoder %s across N=%i latencies took %3.2fs' % (
