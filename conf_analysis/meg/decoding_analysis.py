@@ -36,7 +36,7 @@ from pymeg import roi_clusters as rois
 from joblib import Memory
 
 if 'TMPDIR' in os.environ.keys():
-    memory = Memory(cachedir=os.environ['TMPDIR'])
+    memory = Memory(cachedir=os.environ['PYMEG_CACHE_DIR'])
     inpath = '/nfs/nwilming/MEG/sr_labeled/aggs'
     outpath = '/nfs/nwilming/MEG/sr_decoding/'
 elif 'RRZ_LOCAL_TMPDIR' in os.environ.keys():
@@ -49,7 +49,7 @@ else:
     outpath = '/home/nwilming/conf_meg/sr_decoding'
     memory = Memory(cachedir=metadata.cachedir)
 
-n_jobs = 1
+n_jobs = 16
 
 n_trials = {1: {'stimulus': 1565, 'response': 245},
             2: {'stimulus': 1852, 'response': 1697},
@@ -79,7 +79,7 @@ def decoders():
             'MIDC_split': partial(midc_decoder, splitmc=True,
                                   target_col='response'),
             'MIDC_nosplit': partial(midc_decoder, splitmc=False,
-                                    target_col='response'),            
+                                    target_col='response'),
             'SIDE_nosplit': partial(midc_decoder, splitmc=False,
                                     target_col='side'),
             'CONF_signed': partial(midc_decoder, splitmc=False,
@@ -99,18 +99,14 @@ def set_n_threads(n):
 
 def submit(cluster='PBS'):
     from pymeg import parallel
-    # decoders = ['MIDC_split', 'MIDC_nosplit',
-    #            'SIDE_nosplit',
-    #            'CONF_signed', 'CONF_unsigned']
-    # decoders = ['CONF_unsign_split']
     decoder = decoders().keys()
     if cluster == 'slurm':
         pmap = partial(parallel.pmap, email=None, tasks=1, nodes=1, memory=60,
                        ssh_to=None, home='/work/faty014', walltime='11:50:55',
                        cluster='SLURM')
     else:
-        pmap = partial(parallel.pmap, nodes=1, tasks=1, memory=31,
-                       ssh_to=None,  walltime='48:00:00', env='py36')
+        pmap = partial(parallel.pmap, nodes=1, tasks=n_jobs, memory=31,
+                       ssh_to=None,  walltime='72:00:00', env='py36')
 
     for subject, epoch, dcd in product(range(2, 16),
                                        ['stimulus', 'response'],
@@ -118,10 +114,6 @@ def submit(cluster='PBS'):
         pmap(run_decoder, [(subject, dcd, epoch)],
              name='DCD' + dcd + epoch + str(subject),
              )
-
-    # for subject in range(1, 16):
-    #    pmap(run_AA, [(subject, 'SSD', 'stimulus')],
-    #         name='DCDSSDStimulus' + str(subject))
 
 
 def get_save_path(subject, decoder, area, epoch):
@@ -137,8 +129,9 @@ def augment_meta(meta):
         meta.loc[:, 'confidence'] == 1).astype(int)
     return meta
 
+
 @memory.cache
-def run_decoder(subject, decoder, epoch, ntasks=1,
+def run_decoder(subject, decoder, epoch, ntasks=n_jobs,
                 hemis=['Lateralized', 'Averaged', 'Pair']):
     set_n_threads(1)
     from multiprocessing import Pool
