@@ -5,39 +5,55 @@ import os
 
 from conf_analysis.behavior import metadata
 from conf_analysis.meg import preprocessing
-from conf_analysis.meg import source_recon as sr
 
 from joblib import Memory
-
-import pandas as pd
 
 from os import makedirs
 from os.path import join
 from pymeg import lcmv as pymeglcmv
 from pymeg import source_reconstruction as pymegsr
+import datetime
 
 
 memory = Memory(cachedir=metadata.cachedir)
 path = '/home/nwilming/conf_meg/sr_labeled/'
+subjects_dir = '/home/nwilming/fs_subject_dir'
+trans_dir = '/home/nwilming/conf_meg/trans'
 
 
 def set_n_threads(n):
-    import os
     os.environ['OPENBLAS_NUM_THREADS'] = str(n)
     os.environ['MKL_NUM_THREADS'] = str(n)
     os.environ['OMP_NUM_THREADS'] = str(n)
 
 
-def submit():
+def modification_date(filename):
+    try:
+        t = os.path.getmtime(filename)
+        return datetime.datetime.fromtimestamp(t)
+    except OSError:
+        return datetime.datetime.strptime('19700101', '%Y%m%d')
+
+
+def submit(older_than="201811010000"):
     from pymeg import parallel
     from itertools import product
-    for subject, session, epoch, signal in product(
-            [3,6,7,8,15], range(4), ['stimulus', 'response'],
-            ['LF']):
+    cnt = 1
+    older_than = datetime.datetime.strptime(older_than, '%Y%m%d%H%M')
 
+    for subject, session, epoch, signal in product(
+            [10, 13], range(4), ['stimulus', 'response'],
+            ['F', 'LF']):
+        mod_time = [modification_date(x) for x in lcmvfilename(
+            subject, session, signal, epoch, chunk='all')]
+        # if(any([x > older_than for x in mod_time])):
+        #    print("Skipping %i %i %s %s because existing output is newer than requested date" % (
+        #        subject, session, epoch, signal))
+        #    continue
+        print("Submitting %i %i %s %s" % (subject, session, epoch, signal))
         parallel.pmap(
             extract, [(subject, session, epoch, signal)],
-            walltime='10:00:00', memory=40, nodes=1, tasks=4,
+            walltime='10:00:00', memory=40, nodes=1, tasks=4, env='py36',
             name='SR' + str(subject) + '_' + str(session) + epoch,
             ssh_to=None)
 
@@ -50,6 +66,12 @@ def lcmvfilename(subject, session, signal, epoch_type, chunk=None):
     if chunk is None:
         filename = 'S%i-SESS%i-%s-%s-lcmv.hdf' % (
             subject, session, epoch_type, signal)
+    elif chunk is 'all':
+        import glob
+        filename = 'S%i-SESS%i-%s-%s-chunk*-lcmv.hdf' % (
+            subject, session, epoch_type, signal)
+        filenames = glob.glob(join(path, filename))
+        return filenames
     else:
         filename = 'S%i-SESS%i-%s-%s-chunk%i-lcmv.hdf' % (
             subject, session, epoch_type, signal, chunk)
@@ -106,6 +128,34 @@ def get_response_epoch(subject, session):
     return data_cov, response
 
 
+def get_trans(subject, session):
+    '''
+    Return filename of transformation for a subject
+    '''
+    file_ident = 'S%i-SESS%i' % (subject, session)
+    return join(trans_dir, file_ident + '-trans.fif')
+
+
+@memory.cache
+def get_leadfield(subject, session, head_model='three_layer'):
+    '''
+    Compute leadfield with presets for this subject
+
+    Parameters
+    head_model : str, 'three_layer' or 'single_layer'
+    '''
+    raw_filename = metadata.get_raw_filename(subject, session)
+    epoch_filename = metadata.get_epoch_filename(
+        subject, session, 0, 'stimulus', 'fif')
+    trans = get_trans(subject, session)
+
+    return pymegsr.get_leadfield('S%02i' % subject, raw_filename,
+                                 epoch_filename, trans,
+                                 conductivity=(0.3, 0.006, 0.3),
+                                 bem_sub_path='bem_ft',
+                                 njobs=4)
+
+
 def extract(subject, session, epoch_type='stimulus', signal_type='BB',
             BEM='three_layer', debug=False, chunks=100, njobs=4):
     mne.set_log_level('WARNING')
@@ -122,10 +172,15 @@ def extract(subject, session, epoch_type='stimulus', signal_type='BB',
 
     logging.info('Setting up source space and forward model')
 
-    forward, bem, source = sr.get_leadfield(subject, session, BEM)
+    forward, bem, source = get_leadfield(subject, session, BEM)
 
-    labels = pymegsr.get_labels('S%02i' % subject)
-
+    labels = pymegsr.get_labels(subject='S%02i' % subject, filters=[
+        '*wang*.label', '*JWDG*.label'], annotations=['HCPMMP1'])
+    labels = pymegsr.labels_exclude(labels=labels, exclude_filters=[
+        'wang2015atlas.IPS4', 'wang2015atlas.IPS5', 'wang2015atlas.SPL',
+        'JWDG_lat_Unknown'])
+    labels = pymegsr.labels_remove_overlap(
+        labels=labels, priority_filters=['wang', 'JWDG'])
     # Now chunk Reconstruction into blocks of ~100 trials to save Memory
     fois = np.arange(10, 150, 5)
     lfois = np.arange(1, 10, 1)
@@ -145,8 +200,9 @@ def extract(subject, session, epoch_type='stimulus', signal_type='BB',
     for i in range(0, len(events), chunks):
         filename = lcmvfilename(
             subject, session, signal_type, epoch_type, chunk=i)
-        if os.path.isfile(filename):
-            continue
+        logging.info(filename)
+        # if os.path.isfile(filename):
+        #    continue
         if signal_type == 'BB':
             logging.info('Starting reconstruction of BB signal')
             M = pymeglcmv.reconstruct_broadband(
@@ -160,6 +216,5 @@ def extract(subject, session, epoch_type='stimulus', signal_type='BB',
                 events[i:i + chunks], epochs.times,
                 est_args=tfr_params[signal_type],
                 njobs=4)
-        M.to_hdf(filename, 'epochs')
+        M.to_hdf(filename, 'epochs', mode='w')
     set_n_threads(njobs)
-    
