@@ -149,9 +149,9 @@ def run_decoder(subject, decoder, epoch, ntasks=n_jobs,
         if hemi == 'Pair':
             area = [area + '_RH', area + '_LH']
         args.append((meta, asr.delayed_agg(filenames, hemi, area), decoder))
-
+    print('Processing %i tasks, chunksize=%i'%(len(args), ntasks))
     with Pool(ntasks) as p:
-        scores = p.starmap(_par_apply_decode, args, chunksize=ntasks)
+        scores = p.starmap(_par_apply_decode, args)#, chunksize=ntasks)
     scores = [s for s in scores if s is not None]
     scores = pd.concat(scores)
     filename = outpath + '/concat_S%i-%s-%s-decoding.hdf' % (
@@ -290,7 +290,8 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
             score = cross_validate(clf, sample_data.values, target,
                                    cv=10, scoring=metrics,
                                    return_train_score=False,
-                                   n_jobs=n_jobs)
+                                   n_jobs=1)  # n_jobs = 1 because it
+            # is nested par loop
             # fit = clf(sample_data.values, target)
             del score['fit_time']
             del score['score_time']
@@ -419,7 +420,7 @@ def categorize(target, data, latency):
         score = cross_validate(clf, data, target,
                                cv=10, scoring=metrics,
                                return_train_score=False,
-                               n_jobs=n_jobs)
+                               n_jobs=1)
         del score['fit_time']
         del score['score_time']
         score = {k: np.mean(v) for k, v in list(score.items())}
