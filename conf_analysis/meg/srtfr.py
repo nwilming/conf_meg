@@ -46,7 +46,6 @@ contrasts = {
 }
 
 
-
 def submit_contrasts(collect=False):
     tasks = []
     for subject in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
@@ -55,7 +54,8 @@ def submit_contrasts(collect=False):
     res = []
     for task in tasks:
         try:
-            r = _eval(get_contrasts, task, collect=collect, walltime='45:00', memory=50)
+            r = _eval(get_contrasts, task, collect=collect,
+                      walltime='45:00', memory=50)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
@@ -100,7 +100,7 @@ def get_contrasts(contrasts, subject, session, scratch=True):
         tmpdir = os.environ['TMPDIR']
         command = ('cp {stim} {tmpdir} & cp {resp} {tmpdir}'
                    .format(stim=stim, resp=resp, tmpdir=tmpdir))
-        logging.info('Copying data with following command: %s'%command)
+        logging.info('Copying data with following command: %s' % command)
         p = run(command, shell=True, check=True)
         stim = join(data_path, tmpdir, 'S%i-SESS%i-stimulus*.hdf' % (
             subject, session))
@@ -115,12 +115,13 @@ def get_contrasts(contrasts, subject, session, scratch=True):
     cps = []
     with Cache() as cache:
         contrast = compute_contrast(contrasts, hemis, stim, stim,
-                                    meta, (-0.25, 0), n_jobs=1, cache=cache)
+                                    meta, (-0.35, 0), n_jobs=1, cache=cache)
         contrast.loc[:, 'epoch'] = 'stimulus'
         cps.append(contrast)
         contrast = compute_contrast(contrasts, hemis, resp, stim,
-                                    meta, (-0.25, 0), n_jobs=1, cache=cache)
+                                    meta, (-0.35, 0), n_jobs=1, cache=cache)
         contrast.loc[:, 'epoch'] = 'response'
+        cps.append(contrast)
     contrast = pd.concat(cps)
     del cps
     contrast.loc[:, 'subject'] = subject
@@ -130,7 +131,43 @@ def get_contrasts(contrasts, subject, session, scratch=True):
     return contrast
 
 
+def plot_mosaics(df, stats=False):
+    import pylab as plt
+    from pymeg.contrast_tfr import plot_mosaic
+    for epoch in ['stimulus', 'response']:
+        for contrast in ['all', 'choice', 'confidence', 'confidence_asym', 'hand', 'stimulus']:
+            for hemi in [True, False]:
+                plt.figure()
+                query = 'epoch=="%s" & contrast=="%s" & %s(hemi=="avg")' % (
+                    epoch, contrast, {True: '~', False: ''}[hemi])
+                d = df.query(query)
+                plot_mosaic(d, epoch=epoch, stats=stats)
+                plt.suptitle(query)
+                plt.savefig(
+                    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.pdf' % (epoch, contrast, hemi))
+                plt.savefig(
+                    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
 # Ignore following for now
+
+
+def plot_2epoch_mosaics(df, stats=False, contrasts=['all', 'choice', 'confidence', 'confidence_asym', 'hand', 'stimulus']):
+    import pylab as plt
+    from pymeg.contrast_tfr import plot_2epoch_mosaic
+
+    for contrast in contrasts:
+        for hemi in [True, False]:
+            plt.figure()
+            query = 'contrast=="%s" & %s(hemi=="avg")' % (
+                contrast, {True: '~', False: ''}[hemi])
+            d = df.query(query)
+            plot_2epoch_mosaic(d, stats=stats)
+            plt.suptitle(query)
+            plt.savefig(
+                '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (contrast, hemi))
+            # plt.savefig(
+            #    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
+# Ignore following for now
+
 
 def plot_labels(data, areas, locations, gs, stats=True, minmax=(10, 20),
                 tslice=slice(-0.25, 1.35)):
