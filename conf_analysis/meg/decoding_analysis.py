@@ -14,6 +14,8 @@ import os
 import numpy as np
 import pandas as pd
 
+from os.path import join
+
 from functools import partial
 from itertools import product
 
@@ -30,33 +32,24 @@ from conf_analysis.meg import preprocessing
 
 from pymeg import roi_clusters as rois
 
+
 from joblib import Memory
 
-if 'RRZ_LOCAL_TMPDIR' in os.environ.keys():
-    memory = Memory(cachedir=os.environ['RRZ_LOCAL_TMPDIR'])
 if 'TMPDIR' in os.environ.keys():
-    tmpdir = os.environ['TMPDIR']
+    memory = Memory(cachedir=os.environ['PYMEG_CACHE_DIR'])
+    inpath = '/nfs/nwilming/MEG/sr_labeled/aggs'
+    outpath = '/nfs/nwilming/MEG/sr_decoding/'
+elif 'RRZ_LOCAL_TMPDIR' in os.environ.keys():
+    tmpdir = os.environ['RRZ_LOCAL_TMPDIR']
+    outpath = '/work/faty014/MEG/sr_labeled/aggs/'
+    outpath = '/work/faty014/MEG/sr_decoding/'
     memory = Memory(cachedir=tmpdir)
 else:
+    inpath = '/home/nwilming/conf_meg/sr_labeled/aggs'
+    outpath = '/home/nwilming/conf_meg/sr_decoding'
     memory = Memory(cachedir=metadata.cachedir)
 
-areas = [
-    'vfcvisual', 'vfcVO', 'vfcPHC', 'vfcV3ab',
-    'vfcTO', 'vfcLO', 'vfcIPS_occ', 'vfcIPS_dorsal',
-    'vfcSPL',  'vfcFEF', 'IPS_Pces', 'M1', 'aIPS1',
-    'LIP', 'Area6_dorsal_medial', 'Area6_anterior',
-    'A10', 'A6si', 'PEF', '55b', '8Av',
-    '8Ad', '9p', '8Bl', '8C', 'p9-46v', '46',
-    '9-46d', 'a10p', 'a47r', 'p32', 's32', 'a24',
-    '9m', 'd32', 'a32pr', 'p32pr', '24dv', 'p24pr',
-]
-
-avgs = [x + '-lh_Havg' for x in areas]
-lateralized = [x + '-lh_L-R' for x in areas]
-pairs = [(x + '-lh', x + '-rh') for x in areas]
-
-areas = avgs + lateralized + pairs
-n_jobs = 1
+n_jobs = 16
 
 n_trials = {1: {'stimulus': 1565, 'response': 245},
             2: {'stimulus': 1852, 'response': 1697},
@@ -75,73 +68,92 @@ n_trials = {1: {'stimulus': 1565, 'response': 245},
             15: {'stimulus': 1851, 'response': 1764}}
 
 
+def decoders():
+    return {'SSD': ssd_decoder,
+            'SSD_delta_contrast': partial(
+                ssd_decoder, target_value='delta_contrast'),
+            'SSD_acc_contrast': partial(
+                ssd_decoder, target_value='acc_contrast'),
+            'SSD_acc_contrast_diff': partial(
+                ssd_decoder, target_value='acc_contrast_diff'),
+            'MIDC_split': partial(midc_decoder, splitmc=True,
+                                  target_col='response'),
+            'MIDC_nosplit': partial(midc_decoder, splitmc=False,
+                                    target_col='response'),
+            'SIDE_nosplit': partial(midc_decoder, splitmc=False,
+                                    target_col='side'),
+            'CONF_signed': partial(midc_decoder, splitmc=False,
+                                   target_col='signed_confidence'),
+            'CONF_unsigned': partial(midc_decoder, splitmc=False,
+                                     target_col='unsigned_confidence'),
+            'CONF_unsign_split': partial(midc_decoder, splitmc=True,
+                                         target_col='unsigned_confidence')}
+
+
+def set_n_threads(n):
+    import os
+    os.environ['OPENBLAS_NUM_THREADS'] = str(n)
+    os.environ['MKL_NUM_THREADS'] = str(n)
+    os.environ['OMP_NUM_THREADS'] = str(n)
+
+
 def submit(cluster='PBS'):
-    # decoders = ['MIDC_split', 'MIDC_nosplit',
-    #            'SIDE_nosplit',
-    #            'CONF_signed', 'CONF_unsigned']
-    #decoders = ['CONF_unsign_split']
-    decoders = ['SSD_delta_contrast',
-                'SSD_acc_contrast',
-                'SSD_acc_contrast_diff']
     from pymeg import parallel
+    decoder = decoders().keys()
     if cluster == 'slurm':
         pmap = partial(parallel.pmap, email=None, tasks=1, nodes=1, memory=60,
                        ssh_to=None, home='/work/faty014', walltime='11:50:55',
                        cluster='SLURM')
     else:
-        pmap = partial(parallel.pmap, nodes=1, tasks=1, memory=31,
-                       ssh_to=None,  walltime=48, env='py36')
+        pmap = partial(parallel.pmap, nodes=1, tasks=n_jobs, memory=31,
+                       ssh_to=None,  walltime='72:00:00', env='py36')
 
-    for subject, epoch, decoder in product(range(1, 16),
-                                           ['stimulus', 'response'],
-                                           decoders):
-        pmap(run_AA, [(subject, decoder, epoch)],
-             name='DCD' + decoder + epoch + str(subject),
+    for subject, epoch, dcd in product(range(2, 16),
+                                       ['stimulus', 'response'],
+                                       decoder):
+        pmap(run_decoder, [(subject, dcd, epoch)],
+             name='DCD' + dcd + epoch + str(subject),
              )
 
-    # for subject in range(1, 16):
-    #    pmap(run_AA, [(subject, 'SSD', 'stimulus')],
-    #         name='DCDSSDStimulus' + str(subject))
+
+def get_save_path(subject, decoder, area, epoch):
+    filename = 'S%i-%s-%s-%s-decoding.hdf' % (
+        subject, decoder, epoch, area)
+    return join(outpath, filename)
 
 
-def run_AA(subject, decoder, epoch, ntasks=16):
+def augment_meta(meta):
+    meta.loc[:, 'signed_confidence'] = (meta.loc[:, 'confidence'] *
+                                        meta.loc[:, 'response']).astype(int)
+    meta.loc[:, 'unsigned_confidence'] = (
+        meta.loc[:, 'confidence'] == 1).astype(int)
+    return meta
+
+
+@memory.cache
+def run_decoder(subject, decoder, epoch, ntasks=n_jobs,
+                hemis=['Lateralized', 'Averaged', 'Pair']):
+    set_n_threads(1)
     from multiprocessing import Pool
-    p = Pool(ntasks)
-    print('Starting pool of workers')
-    latencies = {'stimulus': [-0.5, 1.35], 'response': [-1, 0.5]}
-    time = latencies[epoch]
-    est_vals = (10, 150)
+    from glob import glob
+    from pymeg import atlas_glasser, aggregate_sr as asr
+    clusters, _, _, _ = atlas_glasser.get_clusters()
+    areas = clusters.keys()
+    filenames = glob(join(inpath, 'S%i_*_%s_agg.hdf' % (subject, epoch)))
 
-    data = pd.concat([
-        get_all_areas(subject, session, epoch=epoch, time=(-1.5, 1),
-                      est_vals=(10, 150), est_key='F',
-                      baseline_epoch='stimulus', baseline=(-0.35, 0))
-        for session in range(4)])
-    tasks = []
-    for area in areas:
-        # subject, area, epoch='stimulus', time=(0, 1),
-        # est_vals=(30, 100), est_key='F',
-        # baseline_epoch='stimulus', baseline=(-0.35, 0),
-        # data=None
-        get_subject(subject, area, epoch=epoch, time=time,
-                    est_vals=est_vals, data=data)
-    # p.starmap(get_subject, tasks, chunksize=ntasks)
-    del data
-    print('Done caching')
-
+    meta = augment_meta(
+        preprocessing.get_meta_for_subject(subject, 'stimulus'))
+    #meta = meta.dropna(subset=['contrast_probe'])
     args = []
-    for est_key, est_vals in zip(['F'], [est_vals]):
-        for area in areas:
-            args.append((subject, decoder, epoch, area, est_key, est_vals))
-    scores = p.starmap(run_single_area, args, chunksize=ntasks)
+    for area, hemi in product(areas, hemis):
+        if hemi == 'Pair':
+            area = [area + '_RH', area + '_LH']
+        args.append((meta, asr.delayed_agg(filenames, hemi, area), decoder))
+    print('Processing %i tasks, chunksize=%i' % (len(args), ntasks))
+    with Pool(ntasks) as p:
+        scores = p.starmap(_par_apply_decode, args)  # , chunksize=ntasks)
     scores = [s for s in scores if s is not None]
     scores = pd.concat(scores)
-
-    if (('RRZ_TMPDIR' in list(os.environ.keys()))
-            or ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys()))):
-        outpath = '/work/faty014/MEG/sr_decoding/'
-    else:
-        outpath = '/nfs/nwilming/MEG/sr_decoding/'
     filename = outpath + '/concat_S%i-%s-%s-decoding.hdf' % (
         subject, decoder, epoch)
     scores.to_hdf(filename, 'decoding')
@@ -149,166 +161,100 @@ def run_AA(subject, decoder, epoch, ntasks=16):
     return scores
 
 
-def run_single_area(subject, decoder, epoch, area, est_key='F', est_vals=[10, 150],
-                    ignore_errors=False):
-    try:
-        return run_decoder(subject, decoder, area, epoch)
-    except:
-        print('Error in runAA: (%i, %s, %s, %s)' %
-              (subject, decoder, epoch, area))
-        if not ignore_errors:
-            raise
-
-
-def run_decoder(subject, decoder, area, epoch, est_key='F', est_vals=[10, 150]):
-    '''
-    Run a specific type decoding on a subject's data set
-
-    Arguments
-    ---------
-
-    subject : int, subject number
-    decoder : str
-        Selects different decoding targets. One of
-            SSD - Decode sample contrast (regression)
-            MIDC - Decode response (classification)
-            SCONF - Decode signed confidence (classification)
-            UCONF - Decode unsigned confidence (classification)
-    area : str
-        Selects which brain area to use
-    epoch : str, 'stimulus' or 'response'
-    '''
-    def get_save_path(subject, decoder, area, epoch):
-        import socket
-        if (('RRZ_TMPDIR' in list(os.environ.keys())) or
-                ('RRZ_LOCAL_TMPDIR' in list(os.environ.keys()))):
-            path = '/work/faty014/MEG/'
-
-        elif 'lisa.surfsara' in socket.gethostname():
-            path = '/nfs/nwilming/MEG/'
-        else:
-            path = '/home/nwilming/conf_meg/'
-        filename = 'sr_decoding/S%i-%s-%s-%s-decoding.hdf' % (
-            subject, decoder, epoch, area)
-        return os.path.join(path, filename)
-
-    filename = get_save_path(subject, decoder, epoch, area)
-
-    try:
-        k = pd.read_hdf(filename)
-        logging.info('Loaded cached file: %s' % filename)
-        return k
-    except IOError:
-        pass
-
-    latencies = {'stimulus': [-0.5, 1.35], 'response': [-1, 0.5]}
-
-    data, meta = get_subject(subject, epoch=epoch,
-                             area=area, time=latencies[epoch],
-                             est_vals=est_vals, est_key=est_key)
-    data.reset_index().set_index('trial', inplace=True)
-
-    dt = np.diff(data.time)[0]
-    latencies = np.unique(data.time)
-    meta.loc[:, 'signed_confidence'] = (meta.loc[:, 'confidence'] *
-                                        meta.loc[:, 'response']).astype(int)
-    meta.loc[:, 'unsigned_confidence'] = (
-        meta.loc[:, 'confidence'] == 1).astype(int)
-
-    decoders = {'SSD': ssd_decoder,
-                'SSD_delta_contrast': partial(
-                    ssd_decoder, target_value='delta_contrast'),
-                'SSD_acc_contrast': partial(
-                    ssd_decoder, target_value='acc_contrast'),
-                'SSD_acc_contrast_diff': partial(
-                    ssd_decoder, target_value='acc_contrast_diff'),
-                'MIDC_split': partial(midc_decoder, splitmc=True,
-                                      target_col='response'),
-                'MIDC_nosplit': partial(midc_decoder, splitmc=False,
-                                        target_col='response'),
-                'SIDE_split': partial(midc_decoder, splitmc=True,
-                                      target_col='side'),
-                'SIDE_nosplit': partial(midc_decoder, splitmc=False,
-                                        target_col='side'),
-                'CONF_signed': partial(midc_decoder, splitmc=False,
-                                       target_col='signed_confidence'),
-                'CONF_unsigned': partial(midc_decoder, splitmc=False,
-                                         target_col='unsigned_confidence'),
-                'CONF_unsign_split': partial(midc_decoder, splitmc=True,
-                                             target_col='unsigned_confidence')}
-
+def _par_apply_decode(meta, delayed_agg, decoder):
+    agg = delayed_agg()
+    dt = np.diff(agg.columns.get_level_values('time'))[0]
+    print('.')
+    latencies = None
     if decoder == 'SSD':
         latencies = np.arange(-.1, 0.75, dt)
 
-    assert(decoder in list(decoders.keys()))
+    return apply_decoder(meta, agg, decoders()[decoder], latencies=latencies)
+
+
+def apply_decoder(meta, agg, decoder, latencies=None):
+    """Run a decoder across a set of latencies.
+
+    Args:
+        agg: pd.DataFrame
+            Aggregate data frame.
+        decoder: function
+            Function that takes meta data, agg data, areas
+            and latency as input and returns decoding scores
+            as data frame.
+        latencies: None or list
+            List of latencies to decode across. If None
+            all time points in agg will be used.
+    """
+    import time
+    start = time.time()
+    if latencies is None:
+        latencies = agg.columns.get_level_values('time').values
+
+    area = np.unique(agg.index.get_level_values('cluster'))
     scores = []
     for latency in latencies:
-        logging.info('S=%i; DCD=%s, EPOCH=%s; t=%f' %
-                     (subject, decoder, epoch, latency))
+        logging.info('Applying decoder %s at latency %s' % (decoder, latency))
         try:
-            s = decoders[decoder](meta, data, area, latency=latency)
+            s = decoder(meta, agg, area, latency=latency)
             scores.append(s)
         except:
-            logging.exception(''''Error in run_decoder:
-        # Subject: %i
+            logging.exception(''''Error in run_decoder:        
         # Decoder: %s
-        # Epoch: %s
         # Area: %s
-        # Latency: %f)''' % (subject, decoder, epoch, area, latency))
+        # Latency: %f)''' % (str(decoder), area, latency))
             raise
-    scores = pd.concat(scores)
-    scores.loc[:, 'signal'] = decoder
-    scores.loc[:, 'subject'] = subject
-    scores.loc[:, 'epoch'] = epoch
-    scores.loc[:, 'area'] = str(area)
-    scores.loc[:, 'est_key'] = est_key
-    scores.to_hdf(filename, 'decoding')
-    return scores
+    res = pd.concat(scores)
+    logging.info('Applying decoder %s across N=%i latencies took %3.2fs' % (
+        decoder, len(latencies), time.time() - start))
+    return res
 
 
 def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
     '''
     Sensory signal decoder (SSD).
 
-    Tries to decode the contrast value of individual samples
-    within the trial. The decoder used for this will be some form
-    of regression based approach. Input signals will be pooled
-    across hemispheres.
+    Each frequency and brain area is one feature, contrast is the target.
+    Args:
+        meta: DataFrame
+            Metadata frame that contains meta data per row
+        data: Aggregate data frame
+        area: List or str
+            Which areas to use for decoding. Multiple areas provide
+            independent features per observation
+        latency: float
+            Which time point to decode
+        target_value: str
+            Which target to decode (refers to a col. in meta)
+
     '''
 
-    # Build a design matrix:
-    # Each sample is one observation
-    # Each frequency is one feature
-    # Contrast is the target
-
-    # Map sample times to existing time points in data
     from sklearn.metrics import make_scorer
     from scipy.stats import linregress
     slope_scorer = make_scorer(lambda x, y: linregress(x, y)[0])
     corr_scorer = make_scorer(lambda x, y: np.corrcoef(x, y)[0, 1])
+    meta = meta.set_index('hash')
     sample_scores = []
+
     for sample_num, sample in enumerate(np.arange(0, 1, 0.1)):
-        target_time_points = [sample + latency]
-        times = np.unique(data.reset_index().time)
-        target_time_points = np.array(
-            [times[np.argmin(abs(times - t))] for t in target_time_points]
-        )
+        # Map sample times to existing time points in data
+        target_time_point = sample + latency
+        times = data.columns.get_level_values('time').values
+        target_time_point = times[np.argmin(abs(times - target_time_point))]
+
         # Compute mean latency
-        latency = np.mean(target_time_points - sample)
-        # print('Latency:', latency, '->', target_time_points)
+        latency = target_time_point - sample
+
         # Turn data into (trial X Frequency)
         X = []
         for a in ensure_iter(area):
-            x = (data.reset_index()
-                 .loc[:, ['trial', 'time', 'est_val', a]]
-                 .set_index(['trial', 'time', 'est_val'])
-                 .unstack())
+            x = pd.pivot_table(data.query('cluster=="%s"' % a), index='trial',
+                               columns='freq', values=target_time_point)
             X.append(x)
         sample_data = pd.concat(X, 1)
-        sample_data = sample_data.loc[(slice(None), target_time_points), :]
 
         # Build target vector
-        cvals = np.stack(meta.contrast_probe.values)
+        cvals = np.stack(meta.loc[sample_data.index, 'contrast_probe'].values)
         if target_value == 'contrast':
             target = cvals[:, sample_num]
         elif target_value == 'delta_contrast':
@@ -317,7 +263,7 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
             else:
                 target = cvals[:, sample_num] - cvals[:, sample_num - 1]
         elif target_value == 'acc_contrast':
-            target = cvals[:, :(sample_num+1)].mean(1)
+            target = cvals[:, :(sample_num + 1)].mean(1)
         elif target_value == 'acc_contrast_diff':
             if sample_num == 0:
                 target = cvals[:, sample_num]
@@ -344,7 +290,8 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
             score = cross_validate(clf, sample_data.values, target,
                                    cv=10, scoring=metrics,
                                    return_train_score=False,
-                                   n_jobs=n_jobs)
+                                   n_jobs=1)  # n_jobs = 1 because it
+            # is nested par loop
             # fit = clf(sample_data.values, target)
             del score['fit_time']
             del score['score_time']
@@ -377,24 +324,22 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
     signals, and to 'Lateralized' for motor dependent choice signals
     (MDDC).
     '''
-
+    meta = meta.set_index('hash')
     # Map to nearest time point in data
-    times = np.unique(data.reset_index().time)
+    times = data.columns.get_level_values('time').values
     target_time_point = times[np.argmin(abs(times - latency))]
     logging.info('Selecting next available time point: %02.2f' %
                  target_time_point)
-    times_idx = np.isclose(data.time, target_time_point, 0.00001)
-    data = data.loc[times_idx, :]
+    data = data.loc[:, target_time_point]
 
     # Turn data into (trial X Frequency)
     X = []
     for a in ensure_iter(area):
-        x = (data.reset_index()
-             .loc[:, ['trial', 'est_val', a]]
-             .set_index(['trial', 'est_val'])
-             .unstack())
+        x = pd.pivot_table(data.query('cluster=="%s"' % a), index='trial',
+                           columns='freq', values=target_time_point)
         X.append(x)
     data = pd.concat(X, 1)
+    meta = meta.loc[data.index, :]
     scores = []
     if splitmc:
         for mc, sub_meta in meta.groupby(meta.mc < 0.5):
@@ -403,11 +348,9 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
             # sub_data = data
 
             sub_data = data.loc[sub_meta.index, :]
-            sub_meta = sub_meta.reset_index().set_index('hash').loc[
-                sub_data.index, :]
+            sub_meta = sub_meta.loc[sub_data.index, :]
             # Buld target vector
             target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
-
             logging.info('Class balance: %0.2f, Nr. of samples: %i' % ((target == 1).astype(
                 float).mean(), len(target)))
             score = categorize(target, sub_data, target_time_point)
@@ -415,42 +358,12 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
             scores.append(score)
         return pd.concat(scores)
     else:
-        meta = meta.reset_index().set_index('hash').loc[data.index, :]
         # Buld target vector
         target = (meta.loc[data.index, target_col]).astype(int)
         logging.info('Class balance: %0.2f, Nr. of samples: %i' % ((target == 1).astype(
             float).mean(), len(target)))
 
         return categorize(target, data, target_time_point)
-
-
-def confidence_decoder(meta, data, area, latency=0, signed=True):
-    '''
-
-    '''
-
-    # Map to nearest time point in data
-    times = np.unique(data.reset_index().time)
-    target_time_point = times[np.argmin(abs(times - latency))]
-    times_idx = np.isclose(data.time, target_time_point, 0.00001)
-    data = data.loc[times_idx, :]
-
-    # Turn data into (trial X Frequency)
-    data = (data.reset_index()
-                .loc[:, ['trial', 'est_val', area]]
-                .set_index(['trial', 'est_val'])
-                .unstack())
-
-    meta = meta.reset_index().set_index('hash').loc[data.index, :]
-    data = data.loc[meta.index, :]
-    # Buld target vector
-    if signed:
-        target = (meta.loc[data.index, 'confidence'] *
-                  meta.loc[data.index, 'response']).astype(int)
-    else:
-        target = (meta.loc[data.index, 'confidence'] == 1).astype(int)
-    score = categorize(target, data, target_time_point)
-    return score
 
 
 def multiclass_roc(y_true, y_predict, **kwargs):
@@ -507,7 +420,7 @@ def categorize(target, data, latency):
         score = cross_validate(clf, data, target,
                                cv=10, scoring=metrics,
                                return_train_score=False,
-                               n_jobs=n_jobs)
+                               n_jobs=1)
         del score['fit_time']
         del score['score_time']
         score = {k: np.mean(v) for k, v in list(score.items())}
@@ -519,49 +432,6 @@ def categorize(target, data, latency):
 
 def SVMCV(params):
     return RandomizedSearchCV(svm.SVC(), params, n_iter=50, n_jobs=4)
-
-
-@memory.cache(ignore=['data'])
-def get_subject(subject, area, epoch='stimulus', time=(0, 1),
-                est_vals=(30, 100), est_key='F',
-                baseline_epoch='stimulus', baseline=(-0.35, 0),
-                data=None):
-    if data is None:
-        data = pd.concat([
-            get_session(subject, session, area, epoch=epoch, time=time,
-                        est_vals=est_vals, est_key=est_key,
-                        baseline_epoch=baseline_epoch, baseline=baseline)
-            for session in [0, 1, 2, 3]])
-    else:
-        col_select = list(area) + ['est_val', 'est_key', 'time', 'trial']
-        data = data.reindex(col_select, axis=1)
-        Q = '(%f<=time) & (time<=%f) & (%f<=est_val) & (est_val<= %f) & (est_key=="%s")' % (
-            time[0], time[1], est_vals[0], est_vals[1], est_key)
-        data = data.query(Q)
-
-    meta = preprocessing.get_meta_for_subject(subject, epoch)
-
-    meta.set_index('hash', inplace=True)
-    return data, meta.loc[np.unique(data.trial), :]
-
-
-#@memory.cache
-def get_session(subject, session, area, epoch='stimulus', time=(0, 1),
-                est_vals=(30, 100), est_key='F',
-                baseline_epoch='stimulus', baseline=(-0.35, 0)):
-    df = get_all_areas(subject, session, epoch=epoch, time=time,
-                       est_vals=est_vals, est_key=est_key,
-                       baseline_epoch=baseline_epoch, baseline=baseline)
-    if not any([a in df.columns for a in ensure_iter(area)]):
-        raise RuntimeError(
-            '''Requested area %s does not exist. These are the known areas:
-%s
-            ''' % (area, str([x for x in df.columns])))
-    cols = ['trial', 'time', 'est_key', 'est_val'] + list(ensure_iter(area))
-    df = df.loc[:, cols].reset_index()
-    df.loc[:, 'subject'] = subject
-    df.loc[:, 'session'] = session
-    return df.loc[:, ~df.columns.duplicated()]
 
 
 def get_tableau(meta, dresp, areas={'lh': 'M1-lh', 'rh': 'M1-rh'},
@@ -633,148 +503,36 @@ def get_path(epoch, subject, session, cache=False):
     return filenames
 
 
-def get_all_areas(subject, session, epoch='stimulus', time=(-1.5, 1),
-                  est_vals=(10, 150), est_key='F',
-                  baseline_epoch='stimulus', baseline=(-0.35, 0)):
-    df = get_aggregates(subject, session, epoch=epoch,
-                        baseline_epoch=baseline_epoch, baseline=baseline)
-    df.query('%f<time & time<%f & est_key=="%s" & %f<=est_val & est_val<=%f' %
-             (time[0], time[1], est_key, est_vals[0], est_vals[1]),
-             inplace=True)
-    return df
-
-
 def submit_aggregates(cluster='uke'):
     from pymeg import parallel
     for subject, epoch, session in product(range(1, 16),
                                            ['stimulus', 'response'],
                                            range(4)):
-        parallel.pmap(get_aggregates, [(subject, session, epoch)],
+        parallel.pmap(aggregate, [(subject, session, epoch)],
                       name='agg' + str(session) + epoch + str(subject),
-                      tasks=5, memory=40
+                      tasks=2, memory=40, walltime='12:00:00',
                       )
 
 
-def get_aggregates(subject, session, epoch='stimulus',
-                   baseline_epoch='stimulus', baseline=(-0.35, 0)):
-    est_key = 'F'
-    cachefile = get_path(epoch, subject, session, cache=True)
+def aggregate(subject, session, epoch):
+    from pymeg import aggregate_sr as asr
+    from os.path import join
+    stim = (
+        '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-stimulus-*-chunk*-lcmv.hdf' % (
+            subject, session))
+    resp = (
+        '/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-response-*-chunk*-lcmv.hdf' % (
+            subject, session))
 
-    # try:
-    return pd.read_hdf(cachefile, 'epochs')
-    # except IOError:
+    if epoch == 'stimulus':
+        agg = asr.aggregate_files(stim, stim, (-0.25, 0))
+    elif epoch == 'response':
+        agg = asr.aggregate_files(stim, stim, (-0.25, 0))
 
-    filenames = get_path(epoch, subject, session, cache=False)
-    meta = preprocessing.get_meta_for_subject(subject, epoch)
-    meta = meta.set_index('hash')
-    df = pd.concat([pd.read_hdf(f) for f in filenames])
-    df = np.log10(df) * 10
-
-    # This is the place where baselining should be carried out (i.e. before
-    # averaging across areas)
-    if baseline is not None:
-        if not baseline == epoch:
-            filenames = get_path('stimulus', subject, session, cache=False)
-            dbase = pd.concat([pd.read_hdf(f) for f in filenames])
-            dbase = np.log10(dbase) * 10
-        else:
-            dbase = df
-        dbase = dbase.query(
-            '%f<time & time<%f & est_key=="%s"' %
-            (baseline[0], baseline[1], est_key))
-
-    df.query('est_key=="%s" ' %
-             (est_key),
-             inplace=True)
-
-    if baseline is not None:
-        logging.info('Doing baseline correction')
-        df = apply_baseline(df, dbase, trial=False)
-        del dbase
-        df.set_index(
-            ['trial', 'time', 'est_key', 'est_val'], inplace=True)
-    df = rois.reduce(df).reset_index()  # Reduce to visual clusters
-    # Filter down to correct trials:
-    meta = meta.reindex(np.unique(df.trial.values))
-    df.set_index('trial', inplace=True)
-
-    # Now compute lateralisation
-    def lateralize(response):
-        '''
-        Expects a DataFrame with responses of one hand
-        '''
-        left, right = sorted(rois.lh(df.columns)), sorted(rois.rh(df.columns))
-        if len(left) < len(right):
-            right = sorted(l.replace('lh', 'rh') for l in left)
-        elif len(left) > len(right):
-            left = sorted(l.replace('rh', 'lh') for l in right)
-        return rois.lateralize(response, left, right, '_L-R')
-
-    response_Mone = df.loc[meta.response == -1, :]
-    response_Pone = df.loc[meta.response == +1, :]
-    if subject <= 8:
-        lateralized = pd.concat(
-            [lateralize(response_Mone),
-             lateralize(response_Pone)])
-    else:
-        lateralized = pd.concat(
-            [lateralize(response_Mone),
-             lateralize(response_Pone)])
-    # Averge hemispheres
-    left, right = sorted(rois.lh(df.columns)), sorted(rois.rh(df.columns))
-
-    if len(left) > len(right):
-        right = sorted(l.replace('lh', 'rh') for l in left)
-    elif len(left) < len(right):
-        left = sorted(l.replace('rh', 'lh') for l in right)
-    havg = pd.concat(
-        [df.loc[:, (x, y)].mean(1) for x, y in zip(left, right)],
-        1)
-    havg.columns = [x + '_Havg' for x in left]
-    assert(len(havg) == len(lateralized) == len(df))
-    df = pd.concat((df.reset_index(), lateralized.reset_index(),
-                    havg.reset_index()), 1)
-    df = df.loc[:, ~df.columns.duplicated()]
-    df.to_hdf(cachefile, 'epochs')
-    return df
-
-
-def apply_baseline(data, baseline, trial=False):
-    '''
-    Baseline with mean and variance across time
-    '''
-    dmean = baseline.groupby(
-        ['est_val', 'est_key', 'time']).mean()  # Avg across trials
-    dstd = dmean.groupby(
-        ['est_val', 'est_key']).std()  # Avg across time
-    dmean = dmean.groupby(['est_val', 'est_key']).mean()
-    if 'time' in dmean.columns:
-        del dmean['time'], dstd['time']
-    index_cols = set(data.reset_index().columns) - set(dmean.columns)
-    data = data.reset_index().set_index(list(index_cols))
-    # target_cols = data.columns
-    # (est_key, est_val) x areas
-    # del dmean['trial'], dstd['trial']
-    # areas = dmean.columns
-    acc = []
-    for cond, data in data.groupby(['est_val', 'est_key']):
-        data = data.copy()
-        means = dmean.loc[cond, data.columns]
-        stds = dstd.loc[cond, data.columns]
-        data.loc[:, :] = (data.values - means.values[np.newaxis, :]
-                          ) / stds.values[np.newaxis, :]
-        acc.append(data)
-    data = pd.concat(acc)
-    # data = data.join(dmean, on=['est_val', 'est_key'], rsuffix='_!mbase')
-    # data = data.join(dstd, on=['est_val', 'est_key'], rsuffix='_!sbase')
-
-    # for area in areas:
-    #    data.loc[:, area] = data.loc[:, area] - \
-    #        data.loc[:, area + '_!mbase']
-    #    data.loc[:, area] = data.loc[:, area] / \
-    #        data.loc[:, area + '_!sbase']
-
-    return data.reset_index()  # .loc[:, target_cols]
+    filename = join(
+        '/home/nwilming/conf_meg/sr_labeled/aggs/',
+        'S%i_SESS%i_%s_agg.hdf' % (subject, session, epoch))
+    asr.agg2hdf(agg, filename)
 
 
 def ensure_iter(input):
@@ -786,4 +544,3 @@ def ensure_iter(input):
                 yield item
         except TypeError:
             yield input
-
