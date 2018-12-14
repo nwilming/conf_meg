@@ -419,7 +419,7 @@ def categorize(target, data, latency):
         score = cross_validate(clf, data, target,
                                cv=10, scoring=metrics,
                                return_train_score=False,
-                               n_jobs=n_jobs)
+                               n_jobs=1)
         del score['fit_time']
         del score['score_time']
         score = {k: np.mean(v) for k, v in list(score.items())}
@@ -504,12 +504,12 @@ def get_path(epoch, subject, session, cache=False):
 
 def submit_aggregates(cluster='uke'):
     from pymeg import parallel
-    for subject, epoch, session in product(range(1, 16),
+    for subject, epoch, session in product(range(1, 2),
                                            ['stimulus', 'response'],
                                            range(4)):
         parallel.pmap(aggregate, [(subject, session, epoch)],
                       name='agg' + str(session) + epoch + str(subject),
-                      tasks=2, memory=40, walltime='12:00:00',
+                      tasks=4, memory=60, walltime='12:00:00',
                       )
 
 
