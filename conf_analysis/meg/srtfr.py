@@ -143,7 +143,43 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False,
     return contrast
 
 
+def plot_mosaics(df, stats=False):
+    import pylab as plt
+    from pymeg.contrast_tfr import plot_mosaic
+    for epoch in ['stimulus', 'response']:
+        for contrast in ['all', 'choice', 'confidence', 'confidence_asym', 'hand', 'stimulus']:
+            for hemi in [True, False]:
+                plt.figure()
+                query = 'epoch=="%s" & contrast=="%s" & %s(hemi=="avg")' % (
+                    epoch, contrast, {True: '~', False: ''}[hemi])
+                d = df.query(query)
+                plot_mosaic(d, epoch=epoch, stats=stats)
+                plt.suptitle(query)
+                plt.savefig(
+                    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.pdf' % (epoch, contrast, hemi))
+                plt.savefig(
+                    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
 # Ignore following for now
+
+
+def plot_2epoch_mosaics(df, stats=False, contrasts=['all', 'choice', 'confidence', 'confidence_asym', 'hand', 'stimulus']):
+    import pylab as plt
+    from pymeg.contrast_tfr import plot_2epoch_mosaic
+
+    for contrast in contrasts:
+        for hemi in [True, False]:
+            plt.figure()
+            query = 'contrast=="%s" & %s(hemi=="avg")' % (
+                contrast, {True: '~', False: ''}[hemi])
+            d = df.query(query)
+            plot_2epoch_mosaic(d, stats=stats)
+            plt.suptitle(query)
+            plt.savefig(
+                '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (contrast, hemi))
+            # plt.savefig(
+            #    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
+# Ignore following for now
+
 
 def plot_labels(data, areas, locations, gs, stats=True, minmax=(10, 20),
                 tslice=slice(-0.25, 1.35)):
