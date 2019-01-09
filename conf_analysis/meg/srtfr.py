@@ -37,14 +37,14 @@ contrasts = {
 
 def submit_contrasts(collect=False):
     tasks = []
-    for subject in [3]:
+    for subject in range(1, 16):
         # for session in range(0, 4):
         tasks.append((contrasts,  subject))
     res = []
     for task in tasks:
         try:
             r = _eval(get_contrasts, task, collect=collect,
-                      walltime='01:30:00', tasks=4, memory=60)
+                      walltime='01:30:00', tasks=5, memory=70)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
@@ -118,7 +118,7 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False,
                 n_jobs=1, cache=cache)
             contrast.loc[:, 'epoch'] = 'stimulus'
             cps.append(contrast)
-        except ValueError as e: 
+        except ValueError as e:
             # No objects to concatenate
             print(e)
             pass
@@ -160,6 +160,46 @@ def plot_mosaics(df, stats=False):
                 plt.savefig(
                     '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
 # Ignore following for now
+
+
+def submit_stats(
+                 contrasts=['all', 'choice', 'confidence',
+                            'confidence_asym', 'hand',
+                            'stimulus'],
+                 collect=False):
+    all_stats = {}
+    tasks = []
+    for contrast in contrasts:
+        for hemi in [True, False]:
+            for epoch in ['stimulus', 'response']:
+                tasks.append((contrast, epoch, hemi))
+    res = []
+    for task in tasks[:]:
+        try:
+            r = _eval(precompute_stats, task, collect=collect,
+                      walltime='08:30:00', tasks=2, memory=20)
+            res.append(r)
+        except RuntimeError:
+            print('Task', task, ' not available yet')
+    return res    
+
+
+@memory.cache()
+def precompute_stats(contrast, epoch, hemi):
+    from pymeg import atlas_glasser
+    df = pd.read_hdf('/home/nwilming/all_contrasts_confmeg-20190108.hdf')
+    if epoch == "stimulus":
+        time_cutoff = (-0.5, 1.35)
+    else:
+        time_cutoff = (-1, .5)
+    query = 'epoch=="%s" & contrast=="%s" & %s(hemi=="avg")' % (
+        epoch, contrast, {True: '~', False: ''}[hemi])
+    df = df.query(query)
+    all_stats = {}
+    for (name, area) in atlas_glasser.areas.items():
+        task = contrast_tfr.get_tfr(df.query('cluster=="%s"' % area), time_cutoff)
+        all_stats.update(contrast_tfr.par_stats(*task, n_jobs=1))
+    return all_stats
 
 
 def plot_2epoch_mosaics(df, stats=False, contrasts=['all', 'choice', 'confidence', 'confidence_asym', 'hand', 'stimulus']):
