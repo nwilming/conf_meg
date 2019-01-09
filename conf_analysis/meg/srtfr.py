@@ -24,14 +24,19 @@ contrasts = {
     'all': (['all'], [1]),
     'choice': (['hit', 'fa', 'miss', 'cr'], (1, 1, -1, -1)),
     'stimulus': (['hit', 'fa', 'miss', 'cr'], (1, -1, 1, -1)),
-    'hand': (['left', 'right'], (0.5, -0.5)),
-    'confidence': (['high_conf_high_contrast', 'high_conf_low_contrast',
-                    'low_conf_high_contrast', 'low_conf_low_contrast'],
-                   (0.5, -0.5, 0.5, -0.5)),  # (HCHC-HCLC) + (LCHC - LCLC)
-    'confidence_asym': (['high_conf_high_contrast', 'high_conf_low_contrast',
-                         'low_conf_high_contrast', 'low_conf_low_contrast'],
-                        (0.5, -0.5, -0.5, +0.5)),
-    # (HCHC-HCLC) - (LCHC - LCLC)
+    'hand': (['left', 'right'], (1, -1)),
+    'confidence': (
+        ['high_conf_high_contrast', 'high_conf_low_contrast',
+         'low_conf_high_contrast', 'low_conf_low_contrast'],
+        (1, 1, -1, -1)),
+    # (HCHCont - LCHCont) + (HCLCont - LCLCont) ->
+    #  HCHCont + HCLcont  -  LCHCont - LCLCont 
+    'confidence_asym': (
+        ['high_conf_high_contrast', 'high_conf_low_contrast',
+         'low_conf_high_contrast', 'low_conf_low_contrast'],
+        (1, -1, -1, 1)),
+    # (HCHCont - LCHCont) - (HCLCont - LCLCont) ->
+    #  HCHCont - HCLcont  -  LCHCont + LCLCont 
 }
 
 
