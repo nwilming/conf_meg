@@ -24,14 +24,19 @@ contrasts = {
     'all': (['all'], [1]),
     'choice': (['hit', 'fa', 'miss', 'cr'], (1, 1, -1, -1)),
     'stimulus': (['hit', 'fa', 'miss', 'cr'], (1, -1, 1, -1)),
-    'hand': (['left', 'right'], (0.5, -0.5)),
-    'confidence': (['high_conf_high_contrast', 'high_conf_low_contrast',
-                    'low_conf_high_contrast', 'low_conf_low_contrast'],
-                   (0.5, -0.5, 0.5, -0.5)),  # (HCHC-HCLC) + (LCHC - LCLC)
-    'confidence_asym': (['high_conf_high_contrast', 'high_conf_low_contrast',
-                         'low_conf_high_contrast', 'low_conf_low_contrast'],
-                        (0.5, -0.5, -0.5, +0.5)),
-    # (HCHC-HCLC) - (LCHC - LCLC)
+    'hand': (['left', 'right'], (1, -1)),
+    'confidence': (
+        ['high_conf_high_contrast', 'high_conf_low_contrast',
+         'low_conf_high_contrast', 'low_conf_low_contrast'],
+        (1, 1, -1, -1)),
+    # (HCHCont - LCHCont) + (HCLCont - LCLCont) ->
+    #  HCHCont + HCLcont  -  LCHCont - LCLCont 
+    'confidence_asym': (
+        ['high_conf_high_contrast', 'high_conf_low_contrast',
+         'low_conf_high_contrast', 'low_conf_low_contrast'],
+        (1, -1, -1, 1)),
+    # (HCHCont - LCHCont) - (HCLCont - LCLCont) ->
+    #  HCHCont - HCLcont  -  LCHCont + LCLCont 
 }
 
 
@@ -163,10 +168,10 @@ def plot_mosaics(df, stats=False):
 
 
 def submit_stats(
-                 contrasts=['all', 'choice', 'confidence',
-                            'confidence_asym', 'hand',
-                            'stimulus'],
-                 collect=False):
+        contrasts=['all', 'choice', 'confidence',
+                   'confidence_asym', 'hand',
+                   'stimulus'],
+        collect=False):
     all_stats = {}
     tasks = []
     for contrast in contrasts:
@@ -181,7 +186,7 @@ def submit_stats(
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
-    return res    
+    return res
 
 
 @memory.cache()
@@ -197,7 +202,8 @@ def precompute_stats(contrast, epoch, hemi):
     df = df.query(query)
     all_stats = {}
     for (name, area) in atlas_glasser.areas.items():
-        task = contrast_tfr.get_tfr(df.query('cluster=="%s"' % area), time_cutoff)
+        task = contrast_tfr.get_tfr(
+            df.query('cluster=="%s"' % area), time_cutoff)
         all_stats.update(contrast_tfr.par_stats(*task, n_jobs=1))
     return all_stats
 
@@ -212,6 +218,7 @@ def plot_2epoch_mosaics(df, stats=False, contrasts=['all', 'choice', 'confidence
             query = 'contrast=="%s" & %s(hemi=="avg")' % (
                 contrast, {True: '~', False: ''}[hemi])
             d = df.query(query)
+            print(query)
             plot_2epoch_mosaic(d, stats=stats)
             plt.suptitle(query)
             plt.savefig(
