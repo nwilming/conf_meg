@@ -35,14 +35,14 @@ def modification_date(filename):
         return datetime.datetime.strptime('19700101', '%Y%m%d')
 
 
-def submit(older_than="201811010000"):
+def submit(older_than="201911010000"):
     from pymeg import parallel
     from itertools import product
     cnt = 1
     older_than = datetime.datetime.strptime(older_than, '%Y%m%d%H%M')
 
     for subject, session, epoch, signal in product(
-            [10, 13], range(4), ['stimulus', 'response'],
+            [1], [2], ['stimulus'], #, 'response'],
             ['F', 'LF']):
         mod_time = [modification_date(x) for x in lcmvfilename(
             subject, session, signal, epoch, chunk='all')]
@@ -136,7 +136,6 @@ def get_trans(subject, session):
     return join(trans_dir, file_ident + '-trans.fif')
 
 
-@memory.cache
 def get_leadfield(subject, session, head_model='three_layer'):
     '''
     Compute leadfield with presets for this subject

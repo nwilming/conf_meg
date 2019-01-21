@@ -1,21 +1,3 @@
-
-
-'''
-Compute TFRs from source reconstructed data
-
-This module works on average TFRs for specific ROIS. It takes the output from
-source reconstruction and reduces this to average TFRs.
-
-The logical path through this module is:
-
-1) load_sub_grouped reduces RAW data to average tfrs. It's a good idea
-   to call this function for each subject on the cluster to distribute
-   memory load. Output will be cached.
-2) To compute a contrast call load_sub_grouped with a filter_dict. This
-   allows to compute average TFRs for sub groups of trials per subject.
-3) Use the plotting functions to plot TFRs for different ROIs.
-'''
-
 import os
 import pandas as pd
 from conf_analysis.meg import preprocessing
@@ -42,20 +24,32 @@ contrasts = {
     'all': (['all'], [1]),
     'choice': (['hit', 'fa', 'miss', 'cr'], (1, 1, -1, -1)),
     'stimulus': (['hit', 'fa', 'miss', 'cr'], (1, -1, 1, -1)),
-    'hand': (['left', 'right'], (0.5, -0.5)),
+    'hand': (['left', 'right'], (1, -1)),
+    'confidence': (
+        ['high_conf_high_contrast', 'high_conf_low_contrast',
+         'low_conf_high_contrast', 'low_conf_low_contrast'],
+        (1, 1, -1, -1)),
+    # (HCHCont - LCHCont) + (HCLCont - LCLCont) ->
+    #  HCHCont + HCLcont  -  LCHCont - LCLCont 
+    'confidence_asym': (
+        ['high_conf_high_contrast', 'high_conf_low_contrast',
+         'low_conf_high_contrast', 'low_conf_low_contrast'],
+        (1, -1, -1, 1)),
+    # (HCHCont - LCHCont) - (HCLCont - LCLCont) ->
+    #  HCHCont - HCLcont  -  LCHCont + LCLCont 
 }
 
 
 def submit_contrasts(collect=False):
     tasks = []
-    for subject in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
+    for subject in range(1, 16):
         # for session in range(0, 4):
         tasks.append((contrasts,  subject))
     res = []
     for task in tasks:
         try:
             r = _eval(get_contrasts, task, collect=collect,
-                      walltime='01:30:00', tasks=3, memory=60)
+                      walltime='01:30:00', tasks=5, memory=70)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
@@ -115,32 +109,122 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False,
     response_left = meta.response == 1
     stimulus = meta.side == 1
     meta = augment_data(meta, response_left, stimulus)
+    meta["high_conf_high_contrast"] = (meta.confidence == 2) & (meta.mc > 0.5)
+    meta["high_conf_low_contrast"] = (meta.confidence == 1) & (meta.mc > 0.5)
+    meta["low_conf_high_contrast"] = (meta.confidence == 2) & (meta.mc <= 0.5)
+    meta["low_conf_low_contrast"] = (meta.confidence == 1) & (meta.mc <= 0.5)
     cps = []
     with Cache() as cache:
-        contrast = compute_contrast(
-            contrasts, hemis, stim, stim,
-            meta, (-0.25, 0),
-            baseline_per_condition=baseline_per_condition,
-            n_jobs=1, cache=cache)
-        contrast.loc[:, 'epoch'] = 'stimulus'
-        cps.append(contrast)
-        contrast = compute_contrast(
-            contrasts, hemis, resp, stim,
-            meta, (-0.25, 0),
-            baseline_per_condition=baseline_per_condition,
-            n_jobs=1, cache=cache)
-        contrast.loc[:, 'epoch'] = 'response'
-        cps.append(contrast)
+        try:
+            contrast = compute_contrast(
+                contrasts, hemis, stim, stim,
+                meta, (-0.25, 0),
+                baseline_per_condition=baseline_per_condition,
+                n_jobs=1, cache=cache)
+            contrast.loc[:, 'epoch'] = 'stimulus'
+            cps.append(contrast)
+        except ValueError as e:
+            # No objects to concatenate
+            print(e)
+            pass
+        try:
+            contrast = compute_contrast(
+                contrasts, hemis, resp, stim,
+                meta, (-0.25, 0),
+                baseline_per_condition=baseline_per_condition,
+                n_jobs=1, cache=cache)
+            contrast.loc[:, 'epoch'] = 'response'
+            cps.append(contrast)
+        except ValueError as e:
+            # No objects to concatenate
+            print(e)
+            pass
     contrast = pd.concat(cps)
     del cps
     contrast.loc[:, 'subject'] = subject
 
     contrast.set_index(['subject',  'contrast',
-                        'hemi', 'epoch'], append=True, inplace=True)
+                        'hemi', 'epoch', 'cluster'], append=True, inplace=True)
     return contrast
 
 
+def plot_mosaics(df, stats=False):
+    import pylab as plt
+    from pymeg.contrast_tfr import plot_mosaic
+    for epoch in ['stimulus', 'response']:
+        for contrast in ['all', 'choice', 'confidence', 'confidence_asym', 'hand', 'stimulus']:
+            for hemi in [True, False]:
+                plt.figure()
+                query = 'epoch=="%s" & contrast=="%s" & %s(hemi=="avg")' % (
+                    epoch, contrast, {True: '~', False: ''}[hemi])
+                d = df.query(query)
+                plot_mosaic(d, epoch=epoch, stats=stats)
+                plt.suptitle(query)
+                plt.savefig(
+                    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.pdf' % (epoch, contrast, hemi))
+                plt.savefig(
+                    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
 # Ignore following for now
+
+
+def submit_stats(
+                 contrasts=['all', 'choice', 'confidence',
+                            'confidence_asym', 'hand',
+                            'stimulus'],
+                 collect=False):
+    all_stats = {}
+    tasks = []
+    for contrast in contrasts:
+        for hemi in [True, False]:
+            for epoch in ['stimulus', 'response']:
+                tasks.append((contrast, epoch, hemi))
+    res = []
+    for task in tasks[:]:
+        try:
+            r = _eval(precompute_stats, task, collect=collect,
+                      walltime='08:30:00', tasks=2, memory=20)
+            res.append(r)
+        except RuntimeError:
+            print('Task', task, ' not available yet')
+    return res    
+
+
+@memory.cache()
+def precompute_stats(contrast, epoch, hemi):
+    from pymeg import atlas_glasser
+    df = pd.read_hdf('/home/nwilming/all_contrasts_confmeg-20190108.hdf')
+    if epoch == "stimulus":
+        time_cutoff = (-0.5, 1.35)
+    else:
+        time_cutoff = (-1, .5)
+    query = 'epoch=="%s" & contrast=="%s" & %s(hemi=="avg")' % (
+        epoch, contrast, {True: '~', False: ''}[hemi])
+    df = df.query(query)
+    all_stats = {}
+    for (name, area) in atlas_glasser.areas.items():
+        task = contrast_tfr.get_tfr(df.query('cluster=="%s"' % area), time_cutoff)
+        all_stats.update(contrast_tfr.par_stats(*task, n_jobs=1))
+    return all_stats
+
+
+def plot_2epoch_mosaics(df, stats=False, contrasts=['all', 'choice', 'confidence', 'confidence_asym', 'hand', 'stimulus']):
+    import pylab as plt
+    from pymeg.contrast_tfr import plot_2epoch_mosaic
+
+    for contrast in contrasts:
+        for hemi in [True, False]:
+            plt.figure()
+            query = 'contrast=="%s" & %s(hemi=="avg")' % (
+                contrast, {True: '~', False: ''}[hemi])
+            d = df.query(query)
+            plot_2epoch_mosaic(d, stats=stats)
+            plt.suptitle(query)
+            plt.savefig(
+                '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (contrast, hemi))
+            # plt.savefig(
+            #    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
+# Ignore following for now
+
 
 def plot_labels(data, areas, locations, gs, stats=True, minmax=(10, 20),
                 tslice=slice(-0.25, 1.35)):

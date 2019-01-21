@@ -113,10 +113,18 @@ def load_data():
     data.loc[:, 'hash'] = [keymap.hash(x) for x in data.loc[
         :, ('day', 'snum', 'block_num', 'trial')].values]
     assert len(np.unique(data.loc[:, 'hash'])) == len(data.loc[:, 'hash'])
+
+    def foo(x):
+        x.loc[:, 'cbm'] = x.contrast.mean()
+        return x
+    data = data.groupby(['snum', 'session_num', 'block_num']).apply(foo)
     return data
 
 
-def get_dz(data):
+def get_dz(data=None):
+    if data is None:
+        data = load_data()
+
     def zscore_contrast(data):
         con = np.vstack(data.contrast_probe)
         m = np.mean(con)
@@ -131,8 +139,13 @@ def get_dz(data):
         ['snum', 'session_num', 'block_num']).apply(zscore_contrast)
     dz['mc'] = np.array([np.mean(k) for k in dz.contrast_probe.values])
     dz['stdc'] = np.array([np.std(k) for k in dz.contrast_probe.values])
-    return (dz.groupby(['snum', 'session_num', 'block_num'])
-              .apply(lambda x: contrast_block_mean(x, center=0)))
+    dz = (dz.groupby(['snum', 'session_num', 'block_num'])
+          .apply(lambda x: contrast_block_mean(x, center=0)))
+
+    def foo(x):
+        x.loc[:, 'cbm'] = x.contrast.mean()
+        return x
+    return dz.groupby(['snum', 'session_num', 'block_num']).apply(foo)
 
 
 def data_cleanup(data):
@@ -362,9 +375,9 @@ def get_pk(data, contrast_mean=0.5, response_field='response'):
 
     # Subtract QUEST mean from trials.
     con_select2nd = (np.vstack(dr1.contrast_probe) - contrast_mean
-                     - (dr1.contrast_block_mean * dr1.side)[:, np.newaxis])
+                     - (dr1.cbm * dr1.side)[:, np.newaxis])
     con_select1st = (np.vstack(dr2.contrast_probe) - contrast_mean
-                     - (dr2.contrast_block_mean * dr2.side)[:, np.newaxis])
+                     - (dr2.cbm * dr2.side)[:, np.newaxis])
 
     sel = np.vstack((con_select2nd, 0 * con_select1st))
     nsel = np.vstack((con_select1st, 0 * con_select2nd))
@@ -388,15 +401,15 @@ def get_pk(data, contrast_mean=0.5, response_field='response'):
 
 
 def get_decision_kernel(data, contrast_mean=0.5, response_field='response'):
-    kernels = []
-
     kernel = (data.groupby(['snum'])
-              .apply(lambda x: get_pk(x, contrast_mean=contrast_mean, response_field=response_field))
+              .apply(lambda x: get_pk(x, contrast_mean=contrast_mean,
+                                      response_field=response_field))
               .groupby(level=['snum', 'time', 'optidx']).mean()
               .reset_index())
 
     kernel_diff = (data.groupby(['snum'])
-                   .apply(lambda x: get_pk(x, contrast_mean=contrast_mean, response_field=response_field))
+                   .apply(lambda x: get_pk(x, contrast_mean=contrast_mean,
+                                           response_field=response_field))
                    .groupby(level=['snum', 'time'])
                    .apply(lambda x: x.query('optidx==1').mean() + x.query('optidx==0').mean())
                    .reset_index())
