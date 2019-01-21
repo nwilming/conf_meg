@@ -49,7 +49,7 @@ def submit_contrasts(collect=False):
     for task in tasks:
         try:
             r = _eval(get_contrasts, task, collect=collect,
-                      walltime='01:30:00', tasks=5, memory=70)
+                      walltime='01:30:00', tasks=9, memory=70)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
@@ -192,7 +192,7 @@ def submit_stats(
 @memory.cache()
 def precompute_stats(contrast, epoch, hemi):
     from pymeg import atlas_glasser
-    df = pd.read_hdf('/home/nwilming/all_contrasts_confmeg-20190108.hdf')
+    df = pd.read_hdf('/home/nwilming/all_contrasts_confmeg-20190110.hdf')
     if epoch == "stimulus":
         time_cutoff = (-0.5, 1.35)
     else:
