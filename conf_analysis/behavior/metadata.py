@@ -22,7 +22,7 @@ if socket.gethostname().startswith('node'):
         cachedir = '/home/nwilming/conf_data/cache/'
         preprocessed = '/home/nwilming/conf_meg/'
         sr_labeled = '/home/nwilming/conf_meg/sr_labeled/'
-        sraggregates = '/home/nwilming/conf_meg/sr_labeled/aggregates'    
+        sraggregates = '/home/nwilming/conf_meg/sr_labeled/aggregates'
 elif 'lisa.surfsara' in socket.gethostname():
     home = '/home/nwilming/'
     project = '/home/nwilming/conf_analysis/'
@@ -174,7 +174,7 @@ def define_blocks(events):
                 if (151 in events[evstart - 10:evstart, 2]):
                     prev_end = 10 - \
                         where(events[evstart - 10:evstart, 2] == 151)[0][0]
-                    id_keep[(start[matching_start] - prev_end + 1)                            :end[i] + 1] = True
+                    id_keep[(start[matching_start] - prev_end + 1):end[i] + 1] = True
                 else:
                     id_keep[(start[matching_start] - 10):end[i] + 1] = True
             events = events[id_keep, :]
@@ -249,10 +249,10 @@ def get_meta(events, tstart, tend, tnum, bnum, day, subject, buttons=None):
         if buttons is not None:
             but_idx = (ts < buttons[:, 0]) & (buttons[:, 0] < te)
             if sum(but_idx) > 0:
-              buts = buttons[but_idx, :]
-              trial['megbuttons'] = buts[0, 2]
+                buts = buttons[but_idx, :]
+                trial['megbuttons'] = buts[0, 2]
             else:
-              trial['megbuttons'] = np.nan
+                trial['megbuttons'] = np.nan
         trls.append(trial)
 
     trls = pd.DataFrame(trls)
