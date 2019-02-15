@@ -30,8 +30,6 @@ from imblearn.over_sampling import RandomOverSampler
 from conf_analysis.behavior import metadata
 from conf_analysis.meg import preprocessing
 
-from pymeg import roi_clusters as rois
-
 
 from joblib import Memory
 
@@ -97,18 +95,21 @@ def set_n_threads(n):
     os.environ['OMP_NUM_THREADS'] = str(n)
 
 
-def submit(cluster='PBS'):
+def submit(cluster='SLURM'):
     from pymeg import parallel
     decoder = decoders().keys()
-    if cluster == 'slurm':
-        pmap = partial(parallel.pmap, email=None, tasks=1, nodes=1, memory=60,
-                       ssh_to=None, home='/work/faty014', walltime='11:50:55',
-                       cluster='SLURM')
+    if cluster == 'SLURM':
+        pmap = partial(parallel.pmap, email=None, tasks=1, nodes=1,
+                       memory=60,
+                       ssh_to=None,
+                       walltime='72:00:00',  # walltime='72:00:00',
+                       cluster='SLURM',
+                       env='py36')
     else:
-        pmap = partial(parallel.pmap, nodes=1, tasks=n_jobs, memory=31,
+        pmap = partial(parallel.pmap, nodes=1, tasks=n_jobs, memory=61,
                        ssh_to=None,  walltime='72:00:00', env='py36')
 
-    for subject, epoch, dcd in product(range(2, 16),
+    for subject, epoch, dcd in product([1, 16],
                                        ['stimulus', 'response'],
                                        decoder):
         pmap(run_decoder, [(subject, dcd, epoch)],
@@ -130,9 +131,11 @@ def augment_meta(meta):
     return meta
 
 
-@memory.cache
 def run_decoder(subject, decoder, epoch, ntasks=n_jobs,
                 hemis=['Lateralized', 'Averaged', 'Pair']):
+    '''
+    Parallelize across areas and hemis.
+    '''
     set_n_threads(1)
     from multiprocessing import Pool
     from glob import glob
@@ -148,31 +151,38 @@ def run_decoder(subject, decoder, epoch, ntasks=n_jobs,
     for area, hemi in product(areas, hemis):
         if hemi == 'Pair':
             area = [area + '_RH', area + '_LH']
-        args.append((meta, asr.delayed_agg(filenames, hemi, area), decoder))
-    print('Processing %i tasks, chunksize=%i' % (len(args), ntasks))
+
+        args.append((meta, asr.delayed_agg(filenames,
+                                           hemi=hemi,
+                                           cluster=area),
+                     decoder, hemi))
+    print('Processing %i tasks' % (len(args)))
+
     with Pool(ntasks) as p:
         scores = p.starmap(_par_apply_decode, args)  # , chunksize=ntasks)
     scores = [s for s in scores if s is not None]
     scores = pd.concat(scores)
     filename = outpath + '/concat_S%i-%s-%s-decoding.hdf' % (
         subject, decoder, epoch)
+    scores.loc[:, 'subject'] = subject
     scores.to_hdf(filename, 'decoding')
+
     p.terminate()
     return scores
 
 
-def _par_apply_decode(meta, delayed_agg, decoder):
+def _par_apply_decode(meta, delayed_agg, decoder, hemi=None):
     agg = delayed_agg()
     dt = np.diff(agg.columns.get_level_values('time'))[0]
-    print('.')
     latencies = None
-    if decoder == 'SSD':
+    if 'SSD' in decoder:
         latencies = np.arange(-.1, 0.75, dt)
 
-    return apply_decoder(meta, agg, decoders()[decoder], latencies=latencies)
+    return apply_decoder(meta, agg, decoders()[decoder], latencies=latencies,
+                         hemi=hemi)
 
 
-def apply_decoder(meta, agg, decoder, latencies=None):
+def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
     """Run a decoder across a set of latencies.
 
     Args:
@@ -197,6 +207,7 @@ def apply_decoder(meta, agg, decoder, latencies=None):
         logging.info('Applying decoder %s at latency %s' % (decoder, latency))
         try:
             s = decoder(meta, agg, area, latency=latency)
+            s.loc[:, 'cluster'] = str(area)
             scores.append(s)
         except:
             logging.exception(''''Error in run_decoder:        
@@ -205,6 +216,7 @@ def apply_decoder(meta, agg, decoder, latencies=None):
         # Latency: %f)''' % (str(decoder), area, latency))
             raise
     res = pd.concat(scores)
+    res.loc[:, 'hemi'] = hemi
     logging.info('Applying decoder %s across N=%i latencies took %3.2fs' % (
         decoder, len(latencies), time.time() - start))
     return res
@@ -257,6 +269,7 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
         cvals = np.stack(meta.loc[sample_data.index, 'contrast_probe'].values)
         if target_value == 'contrast':
             target = cvals[:, sample_num]
+
         elif target_value == 'delta_contrast':
             if sample_num == 0:
                 target = cvals[:, sample_num]
@@ -301,6 +314,7 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value='contrast'):
             score['sample'] = sample_num
             # score['coefs'] = fit.coef_.astype(object)
             sample_scores.append(score)
+        del sample_data
 
     return pd.DataFrame(sample_scores)
 
@@ -343,10 +357,6 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
     scores = []
     if splitmc:
         for mc, sub_meta in meta.groupby(meta.mc < 0.5):
-            # Align data and meta
-            # sub_meta = meta
-            # sub_data = data
-
             sub_data = data.loc[sub_meta.index, :]
             sub_meta = sub_meta.loc[sub_data.index, :]
             # Buld target vector
@@ -356,14 +366,17 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True,
             score = categorize(target, sub_data, target_time_point)
             score.loc[:, 'mc<0.5'] = mc
             scores.append(score)
-        return pd.concat(scores)
+        scores = pd.concat(scores)
     else:
         # Buld target vector
         target = (meta.loc[data.index, target_col]).astype(int)
         logging.info('Class balance: %0.2f, Nr. of samples: %i' % ((target == 1).astype(
             float).mean(), len(target)))
 
-        return categorize(target, data, target_time_point)
+        scores = categorize(target, data, target_time_point)
+    scores.loc[:, 'area'] = str(area)
+    scores.loc[:, 'latency'] = latency
+    return scores
 
 
 def multiclass_roc(y_true, y_predict, **kwargs):
