@@ -116,6 +116,14 @@ def fit(predict, data, x0, bounds):
     return least_squares(err, x0, loss='soft_l1', bounds=bounds)
 
 
+def fit2(predict, data, contrast,  x0, bounds):
+    err = (lambda x:
+           (data - predict(contrast, *x)).ravel())
+
+    return least_squares(err, x0, loss='soft_l1')
+
+
+
 '''
 Linear model with temporal differences: lmtd
 Contrast dependence is simply linear!
@@ -637,11 +645,10 @@ def mv_crf_model(power, contrast):
     '''
     num_freqs = power.shape[1]
     import numpy as np
-    import theano.tensor as tt
     import pymc3 as pm
 
-    contrast = contrast[:, np.newaxis] * 100
-
+    contrast = (contrast[:, np.newaxis]+0.5) * 100
+    print(contrast.shape)
     with pm.Model() as model:
         BoundedNormal = pm.Bound(pm.Normal, lower=0)
         #BoundedNormalP = pm.Bound(pm.Normal, lower=0)

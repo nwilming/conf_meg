@@ -30,13 +30,16 @@ contrasts = {
          'low_conf_high_contrast', 'low_conf_low_contrast'],
         (1, 1, -1, -1)),
     # (HCHCont - LCHCont) + (HCLCont - LCLCont) ->
-    #  HCHCont + HCLcont  -  LCHCont - LCLCont 
+    #  HCHCont + HCLcont  -  LCHCont - LCLCont
+    # Example: 
+    # HCm = 10, LCm = 7 (10-7) + (1-4) = 3-3 == 0
+
     'confidence_asym': (
         ['high_conf_high_contrast', 'high_conf_low_contrast',
          'low_conf_high_contrast', 'low_conf_low_contrast'],
         (1, -1, -1, 1)),
     # (HCHCont - LCHCont) - (HCLCont - LCLCont) ->
-    #  HCHCont - HCLcont  -  LCHCont + LCLCont 
+    #  HCHCont - HCLcont  -  LCHCont + LCLCont
 }
 
 
@@ -218,13 +221,19 @@ def plot_2epoch_mosaics(df, stats=False, contrasts=['all', 'choice', 'confidence
             query = 'contrast=="%s" & %s(hemi=="avg")' % (
                 contrast, {True: '~', False: ''}[hemi])
             d = df.query(query)
-            print(query)
-            plot_2epoch_mosaic(d, stats=stats)
-            plt.suptitle(query)
+            plot_2epoch_mosaic(d, stats=stats, cmap='RdBu')
+            title = '%s, %s' % (
+                contrast, {True: 'Lateralized', False: 'Hemis avg.'}[hemi])
+            plt.suptitle(title)
             plt.savefig(
-                '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (contrast, hemi))
-            # plt.savefig(
-            #    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
+                '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (
+                    contrast, hemi),
+                bbox_inches='tight')
+        
+
+
+
+            
 # Ignore following for now
 
 

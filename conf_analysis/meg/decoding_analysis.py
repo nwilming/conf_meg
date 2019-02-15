@@ -505,8 +505,8 @@ def get_path(epoch, subject, session, cache=False):
 
 def submit_aggregates(cluster='uke'):
     from pymeg import parallel
-    for subject, epoch, session in product(range(1, 2),
-                                           ['stimulus', 'response'],
+    for subject, epoch, session in product(range(1, 16),
+                                           ['response'],
                                            range(4)):
         parallel.pmap(aggregate, [(subject, session, epoch)],
                       name='agg' + str(session) + epoch + str(subject),
@@ -527,7 +527,7 @@ def aggregate(subject, session, epoch):
     if epoch == 'stimulus':
         agg = asr.aggregate_files(stim, stim, (-0.25, 0))
     elif epoch == 'response':
-        agg = asr.aggregate_files(stim, stim, (-0.25, 0))
+        agg = asr.aggregate_files(resp, stim, (-0.25, 0))
 
     filename = join(
         '/home/nwilming/conf_meg/sr_labeled/aggs/',
