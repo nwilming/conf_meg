@@ -110,8 +110,8 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False,
     stimulus = meta.side == 1
     meta = augment_data(meta, response_left, stimulus)
     meta["high_conf_high_contrast"] = (meta.confidence == 2) & (meta.mc > 0.5)
-    meta["high_conf_low_contrast"] = (meta.confidence == 1) & (meta.mc > 0.5)
-    meta["low_conf_high_contrast"] = (meta.confidence == 2) & (meta.mc <= 0.5)
+    meta["high_conf_low_contrast"] = (meta.confidence == 2) & (meta.mc <= 0.5)
+    meta["low_conf_high_contrast"] = (meta.confidence == 1) & (meta.mc > 0.5)
     meta["low_conf_low_contrast"] = (meta.confidence == 1) & (meta.mc <= 0.5)
     cps = []
     with Cache() as cache:
@@ -192,7 +192,7 @@ def submit_stats(
 @memory.cache()
 def precompute_stats(contrast, epoch, hemi):
     from pymeg import atlas_glasser
-    df = pd.read_hdf('/home/nwilming/all_contrasts_confmeg-20190110.hdf')
+    df = pd.read_hdf('/home/nwilming/conf_analysis/results/all_contrasts_updated_confcon-2090122.hdf')
     if epoch == "stimulus":
         time_cutoff = (-0.5, 1.35)
     else:

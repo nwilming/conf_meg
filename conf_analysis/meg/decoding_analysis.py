@@ -47,7 +47,7 @@ else:
     outpath = '/home/nwilming/conf_meg/sr_decoding'
     memory = Memory(cachedir=metadata.cachedir)
 
-n_jobs = 16
+n_jobs = 10
 
 n_trials = {1: {'stimulus': 1565, 'response': 245},
             2: {'stimulus': 1852, 'response': 1697},
@@ -201,6 +201,9 @@ def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
     if latencies is None:
         latencies = agg.columns.get_level_values('time').values
 
+    print(agg, decoder)
+    print(agg.head())
+    
     area = np.unique(agg.index.get_level_values('cluster'))
     scores = []
     for latency in latencies:
