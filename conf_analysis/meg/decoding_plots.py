@@ -8,7 +8,7 @@ from matplotlib import cm
 from matplotlib import colors
 from matplotlib import gridspec
 from matplotlib import pyplot
-from pymeg import roi_clusters as rois
+from pymeg import atlas_glasser as ag
 from pymeg import source_reconstruction as sr
 
 from conf_analysis.behavior import metadata
@@ -24,231 +24,129 @@ else:
     memory = Memory(cachedir=metadata.cachedir)
 
 
+choice_decoding_areas = ('HCPMMP1_premotor', 'JWG_M1',
+                         'vfcFEF', 'JWG_IPS_PCeS',
+                         'HCPMMP1_dlpfc', 'JWG_aIPS')
+
+
 def filter_latency(data, min, max):
     lat = data.index.get_level_values('latency').values
     return data.loc[(min < lat) & (lat < max), :]
 
 
-def make_brain_plots(data, atype='Pairs', ssd_view=['cau']):
-    # 1 AUC
-    auc_limits = {'MIDC_split': (0.3, 0.7), 'MIDC_nosplit': (0.3, 0.7),
-                  'CONF_signed': (0.3, 0.7), 'CONF_unsigned': (.3, 0.7),
-                  'SIDE_nosplit': (0.3, 0.7)}
-    '''
-    df = data.test_roc_auc.Pairs.query(
-        'epoch=="stimulus" & ~(signal=="SSD") & Classifier=="SCVlin"')
-    plot_summary_results(filter_latency(df, 0.15, 0.2),
-                         limits=auc_limits, epoch='stimulus', measure='auc')
-    df = data.test_roc_auc.Pairs.query(
-        'epoch=="response" & ~(signal=="SSD") & Classifier=="SCVlin"')
-    plot_summary_results(filter_latency(df, -0.05, 0.05),
-                         limits=auc_limits, epoch='response', measure='auc')
-
-    df = data.test_roc_auc.loc[:, atype].query(
-        'epoch=="response" & ~(signal=="SSD") & Classifier=="SCVlin"')
-    plot_summary_results(filter_latency(df, 0.425, 0.475),
-                         limits=auc_limits, epoch='response_late_' + 'atype', measure='auc')
-
-    acc_limits = {'MIDC_split': (-0.2, 0.2), 'MIDC_nosplit': (-0.2, 0.2),
-                  'CONF_signed': (-0.2, 0.2), 'CONF_unsigned': (-.2, 0.2),
-                  'SIDE_nosplit': (-0.2, 0.2)}
-    df = data.test_accuracy.Pairs.query(
-        'epoch=="stimulus" & ~(signal=="SSD") & Classifier=="SCVlin"')
-    plot_summary_results(filter_latency(df, -0.05, 0.05),
-                         limits=acc_limits, epoch='stimulus', measure='accuracy')
-    df = data.test_accuracy.Pairs.query(
-        'epoch=="response" & ~(signal=="SSD") & Classifier=="SCVlin"')
-    plot_summary_results(filter_latency(df, -0.05, 0.05),
-                         limits=acc_limits, epoch='response', measure='accuracy')
-    '''
-    data_ssd = filter_latency(data.test_slope.Pairs.query(
-        'epoch=="stimulus" & (signal=="SSD") & Classifier=="Ridge"'), 0.18, 0.19)
-    for sample, sd in data_ssd.groupby('sample'):
-        ssd_limits = {'SSD': (-0.08, 0.08)}
-        plot_summary_results(sd, limits=ssd_limits,
-                             epoch='stimulus',
-                             measure='slope' + '_sample%i' % sample,
-                             views=ssd_view)
-
-
-def plot_summary_results(data, cmap='RdBu_r',
-                         limits={'MIDC_split': (0.3, 0.7),
-                                 'MIDC_nosplit': (0.3, 0.7),
-                                 'CONF_signed': (0.3, 0.7),
-                                 'CONF_unsigned': (.3, 0.7),
-                                 'SIDE_nosplit': (0.3, 0.7),
-                                 'SSD': (-0.05, 0.05)},
-                         ex_sub='S04', measure='auc', epoch='response',
-                         classifier='svc',
-                         views=[['par', 'fro'], ['lat', 'med']]):
-    from pymeg import roi_clusters as rois, source_reconstruction as sr
-
-    # labels = sr.get_labels(ex_sub)
-    labels = sr.get_labels(ex_sub)
-    lc = rois.labels_to_clusters(labels, rois.all_clusters, hemi='lh')
-
-    for signal, dsignal in data.groupby('signal'):
-        vmin, vmax = limits[signal]
-        norm = colors.Normalize(vmin=vmin, vmax=vmax)
-        colortable = cm.get_cmap(cmap)
-        cfunc = lambda x: colortable(norm(x))
-        brain = plot_one_brain(dsignal, signal, lc, cfunc, ex_sub=ex_sub,
-                               measure=measure, classifier=classifier,
-                               epoch=epoch, views=views)
-    return brain
-
-
-#@memory.cache
-def plot_one_brain(dsignal, signal, lc, cmap, ex_sub='S04', classifier='SCVlin',
-                   epoch='response', measure='auc', views=[['par', 'fro'], ['lat', 'med']]):
-    from surfer import Brain
-    print('Creating Brain')
-    brain = Brain(ex_sub, 'lh', 'inflated',  views=['lat'], background='w')
-    # subjects_dir='/Users/nwilming/u/freesurfer_subjects/')
-    print('Created Brain')
-    ms = dsignal.mean()
-    if (signal == 'CONF_signed') and (measure == 'accuracy'):
-        plot_labels_on_brain(brain, lc, ms, cmap)
-    if (signal == 'SSD'):
-        plot_labels_on_brain(brain, lc, ms, cmap)
-    else:
-        plot_labels_on_brain(brain, lc, ms, cmap)
-    brain.save_montage('/Users/nwilming/Desktop/%s_montage_%s_%s_%s.png' %
-                       (signal, measure, classifier, epoch), views)
-    return brain
-
-
-def plot_labels_on_brain(brain, labels, data, cmap):
-    already_plotted = []
-    for label in data.index.values:
-        for clustername, lobjects in labels.items():
-            if clustername == label:
-                for l0 in lobjects:
-                    if any(l0.name == x for x in already_plotted):
-                        import pdb
-                        pdb.set_trace()
-                    # print(('Addding', l0.name, cmap(value)))
-                    already_plotted.append(l0.name)
-                    value = data.loc[label]
-                    l0.color = cmap(value)
-                    brain.add_label(l0, color=cmap(value), alpha=0.8)
-
-    brain.save_image('test.png')
-
-
-def plot_brain_color_legend(data, palette):
-    from surfer import Brain
-    labels = sr.get_labels('S04')
-    lc = rois.labels_to_clusters(labels, rois.all_clusters, hemi='lh')
-    brain = Brain('S04', 'lh', 'inflated',  views=['lat'], background='w')
-    for cluster, labelobjects in lc.items():
-        color = palette[cluster]
-        for l0 in labelobjects:
-            brain.add_label(l0, color=color, alpha=1)
-    brain.save_montage('/Users/nwilming/Dropbox/UKE/confidence_study/brain_colorbar.png',
-                       [['par', 'fro'], ['lat', 'med']])
-    return brain
-
-
-@memory.cache
-def _dcd_helper_getter(path):
-    df = pd.read_hdf(os.path.join(
-        path, 'all_decoded_samples_with_split_conf.hdf'))
-    df = df.query('~(signal=="SSD")')
-    df.loc[:, 'latency'] = np.around(df.latency.astype(float), 4)
-    df = df.reset_index().set_index(
-        ['Classifier', 'epoch', 'est_key', 'latency', 'mc<0.5', 'signal', 'subject', 'area'])
-
-    df = df.loc[~df.index.duplicated(), :]
-    df = df.unstack('area').T
-    return df
-
-
-@memory.cache
-def _ssd_helper_getter(path):
-    ssd = pd.read_hdf(os.path.join(
-        path, 'all_decoded_samples_with_split_conf.hdf'))
-    ssd = ssd.query('(signal=="SSD")')
-    ssd.loc[:, 'latency'] = np.around(ssd.latency.astype(float), 4)
-    ssd = ssd.reset_index().set_index(
-        ['Classifier', 'epoch', 'est_key', 'latency', 'signal', 'subject', 'sample', 'area'])
-    ssd = ssd.loc[~ssd.index.duplicated(), :]
-    ssd = ssd.unstack('area').T
-    return ssd
-
-
-@memory.cache
-def _ssd_add_helper_getter(path):
-    ssd = pd.read_hdf(os.path.join(
-        path, 'SSD_additional.hdf'))
-    ssd.loc[:, 'latency'] = np.around(ssd.latency.astype(float), 4)
-    ssd = ssd.reset_index().set_index(
-        ['Classifier', 'epoch', 'est_key', 'latency', 'signal', 'subject', 'sample', 'area'])
-    ssd = ssd.loc[~ssd.index.duplicated(), :]
-    ssd = ssd.unstack('area').T
-    return ssd
-
-
-def recode(df):
-    dt = []
-    areas = []
-    for area in df.index.get_level_values('area'):
-        if '_L-R' in area:
-            dt.append('Lateralized')
-            areas.append(area.replace('-lh_L-R', ''))
-        elif '_Havg' in area:
-            dt.append('Average')
-            areas.append(area.replace('-lh_Havg', ''))
-        else:
-            dt.append('Pairs')
-            areas.append(area.split(',')[0].replace(
-                '(', '').replace(')', '').replace("'", '').replace('-lh', ''))
-    df.loc[:, 'atype'] = dt
-    df.set_index('atype', append=True, inplace=True)
-    df = df.swaplevel(1, 2)
-    df = df.T
-    df.columns.set_levels(areas, level='area', inplace=True)
-    return df
-
-
-def get_decoding_data(path='/home/nwilming/conf_meg/', ssd_classifier="Ridge",
-                      decoding_classifier="SCVlin"):
-    # files = glob.glob(os.path.join(path, 'concat_S*'))
-    # df = pd.concat([pd.read_hdf(f) for f in files])
-    df = recode(_dcd_helper_getter(path))
-    ssd = recode(_ssd_helper_getter(path))
-    ssdadd = recode(_ssd_add_helper_getter(path))
-    # ssd = df.query('signal=="SSD"')
-    # df = df.query('~(signal=="SSD")')
+def get_decoding_data(decoding_classifier="SCVlin", restrict=True):
+    df = pd.read_hdf(
+        '/Users/nwilming/u/conf_analysis/results/all_decoding_results_20190215.hdf')
+    df.loc[:, 'latency'] = df.latency.round(3)
+    idnan = np.isnan(df.subject)
+    df.loc[idnan, 'subject'] = df.loc[idnan, 'sub']
+    df = df.loc[~np.isnan(df.subject), :]
+    df = df.query(
+        'Classifier=="%s"' % decoding_classifier)
+    df.loc[:, 'cluster'] = [(c
+                             .split(' ')[0]
+                             .replace('_LH', '')
+                             .replace('_RH', ''))
+                            for c in df.loc[:, 'cluster'].values]
+    if restrict:
+        clusters = ag.areas.values()
+        idx = [True if c in clusters else False for c in df.loc[:, 'cluster']]
+        df = df.loc[idx, :]
+    for field in ['signal', 'hemi', 'cluster', 'Classifier', 'epoch']:
+        df.loc[:, field] = df.loc[:, field].astype('category')
+    df.loc[:, 'mc<0.5'] = df.loc[:, 'mc<0.5'].astype(str)
+    df.set_index(['Classifier', 'signal', 'subject', 'epoch', 'latency',
+                  'mc<0.5', 'hemi', 'cluster'], inplace=True)
+    df = df.loc[~df.index.duplicated()]
+    df = df.unstack(['hemi', 'cluster'])
     idt = df.test_accuracy.index.get_level_values('signal') == 'CONF_signed'
     df.loc[idt, 'test_accuracy'] = (df.loc[idt, 'test_accuracy'] - 0.25).values
     df.loc[~idt, 'test_accuracy'] = (
         df.loc[~idt, 'test_accuracy'] - 0.5).values
-    return (df.query('~(subject==6) & Classifier=="%s"' % decoding_classifier),
-            ssd.query("Classifier=='%s'" % ssd_classifier),
-            ssdadd.query("Classifier=='%s'" % ssd_classifier))
+    return df
 
 
-def plot_signals(data, measure, classifier='svm', ylim=(0.45, 0.75)):
-    for epoch, de in data.groupby('epoch'):
-        print(de.shape)
-        g = plot_by_signal(de)
-        g.set_ylabels(r'$%s$' % measure)
-        g.set_xlabels(r'$time$')
-        g.set(ylim=ylim)
-        plt.savefig('/Users/nwilming/Desktop/%s_%s_%s_decoding.pdf' %
-                    (measure, classifier, epoch))
+def get_ssd_data(ssd_classifier="Ridge", restrict=True):
+    df = pd.read_hdf(
+        '/Users/nwilming/u/conf_analysis/results/all_decoding_ssd_20190129.hdf')
+    df = df.loc[~np.isnan(df.subject), :]
+    df = df.query(
+        'Classifier=="%s"' % ssd_classifier)
+    df.loc[:, 'cluster'] = [c.split(' ')[0].replace('_LH', '').replace('_RH', '')
+                            for c in df.loc[:, 'cluster'].values]
+    if restrict:
+        clusters = ag.areas.values()
+        idx = [True if c in clusters else False for c in df.loc[:, 'cluster']]
+        df = df.loc[idx, :]
+    for field in ['signal', 'hemi', 'cluster', 'Classifier', 'epoch']:
+        df.loc[:, field] = df.loc[:, field].astype('category')
+    df.set_index(['Classifier', 'signal', 'subject', 'epoch', 'latency',
+                  'sample', 'hemi', 'cluster'], inplace=True)
+    df = df.loc[~df.index.duplicated()]
+    df = df.unstack(['hemi', 'cluster'])
+    return df
 
 
-def plot_signals_hand(data, palette, measure, classifier='svm',  midc_ylim=(-0.25, 0.25),
-                      conf_ylim=(-0.05, 0.25), **kw):
+def get_cvals(epoch, data):
+    if epoch == 'response':
+        latency = 0
+    else:
+        latency = 1.25
+    p = data.query('latency==%f' % latency).groupby('latency').mean().max()
+    return {k: v for k, v in p.items()}
+
+
+@memory.cache
+def get_posterior(data):
     '''
-    Make signal plot by hand to get layout right
-
+    Get uncertainty around average mean by means of bayesian 
+    inference. For AUC values, nothing else.
     '''
-    col_order = list(rois.glasser.keys()) + \
-        list(rois.visual_field_clusters.keys()) + list(rois.jwrois.keys())
-    plt.figure(figsize=(9, 10))
+    import pymc3 as pm
+    n_t = data.shape[1]
+    with pm.Model():
+        mu = pm.Normal('mu', 0.5, 1, shape=n_t)
+        std = pm.Uniform('std', lower=0, upper=1, shape=n_t)
+        v = pm.Exponential('ν_minus_one', 1 / 29.) + 1
+        pm.StudentT('Out', mu=mu, lam=std**-2, nu=v, shape=n_t, observed=data)
+        k = pm.sample()
+    mu = k.get_values('mu')
+    return mu.mean(0), pm.stats.hpd(mu)
+
+
+def plot_individual_areas_with_stats(data, type='Pair'):
+    palette = get_area_palette()
+    for cluster in data.columns:
+        plot_signals_hand(data.loc[:, cluster].reset_index(), palette,
+                          'AUC',
+                          midc_ylim=(.1, .9),
+                          conf_ylim=(.5, .7),
+                          cortex_cmap='RdBu_r',
+                          midc_ylim_cortex=(0.1, 0.9),
+                          conf_ylim_cortex=(0.3, 0.7),
+                          plot_uncertainty=True,
+                          suffix='_%s_%s' % (type, cluster),
+                          lw=1)
+
+
+def plot_signals_hand(data, palette, measure,
+                      classifier='svm',
+                      midc_ylim=(-0.25, 0.25),
+                      conf_ylim=(-0.05, 0.25),
+                      midc_ylim_cortex=(-0.25, 0.25),
+                      conf_ylim_cortex=(-0.05, 0.25),
+                      cortex_cmap='RdBu_r', suffix='all',
+                      plot_uncertainty=False,
+                      **kw):
+    '''
+    Plot decoding signals.
+    This is the place to start!
+    '''
+
+    allc, vfc, glasser, jwg = ag.get_clusters()
+    col_order = list(glasser.keys()) + \
+        list(vfc.keys()) + list(jwg.keys())
+    plt.figure(figsize=(8, 6))
     combinations = [
         ('stimulus', 'MIDC_nosplit'), ('stimulus',
                                        'MIDC_split'), ('response', 'MIDC_split'),
@@ -256,244 +154,223 @@ def plot_signals_hand(data, palette, measure, classifier='svm',  midc_ylim=(-0.2
         (None, None), ('stimulus', 'CONF_unsigned'), ('response', 'CONF_unsigned')]
     index = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1),
              (1, 2), (2, 0), (2, 1), (2, 2)]
-    gs = gridspec.GridSpec(3, 3)
+    gs = gridspec.GridSpec(3, 6)
 
     for i, (epoch, signal) in enumerate(combinations):
         if epoch is None:
             continue
         row, col = index[i]
-        plt.subplot(gs[row, col])
+        plt.subplot(gs[row, col * 2])
         d = data.query('epoch=="%s" & signal=="%s"' %
                        (epoch, signal))
-        if '_split' in signal:
-            d = d.groupby(['latency', 'mc<0.5']).mean()
-            for split, ds in d.groupby('mc<0.5'):
-                for column in col_order:
-                    try:
-                        latency = ds.index.get_level_values('latency')
-                        if not split:
-                            plt.plot(latency,
-                                     -ds.loc[:, column].values, color=palette[column],
-                                     **kw)
-                        else:
-                            plt.plot(latency,
-                                     ds.loc[:, column].values, color=palette[
-                                         column],
-                                     **kw)
 
-                    except KeyError:
-                        pass
-
-        else:
-
-            d = d.groupby(['latency']).mean()
+        cvals = {}
+        d = d.groupby(['subject', 'latency', 'mc<0.5']).mean()
+        for split, ds in d.groupby('mc<0.5'):
             for column in col_order:
                 try:
-                    plt.plot(d.index.values, d.loc[
-                             :, column], color=palette[column], **kw)
+                    values = pd.pivot_table(data=ds,
+                                            index='subject', columns='latency',
+                                            values=column)
+                    latency = values.columns.values
+                    if split == "True":
+                        values = -values + 1
+
+                    if plot_uncertainty:
+                        mu, hdi = get_posterior(values.values)
+                        plt.plot(latency, latency * 0 + 0.5, 'k', zorder=-1)
+                        plt.plot(latency,
+                                 mu,
+                                 color='k',
+                                 **kw)
+                        plt.fill_between(
+                            latency, hdi[:, 0], hdi[:, 1],
+                            color=palette[column],
+                            alpha=0.75)
+                    else:
+                        plt.plot(latency,
+                                 values.values.mean(0),
+                                 color=palette[column],
+                                 **kw)
                 except KeyError:
                     pass
 
+        cylim = []
         if 'MIDC' in signal:
             plt.ylim(midc_ylim)
-            pyplot.locator_params(nticks=5)
+            cylim = midc_ylim_cortex
+            # pyplot.locator_params(nticks=5)
         else:
             plt.ylim(conf_ylim)
-            pyplot.locator_params(nticks=5)
+            cylim = midc_ylim_cortex
+            # pyplot.locator_params(nticks=5)
 
         if (col == 0) or ((col == 1) and (row > 0)):
-            plt.ylabel(r'$%s$' % measure)
+            plt.ylabel('%s\n\n' % signal + r'$%s$' % measure)
         if (row == 2) or ((row == 0) and (col == 0)):
             plt.xlabel(r'$time$')
         center = (plt.xlim()[1] + plt.xlim()[0]) / 2.
-        plt.text(plt.xlim()[0] + 0.05, 0.18, signal, size=8)
+        #plt.text(plt.xlim()[0] + 0.05, 0.18, signal, size=8)
 
-        sns.despine(trim=True)
+        sns.despine(ax=plt.gca(), trim=False)
         if epoch == 'response':
-            ts = plt.yticks()[0]
-            print(ts)
-            plt.fill_between([-0.05, 0.05], ts[0], ts[-1], color='gray',
-                             zorder=-100, alpha=0.75)
-    plt.savefig('/Users/nwilming/Dropbox/UKE/confidence_study/all_signals.svg')
+            plt.axvline(0, color='k', zorder=-1, alpha=0.9)
+        else:
+            plt.axvline(1.25, color='k', zorder=-1, alpha=0.9)
+        vmin, vmax = cylim
+        plt.subplot(gs[row, 1 + (col * 2)])
+        cvals = get_cvals(epoch, d)
+        k = get_pycortex_plot(cvals, 'fsaverage', vmin=vmin, vmax=vmax,
+                              cmap=cortex_cmap)
+        ax = plt.imshow(k)
+        plt.xticks([])
+        plt.yticks([])
+        sns.despine(ax=plt.gca(), left=True, bottom=True, right=True, top=True)
+    plt.savefig(
+        '/Users/nwilming/Dropbox/UKE/confidence_study/all_signals_%s.svg' % suffix)
+    plt.savefig(
+        '/Users/nwilming/Dropbox/UKE/confidence_study/all_signals_%s.pdf' % suffix)
 
 
-def get_area_palette(areas):
-    nvfc = len(rois.visual_field_clusters.keys())
-    vfc_colors = sns.color_palette('Reds', n_colors=nvfc + 2)[1:-1]
-    # sns.cubehelix_palette(
-    # nvfc, start=1.8, rot=0, dark=.2, light=.7, hue=1, gamma=1.1)
+def table_performance(df, t_stim=1.3, t_resp=0, areas=None, sortby='MIDC_split',
+                      signals=['MIDC_split', 'MIDC_nosplit', 'CONF_signed', 'CONF_unsigned', 'CONF_unsign_split']):
+    '''
+    Output a table of decoding performances, sorted by one signal.
+    '''
+    df_response = df.query("epoch=='response' & (latency==%f)" % t_resp).groupby(
+        'signal').mean().T.loc[:, signals]
+    df_response = df_response.sort_values(by=sortby, ascending=False)
+    df_response.columns = pd.MultiIndex.from_tuples(
+        [('response', x) for x in df_response.columns.values], names=['Epoch', 'Cluster'])
+    df_stim = df.query("epoch=='stimulus' & (latency==%f)" % t_stim).groupby(
+        'signal').mean().T.loc[df_response.index, signals]
+    df_stim.columns = pd.MultiIndex.from_tuples(
+        [('stimulus', x) for x in df_stim.columns.values], names=['Epoch', 'Cluster'])
+    return pd.concat([df_response, df_stim], 1).round(2)
+
+
+def make_state_space_triplet(df):
+    plt.subplot(2, 2, 1)
+    state_space_plot(df.test_roc_auc.Lateralized,   'MIDC_split',
+                     'CONF_unsigned', df_b=df.test_roc_auc.Lateralized)
+    plt.plot([0.5, 1], [0.5, 1], 'k--', alpha=0.9, lw=1)
+    plt.xlim([0.4, .9])
+    plt.ylim([0.45, .7])
+    plt.axhline(0.5, color='k', lw=1)
+    plt.axvline(0.5, color='k', lw=1)
+    plt.xlabel('Lateralized MIDC split')
+    plt.ylabel('Lateralized CONF_unsigned')
+
+    plt.subplot(2, 2, 2)
+    state_space_plot(df.test_roc_auc.Lateralized,   'MIDC_split',
+                     'CONF_unsigned', df_b=df.test_roc_auc.Averaged)
+    plt.plot([0.5, 1], [0.5, 1], 'k--', alpha=0.9, lw=1)
+    plt.xlim([0.4, .9])
+    plt.ylim([0.45, .7])
+    plt.axhline(0.5, color='k', lw=1)
+    plt.axvline(0.5, color='k', lw=1)
+    plt.xlabel('Lateralized MIDC split')
+    plt.ylabel('Averaged CONF_unsigned')
+    plt.subplot(2, 2, 4)
+    state_space_plot(df.test_roc_auc.Averaged,   'MIDC_split',
+                     'CONF_unsigned', df_b=df.test_roc_auc.Averaged)
+    plt.plot([0.5, 1], [0.5, 1], 'k--', alpha=0.9, lw=1)
+    plt.xlim([0.4, .9])
+    plt.ylim([0.45, .7])
+    plt.axhline(0.5, color='k', lw=1)
+    plt.axvline(0.5, color='k', lw=1)
+    plt.xlabel('Averaged MIDC split')
+    plt.ylabel('Averaged CONF_unsigned')
+    sns.despine(offset=5)
+    plt.savefig(
+        '/Users/nwilming/Dropbox/UKE/confidence_study/state_space_plot.svg')
+    plt.savefig(
+        '/Users/nwilming/Dropbox/UKE/confidence_study/state_space_plot.pdf')
+
+
+def state_space_plot(df_a, signal_a, signal_b, df_b=None):
+    def reshuffle(x, y):
+        """Reshape the line represented by "x" and "y" into an array of individual
+        segments.
+        See: https://stackoverflow.com/questions/13622909/matplotlib-how-to-colorize-a-large-number-of-line-segments-as-independent-gradi/13649811#13649811
+        """
+        points = np.vstack([x, y]).T.reshape(-1, 1, 2)
+        points = np.concatenate([points[:-1], points[1:]], axis=1)
+        return points
+
+    def plot_with_color(x, y, color, ax):
+        from matplotlib.collections import LineCollection
+        from matplotlib.colors import LinearSegmentedColormap
+        palette = LinearSegmentedColormap.from_list(
+            'hrmpfh', [(1, 1, 1), color])
+        segments = reshuffle(x, y)
+        coll = LineCollection(segments, cmap=palette)
+        coll.set_array(np.linspace(0, 1, len(x)))
+
+        ax.add_collection(coll)
+
+    palette = get_area_palette()
+    # plt.clf()
+    ax = plt.gca()  # ().add_subplot(111)
+    #ax.plot([0.5, .5], [0, 1], 'k')
+    #ax.plot([0, 1], [0.5, .5], 'k')
+    if df_b is None:
+        df_b = df_a
+    for area in df_a.columns.get_level_values('cluster'):
+        Aarea = pd.pivot_table(data=df_a.groupby(['signal', 'latency']).mean(),
+                               index='signal', columns='latency', values=area)
+        Barea = pd.pivot_table(data=df_b.groupby(['signal', 'latency']).mean(),
+                               index='signal', columns='latency', values=area)
+        plot_with_color(Aarea.loc[signal_a, :], Barea.loc[
+            signal_b, :], palette[area], ax)
+
+    # plt.show()
+
+
+def get_area_palette(restrict=True):
+    allc, vfc, glasser, jwg = ag.get_clusters()
+
+    vfc_colors = sns.color_palette('Reds', n_colors=len(vfc) + 2)[1:-1]
 
     palette = {name: color for name, color in zip(
-        list(rois.visual_field_clusters.keys())[::-1], vfc_colors)}
+        list(vfc.keys()), vfc_colors) if name in ag.areas.values()}
 
-    nfront = len(rois.glasser.keys())
-    front_colors = sns.color_palette('Blues', n_colors=nfront + 2)[1:-1]
-    # sns.cubehelix_palette(
-    # nfront, start=2.6, rot=0, dark=.4, light=.7, hue=1, gamma=1.1)
+    front_colors = sns.color_palette('Blues', n_colors=len(glasser) + 2)[1:-1]
 
     frontal = {name: color for name, color in zip(
-        list(rois.glasser.keys())[::-1],
-        front_colors)}
+        list(glasser.keys())[::-1],
+        front_colors) if name in ag.areas.values()}
 
-    njwdg = len(rois.jwrois.keys())
+    jwdg_colors = sns.color_palette('Greens', n_colors=len(jwg) + 2)[1:-1]
 
-    jwdg_colors = sns.color_palette('Greens', n_colors=njwdg + 2)[1:-1]
-    # sns.cubehelix_palette(
-    # njwdg, start=0.6, rot=0, dark=.4, light=.9, hue=1, gamma=1.1)
     jwdg = {name: color for name, color in zip(
-        list(rois.jwrois.keys())[::-1],
-        jwdg_colors)}
+        list(jwg.keys())[::-1],
+        jwdg_colors) if name in ag.areas.values()}
     palette.update(frontal)
     palette.update(jwdg)
     return palette
 
 
-def plot_by_signal(data, signals={'MIDC_split': '#E9003A', 'MIDC_nosplit': '#FF5300',
-                                  'CONF_signed': '#00AB6F', 'CONF_unsign_split': '#58E000',
-                                  'CONF_unsigned': '#58E000'}):
-    palette = get_area_palette(data.columns)
+@memory.cache
+def get_pycortex_plot(cvals, subject, vmin=0, vmax=1, cmap='RdBu_r'):
+    import pymeg.source_reconstruction as pymegsr
+    import pymeg.atlas_glasser as ag
+    import cortex
+    from scipy import misc
+    labels = pymegsr.get_labels(subject=subject, filters=[
+        '*wang*.label', '*JWDG*.label'], annotations=['HCPMMP1'])
+    labels = pymegsr.labels_exclude(labels=labels, exclude_filters=[
+        'wang2015atlas.IPS4', 'wang2015atlas.IPS5', 'wang2015atlas.SPL',
+        'JWDG_lat_Unknown'])
+    labels = pymegsr.labels_remove_overlap(
+        labels=labels, priority_filters=['wang', 'JWDG'])
 
-    idsig = data.index.get_level_values('signal').isin(signals.keys())
-    data = data.loc[idsig, :]
-    split = data.index.get_level_values('mc<0.5').values.astype(float)
-
-    nosplit = data.loc[np.isnan(split), :].groupby(
-        ['latency', 'signal']).mean().stack().reset_index()
-
-    concat_df = [nosplit]
-
-    for split_ind, dsignal in data.loc[~np.isnan(split)].groupby('mc<0.5'):
-        k = dsignal.groupby(['latency', 'signal']
-                            ).mean().stack().reset_index()
-        if not split_ind:
-
-            k.loc[:, 0] *= -1
-        k.columns = ['latency', 'signal', 'area', split_ind]
-        concat_df.append(k)
-    k = pd.concat(concat_df)
-
-    g = sns.FacetGrid(k, col='signal', col_wrap=2, hue='area', palette=palette)
-    g.map(plt.plot, 'latency', 0, alpha=0.7, lw=1)
-    g.map(plt.plot, 'latency', 1, alpha=0.7, lw=1)
-
-    #    k = data.groupby(['latency', 'signal']).mean().stack().reset_index()
-    #    g = sns.FacetGrid(k, col='signal', col_wrap=2,
-    #                      hue='area', palette='magma')
-    #    g.map(plt.plot, 'latency', 0, alpha=0.8)
-    return g
-
-
-def plot_all_signals(df):
-    plot_signals(df.test_roc_auc.Average.query(
-        'Classifier=="SCVlin"') - 0.5, measure='\Delta AUC',
-        classifier='svmlin_avgs', ylim=(-0.25, 0.25))
-
-    plot_signals(df.test_roc_auc.Pairs.query(
-        'Classifier=="SCVlin"') - 0.5, measure='\Delta AUC',
-        classifier='svmlin_pairs', ylim=(-0.25, 0.25))
-
-    plot_signals(df.test_accuracy.Average.query(
-        'Classifier=="SCVlin"'), measure='\Delta Accuracy',
-        classifier='svmlin_avgs', ylim=(-0.25, 0.25))
-
-    plot_signals(df.test_accuracy.Pairs.query(
-        'Classifier=="SCVlin"'), measure='\Delta Accuracy',
-        classifier='svmlin_pairs', ylim=(-0.25, 0.25))
-
-
-def plot_interesting_areas(data,
-                           signals={'MIDC_split': '#E9003A', 'SIDE_nosplit': '#FF5300',
-                                    'CONF_signed': '#00AB6F', 'CONF_unsigned': '#58E000'},
-                           title='', classifier='SCVlin'):
-    interesting_areas = ['visual', 'FEF', 'IPS_Pces', 'M1', 'aIPS1', 'Area6_dorsal_medial',
-                         'Area6_anterior', 'A6si', 'PEF', '55b', '8av', '8C', '24dv']
-    areas = []
-
-    areas = [x for x in data.columns if any(
-        [i in x for i in interesting_areas])]
-
-    data = data.query('Classifier=="%s"' % classifier)
-    plot_set(areas, data, title=title)
-
-
-def plot_set(area_set, data,
-             signals={'MIDC_split': '#E9003A', 'SIDE_nosplit': '#FF5300',
-                      'CONF_signed': '#00AB6F', 'CONF_unsigned': '#58E000'},
-             title=''):
-
-    gs = gridspec.GridSpec(1, 2)
-    for i, area in enumerate(area_set):
-        for signal, color in signals.items():
-            try:
-                plot_decoding_results(data, signal, area, stim_ax=gs[
-                    0, 0], resp_ax=gs[0, 1], color=color,
-                    offset=i * 0.5)
-            except RuntimeError:
-                print('RuntimeError for area %s, signal %s' % (area, signal))
-    sns.despine(left=True)
-    plt.suptitle(title)
-
-    # Add legend
-    x = [-0.5, -1, -1, -0.5]
-    y = [0., 0.2, 0, 0.2]
-    ylim = list(plt.ylim())
-    ylim[1] = len(area_set) * 0.5 + 1
-    for i, (signal, color) in enumerate(signals.items()):
-        plt.text(x[i], y[i], signal, color=color)
-    plt.subplot(gs[0, 0])
-    plt.ylim(ylim[0] - 0.1, ylim[1])
-    plt.subplot(gs[0, 1])
-    plt.ylim(ylim[0] - 0.1, ylim[1])
-
-
-def plot_decoding_results(data, signal, area,
-                          stim_ax=None, resp_ax=None,  color='b',
-                          offset=0):
-    '''
-    Data is a df that has areas as columns and at least subjct, classifier, latency and signal as index.
-    Values of the dataframe encode the measure of choice to plot.
-    '''
-    import warnings
-    warnings.filterwarnings("ignore")
-    if stim_ax is None:
-        stim_ax = plt.gca()
-    if resp_ax is None:
-        stim_ax = plt.gca()
-    data = data.loc[:, area]
-    select_string = 'signal=="%s"' % (signal)
-    areaname = (str(area).replace('vfc', '')
-                .replace('-lh', '')
-                .replace('-rh', '')
-                .replace('_Havg', '')
-                .replace('_Lateralized', ''))
-    data = data.reset_index().query(select_string)
-    if '_split' in signal:
-        data = data.groupby(['subject', 'epoch', 'latency']
-                            ).mean().reset_index()
-    stimulus = data.query('epoch=="stimulus"').reset_index()
-    stimulus.loc[:, area] += offset
-
-    response = data.query('epoch=="response"').reset_index()
-    response.loc[:, area] += offset
-    stim_ax = plt.subplot(stim_ax)
-    sns.tsplot(stimulus, time='latency', value=area,
-               unit='subject', ax=stim_ax, color=color)
-    # plt.ylim([0.1, 0.9])
-    plt.axhline(0.5 + offset, color='k')
-    dx, dy = np.array([0.0, 0.0]), np.array([.5, 0.75])
-    plt.plot(dx, dy + offset, color='k')
-    plt.text(-0.75, 0.6 + offset, areaname)
-    plt.yticks([])
-    plt.ylabel('')
-    resp_ax = plt.subplot(resp_ax)
-
-    sns.tsplot(response, time='latency', value=area,
-               unit='subject', ax=resp_ax, color=color)
-    plt.plot(dx, dy + offset, color='k')
-    plt.yticks([])
-    plt.ylabel('')
-    # plt.ylim([0.1, 0.9])
-    plt.axhline(0.5 + offset, color='k')
+    V = ag.rois2vertex('fsaverage', cvals, 'lh', labels, vmin=vmin, vmax=vmax,
+                       cmap=cmap)
+    cortex.quickflat.make_png('/Users/nwilming/Desktop/test.png', V,
+                              cutout='left', with_colorbar=False,
+                              with_labels=False, with_rois=False)
+    return misc.imread('/Users/nwilming/Desktop/test.png')
 
 
 @memory.cache
@@ -505,6 +382,8 @@ def do_stats(x):
 
 def plot_ssd_per_sample(ssd, area='vfcvisual', cmap='magma', alpha=0.05,
                         latency=0.18, save=False, ax=None, stats=True):
+    '''
+    '''
     import pylab as plt
     import seaborn as sns
     sns.set_style('ticks')
@@ -515,6 +394,10 @@ def plot_ssd_per_sample(ssd, area='vfcvisual', cmap='magma', alpha=0.05,
 
     for sample, ds in ssd.groupby('sample'):
         ds = ds.astype(float)
+        if ds.columns.is_categorical():
+            # Convert index to non-categorical to avoid pandas
+            # bug? #19136
+            ds.columns = pd.Index([x for x in ds.columns.values])
         k = ds.groupby(['subject', 'latency']).mean().reset_index()
         k = pd.pivot_table(ds.reset_index(), columns='latency',
                            index='subject', values=area).dropna()
@@ -540,16 +423,17 @@ def plot_ssd_per_sample(ssd, area='vfcvisual', cmap='magma', alpha=0.05,
             '/Users/nwilming/Dropbox/UKE/confidence_study/ssd_slopes_corr.svg')
 
 
-def plot_ssd_peaks(peaks, palette):
+def plot_ssd_peaks(peaks, palette, K=None):
     import pylab as plt
     import seaborn as sns
     from adjustText import adjust_text
     # from scipy.stats import
     plt.figure(figsize=(4.5, 3.5))
-    pvt = pd.pivot_table(peaks.astype(
-        float), index='sample', columns='subject')
+    pvt = peaks  # pd.pivot_table(peaks.astype(
+    # float), index='sample', columns='subject')
     texts = []
     lines = []
+    _, visual_field_clusters, _, _ = ag.get_clusters()
     for key, color in palette.items():
         try:
             apvt = pvt.loc[:, key]
@@ -559,11 +443,17 @@ def plot_ssd_peaks(peaks, palette):
 
         ps = plt.plot(x, y, color=color)
 
-        if key in rois.visual_field_clusters:
+        if key in visual_field_clusters:
             t = plt.text(x[-1], y[-1], key.replace('vfc', ''),
                          color=color, size=10)
             texts.append(t)
             lines.append(ps[0])
+        if 'cingulate_pos' in key:
+            t = plt.text(x[-1], y[-1], key.replace('HCPMMP1_', ''),
+                         color=color, size=10)
+            texts.append(t)
+            lines.append(ps[0])
+
     plt.xlim(-1, 11)
     adjust_text(texts, only_move={'text': 'x', 'objects': 'x'},
                 add_objects=lines,
@@ -571,28 +461,58 @@ def plot_ssd_peaks(peaks, palette):
     plt.xlabel(r'$sample$')
     plt.ylabel(r'$slope$')
     sns.despine(trim=True)
+    ax2 = plt.gca().twinx()
+    ax2.plot(K.index.values, K.mean(1), 'k')
+    ax2.set_ylim([-.1, 0.22])
+    ax2.set_yticks([])
+    sns.despine(trim=True)
     plt.tight_layout()
     plt.savefig(
         '/Users/nwilming/Dropbox/UKE/confidence_study/slopes_at_peakT_SSD.svg')
 
 
-def extract_latency_slope(ssd, latency=0.18):
-    ulat = np.unique(ssd.index.get_level_values('latency'))
-    latency = ulat[np.argmin(np.abs(ulat - latency))]
+def extract_latency_peak_slope(ssd):
+    ssd = ssd.query('epoch=="stimulus" & latency>=0 & Classifier=="Ridge"')
+    ps = []
+    index = []
+    for idx, d in ssd.astype(float).groupby(['subject', 'sample']):
+        levels = list(set(ssd.index.names) - set(['latency']))
 
-    ssd = ssd.query('epoch=="stimulus" & latency==%f & Classifier=="Ridge"' %
-                    latency).test_slope.Average
+        d.index = d.index.droplevel(levels)
+        d = d.idxmax()
+        ps.append(d)
+        index.append(idx)
+    ps = pd.concat(ps, 1).T
+    return ps.set_index(pd.MultiIndex.from_tuples(index, names=['subject', 'sample']))
 
-    ssd = ssd.astype(float).groupby(['subject', 'sample']).mean()
-    return pd.pivot_table(ssd, index='sample', columns='subject')
 
+def extract_peak_slope(ssd, latency=0.18, dt=0.01, peak_latencies=None):
+    if peak_latencies is None:
+        ssd = ssd.query(
+            'epoch=="stimulus" & %f<=latency & %f<=latency & Classifier=="Ridge"' % (
+                latency - dt, latency + dt))
 
-def extract_peak_slope(ssd):
-    ssd = ssd.query(
-        'epoch=="stimulus" & latency>0 & Classifier=="Ridge"')
+        ssd = ssd.astype(float).groupby(['subject', 'sample']).max()
+        return pd.pivot_table(ssd, index='sample', columns='subject')
+    else:
+        reslist = []
+        assert(len(ssd.index.get_level_values('signal').unique()) == 1)
+        for idx, d in ssd.groupby(['subject', 'sample']):
+            peak_idx = peak_latencies.loc[idx, :]
+            ds = ssd.query('subject==%i & sample==%i' %
+                           idx)
+            levels = list(set(ssd.index.names) - set(['latency']))
+            ds.index = ds.index.droplevel(levels)
+            res = {'subject': idx[0], 'sample': idx[1]}
+            for col in ds.columns:
 
-    ssd = ssd.astype(float).groupby(['subject', 'sample']).max()
-    return pd.pivot_table(ssd, index='sample', columns='subject')
+                latency = peak_idx.loc[col]
+                value = ds.loc[latency, col]
+                res.update({col: value})
+            reslist.append(res)
+        peaks = pd.DataFrame(reslist)
+        peaks.set_index(['subject', 'sample'], inplace=True)
+        return pd.pivot_table(ssd, index='sample', columns='subject')
 
 
 def extract_kernels(dz, contrast_mean=0.0):
@@ -682,24 +602,12 @@ def plot_cluster_overview(decoding, ssd, tfr_resp, peaks, kernel, nf=True):
 
 
 def compare_kernel(K, peaks):
-    from mne.stats import permutation_t_test
-    from scipy.stats import linregress, ttest_1samp
-    # K = K.values.mean(1)
-    ccs = []
-    kxs = []
-    ps = []
-    for sub in K.columns:
-        kx = K.loc[:, sub]
-        slope, inter, _, _, _ = linregress(kx, peaks.values.mean(1))
-        kx = slope * kx + inter
-        y = peaks.loc[:, sub]
-        ps.append(y)
-        kxs.append(kx)
-        ccs.append(np.corrcoef(kx, y)[0, 1])
-    #_, p, _ = permutation_t_test(np.array([ccs]).T)
-    ccs = np.array(ccs)
-    return ttest_1samp(ccs, 0)
-    return np.stack(kxs).mean(0), np.stack(ps).mean(0), p
+    res = {}
+    for area in peaks.columns.get_level_values('cluster').unique():
+        y = peaks[area]
+        res[area] = [np.corrcoef(y.loc[:, i], K.loc[:, i])[
+            0, 1] for i in K.columns]
+    return res
 
 
 def get_kernel_fits(kernel, peaks):
@@ -769,3 +677,30 @@ def fit_correlation_model(data, area):
     r.assign('P', data)
     df = r(code)
     return df, r
+
+
+def plot_brain_color_legend(palette):
+    '''
+    Plot all ROIs on pysurfer brain. Colors given by palette.
+    '''
+    from surfer import Brain
+    from pymeg import atlas_glasser as ag
+
+    labels = sr.get_labels(subject='S04', filters=[
+        '*wang*.label', '*JWDG*.label'], annotations=['HCPMMP1'])
+    labels = sr.labels_exclude(labels=labels, exclude_filters=[
+        'wang2015atlas.IPS4', 'wang2015atlas.IPS5', 'wang2015atlas.SPL',
+        'JWDG_lat_Unknown'])
+    labels = sr.labels_remove_overlap(
+        labels=labels, priority_filters=['wang', 'JWDG'])
+    lc = ag.labels2clusters(labels)
+    brain = Brain('S04', 'lh', 'inflated',  views=['lat'], background='w')
+    for cluster, labelobjects in lc.items():
+        if cluster in palette.keys():
+            color = palette[cluster]
+            for l0 in labelobjects:
+                if l0.hemi == 'lh':
+                    brain.add_label(l0, color=color, alpha=1)
+    #brain.save_montage('/Users/nwilming/Dropbox/UKE/confidence_study/brain_colorbar.png',
+    #                   [[180., 90., 90.], [0., 90., -90.]])
+    return brain

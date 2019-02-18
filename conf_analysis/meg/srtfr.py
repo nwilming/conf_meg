@@ -30,13 +30,16 @@ contrasts = {
          'low_conf_high_contrast', 'low_conf_low_contrast'],
         (1, 1, -1, -1)),
     # (HCHCont - LCHCont) + (HCLCont - LCLCont) ->
-    #  HCHCont + HCLcont  -  LCHCont - LCLCont 
+    #  HCHCont + HCLcont  -  LCHCont - LCLCont
+    # Example: 
+    # HCm = 10, LCm = 7 (10-7) + (1-4) = 3-3 == 0
+
     'confidence_asym': (
         ['high_conf_high_contrast', 'high_conf_low_contrast',
          'low_conf_high_contrast', 'low_conf_low_contrast'],
         (1, -1, -1, 1)),
     # (HCHCont - LCHCont) - (HCLCont - LCLCont) ->
-    #  HCHCont - HCLcont  -  LCHCont + LCLCont 
+    #  HCHCont - HCLcont  -  LCHCont + LCLCont
 }
 
 
@@ -168,10 +171,10 @@ def plot_mosaics(df, stats=False):
 
 
 def submit_stats(
-                 contrasts=['all', 'choice', 'confidence',
-                            'confidence_asym', 'hand',
-                            'stimulus'],
-                 collect=False):
+        contrasts=['all', 'choice', 'confidence',
+                   'confidence_asym', 'hand',
+                   'stimulus'],
+        collect=False):
     all_stats = {}
     tasks = []
     for contrast in contrasts:
@@ -186,7 +189,7 @@ def submit_stats(
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
-    return res    
+    return res
 
 
 @memory.cache()
@@ -202,7 +205,8 @@ def precompute_stats(contrast, epoch, hemi):
     df = df.query(query)
     all_stats = {}
     for (name, area) in atlas_glasser.areas.items():
-        task = contrast_tfr.get_tfr(df.query('cluster=="%s"' % area), time_cutoff)
+        task = contrast_tfr.get_tfr(
+            df.query('cluster=="%s"' % area), time_cutoff)
         all_stats.update(contrast_tfr.par_stats(*task, n_jobs=1))
     return all_stats
 
@@ -217,12 +221,19 @@ def plot_2epoch_mosaics(df, stats=False, contrasts=['all', 'choice', 'confidence
             query = 'contrast=="%s" & %s(hemi=="avg")' % (
                 contrast, {True: '~', False: ''}[hemi])
             d = df.query(query)
-            plot_2epoch_mosaic(d, stats=stats)
-            plt.suptitle(query)
+            plot_2epoch_mosaic(d, stats=stats, cmap='RdBu')
+            title = '%s, %s' % (
+                contrast, {True: 'Lateralized', False: 'Hemis avg.'}[hemi])
+            plt.suptitle(title)
             plt.savefig(
-                '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (contrast, hemi))
-            # plt.savefig(
-            #    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
+                '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (
+                    contrast, hemi),
+                bbox_inches='tight')
+        
+
+
+
+            
 # Ignore following for now
 
 

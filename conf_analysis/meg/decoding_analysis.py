@@ -521,9 +521,10 @@ def get_path(epoch, subject, session, cache=False):
 
 def submit_aggregates(cluster='uke'):
     from pymeg import parallel
-    for subject, epoch, session in product([7],
-                                           ['stimulus'],
-                                           range(0, 1)):
+
+    for subject, epoch, session in product(range(1, 16),
+                                           ['response'],
+                                           range(4)):
         parallel.pmap(aggregate, [(subject, session, epoch)],
                       name='agg' + str(session) + epoch + str(subject),
                       tasks=8, memory=60, walltime='12:00:00',
