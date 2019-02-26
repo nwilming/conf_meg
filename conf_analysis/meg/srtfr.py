@@ -31,7 +31,7 @@ contrasts = {
         (1, 1, -1, -1)),
     # (HCHCont - LCHCont) + (HCLCont - LCLCont) ->
     #  HCHCont + HCLcont  -  LCHCont - LCLCont
-    # Example: 
+    # Example:
     # HCm = 10, LCm = 7 (10-7) + (1-4) = 3-3 == 0
 
     'confidence_asym': (
@@ -75,6 +75,30 @@ def _eval(func, args, collect=False, **kw):
             return df
         else:
             raise RuntimeError('Result not available.')
+
+
+def get_clusters():
+    '''
+    Pimp cluster defs
+    '''
+    from pymeg import atlas_glasser as ag
+    #['L_{}_ROI-lh'.format(area) for area in
+    areas = ['47s', '47m', 'a47r', '11l', '13l', 'a10p', 'p10p', '10pp',
+             '10d', 'OFC', 'pOFC', '44', '45', 'IFJp', 'IFJa', 'IFSp',
+             'IFSa', '47l', 'p47r', '8C', '8Av', 'i6-8', 's6-8', 'SFL',
+             '8BL', '9p', '9a', '8Ad', 'p9-46v', 'a9-46v', '46', '9-46d',
+             'SCEF', 'p32pr', 'a24pr', 'a32pr', 'p24', 'p32', 's32', 'a24',
+             '10v', '10r', '25', 'd32', '8BM', '9m']
+
+    areas = {'NSWFRONT_' + area: [
+        'L_{}_ROI-lh'.format(area), 'L_{}_ROI-lh'.format(area)]
+        for area in areas}
+    all_clusters, _, _, _ = ag.get_clusters()
+    all_clusters.update(areas)
+
+    all_clusters = {k:v for k, v in all_clusters.items() 
+        if (k.startswith('NSWFRONT')) or (k in ag.areas.values())}
+    return all_clusters
 
 
 @memory.cache(ignore=['scratch'])
@@ -123,7 +147,7 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False,
                 contrasts, hemis, stim, stim,
                 meta, (-0.25, 0),
                 baseline_per_condition=baseline_per_condition,
-                n_jobs=1, cache=cache)
+                n_jobs=1, cache=cache, all_clusters=get_clusters())
             contrast.loc[:, 'epoch'] = 'stimulus'
             cps.append(contrast)
         except ValueError as e:
@@ -195,7 +219,8 @@ def submit_stats(
 @memory.cache()
 def precompute_stats(contrast, epoch, hemi):
     from pymeg import atlas_glasser
-    df = pd.read_hdf('/home/nwilming/conf_analysis/results/all_contrasts_updated_confcon-2090122.hdf')
+    df = pd.read_hdf(
+        '/home/nwilming/conf_analysis/results/all_contrasts_updated_confcon-2090122.hdf')
     if epoch == "stimulus":
         time_cutoff = (-0.5, 1.35)
     else:
@@ -229,11 +254,8 @@ def plot_2epoch_mosaics(df, stats=False, contrasts=['all', 'choice', 'confidence
                 '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (
                     contrast, hemi),
                 bbox_inches='tight')
-        
 
 
-
-            
 # Ignore following for now
 
 
