@@ -123,7 +123,8 @@ def get_all_cia(pl, freqbins=[0, 10, 35, 70, 150], hemi='Averaged', cluster='vfc
             t.loc[:, 'sample'] = sample
             t.loc[:, 'cluster'] = cluster
             t.loc[:, 'hemi'] = hemi
-            t.set_index(['subject', 'hemi', 'cluster', 'sample', 'bfreq'], inplace=True)
+            t.set_index(['subject', 'hemi', 'cluster',
+                         'sample', 'bfreq'], inplace=True)
             frames.append(t)
     return pd.concat(frames)
 
@@ -151,3 +152,83 @@ def contrast_integrated_averages(agg, meta, sample, centers=np.linspace(0.1, 0.9
     r = agg.loc[c50, :].mean().values
     return pd.DataFrame(rows.values - r, index=rows.index,
                         columns=rows.columns)
+
+
+def cia(power, contrast, centers=np.linspace(0.1, 0.9, 5), width=0.2):
+    w = width / 2.0
+    rows = []
+    for center in centers:
+        idx = ((center - w) < contrast) & (contrast < (center + w))
+        r = power[idx].mean()
+        rows.append(r)
+    return centers, np.array(rows)
+
+    
+def plot_crfs(crfs, freqbins=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]):
+    import seaborn as sns
+    import pylab as plt
+    freqbins = np.asarray(freqbins)
+    freq = crfs.index.get_level_values('freq')
+    centers = freqbins[0:-1] + np.diff(freqbins)
+    cutter = pd.cut(freq, bins=freqbins, labels=centers).astype(int)
+    crfs = crfs.groupby(
+        [cutter, 'sample', 'subject', 'contrast', 'hemi', 'cluster']).mean()
+    crfs.index.names = ['freq', 'sample', 'subject', 'contrast', 'hemi', 'cluster']
+    g = sns.relplot(data=crfs.reset_index(), row='hemi',
+                    col='cluster', hue='sample', kind='line',                    
+                    x='contrast', y='power', ci=None)
+    #g.map(sns.lineplot, 'contrast', 'power', units='subject')
+
+    return g
+
+
+def std_corr(data, crfs):
+    from conf_analysis.behavior import empirical
+    from scipy.stats import linregress
+    bias = (data.groupby(['snum'])
+            .apply(empirical.crit).reset_index())
+    bias.columns = ['subject', 'bias']
+    bias.set_index('subject', inplace=True)
+    dp = (data.groupby(['snum'])
+          .apply(empirical.dp).reset_index())
+    dp.columns = ['subject', 'dp']
+    dp.set_index('subject', inplace=True)
+
+    #crfs = crfs.groupby(['subject', 'freq', 'contrast']).mean()
+
+    crfsd = crfs.groupby(['subject', 'freq']).max() - \
+        crfs.groupby(['subject', 'freq']).min()
+    crfsd.name = 'power'
+    crfsd = pd.pivot_table(crfsd.reset_index(),
+                           columns='freq',
+                           index='subject',
+                           values='power')
+
+    #crfs = crfs.groupby(['subject', 'bfreq']).mean()
+    contrast = crfs.index.get_level_values('contrast')
+
+    crfs = (crfs
+            .loc[(0.6 < contrast) & (contrast < 0.7)]
+            .groupby(['subject', 'freq'])
+            .mean()) - \
+        (np.abs(
+            crfs
+            .loc[(0.3 < contrast) & (contrast < 0.4)]
+            .groupby(['subject', 'freq'])
+            .mean()))
+    crfs.name = 'power'
+    crfs = pd.pivot_table(crfs.reset_index(),
+                          columns='freq',
+                          index='subject',
+                          values='power')
+
+    results = []
+    for freq in crfs:
+        df = crfs.loc[:, freq]
+        dff = crfsd.loc[:, freq]
+        slope, _, d, p_d, _ = linregress(
+            dp.loc[df.index, 'dp'].values, dff.values)
+        slope, _, c, p_c, _ = linregress(bias.loc[df.index, 'bias'], df)
+        results.append({'freq': freq, 'dp': d, 'bias': c,
+                        'pval_dp': p_d, 'pval_bias': p_c})
+    return pd.DataFrame(results)
