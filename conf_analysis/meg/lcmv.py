@@ -42,9 +42,10 @@ def submit(older_than="201911010000"):
     cnt = 1
     older_than = datetime.datetime.strptime(older_than, "%Y%m%d%H%M")
 
+
     for subject, session, epoch, signal in product(
         [1], [2], ["stimulus"], ["F", "LF"]  # , 'response'],
-    ):
+        ):
         mod_time = [
             modification_date(x)
             for x in lcmvfilename(subject, session, signal, epoch, chunk="all")
