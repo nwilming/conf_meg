@@ -795,8 +795,6 @@ def mv_crf_sample_model(power, contrast, sample):
     import numpy as np
     import pymc3 as pm
 
-    contrast = contrast + 0.5
-
     rmin = power[contrast < 0.2, :].mean(0)
     rmax = power[contrast > 0.8, :].mean(0) - rmin
 
@@ -813,7 +811,9 @@ def mv_crf_sample_model(power, contrast, sample):
         p = BoundedNormal("P", mu=0, sd=15, shape=(num_freqs,))
         c50 = BoundedNormal("c50", mu=0.5, sd=0.1, shape=(num_freqs,))
 
-        p_smpl = BoundedNormal("P_sample", mu=p[np.newaxis, :], sd=1, shape=(10, num_freqs))
+        p_smpl = BoundedNormal(
+            "P_sample", mu=p[np.newaxis, :], sd=1, shape=(10, num_freqs)
+        )
         c50_smpl = BoundedNormal(
             "c50_sample", mu=c50[np.newaxis, :], sd=0.1, shape=(10, num_freqs)
         )
@@ -822,7 +822,7 @@ def mv_crf_sample_model(power, contrast, sample):
         mu = crf_scaled(contrast, Rmax, Rmin, p_smpl[sample, :], c50_smpl[sample, :])
 
         packed_L = pm.LKJCholeskyCov(
-            "packed_L", n=num_freqs, eta=10.0, sd_dist=pm.HalfCauchy.dist(5.0)
+            "packed_L", n=num_freqs, eta=100.0, sd_dist=pm.HalfCauchy.dist(5.0)
         )
         L = pm.expand_packed_triangular(num_freqs, packed_L)
         sigma = pm.Deterministic("sigma", L.dot(L.T))
@@ -840,6 +840,63 @@ def crf_scaled(contrast, Rmax, Rmin, p, c50):
         )
         + Rmin
     )
+
+
+def get_data_dict():
+    meta = pd.read_hdf("tmp.hdf", "meta")
+    agg = pd.read_hdf("tmp.hdf", "agg")
+    Xs = []
+    contrasts = []
+    time = agg.columns.get_level_values("time")
+    samples = []
+    for j, i in enumerate(np.arange(0, 1, 0.1)):
+        tidx = time[np.argmin(time - 0.2 + i)]
+        X = pd.pivot_table(agg, values=tidx, index="trial", columns="freq")
+
+        x = X.values
+        x = (x - x.mean(0)[np.newaxis, :]) / x.std(0)[np.newaxis, :]
+        Xs.append(x)
+        contrast = meta.loc[X.index, "contrast_probe"]
+        cvals = np.stack(contrast)
+        cvals[cvals < 0] = 0
+        cvals[cvals > 1] = 1
+        contrasts.append(cvals[:, j])
+        samples.append(cvals[:, j] * 0 + j)
+    x = np.vstack(Xs)[:, :]
+    c = np.concatenate(contrasts)
+    s = np.concatenate(samples)
+    rmin = x[c < 0.2, :].mean(0)
+    rmax = x[c > 0.8, :].mean(0) - rmin
+
+    def init(x):
+        nfreq = x.shape[1]
+        corr = np.corrcoef(x.T)
+
+        def foo():
+            return dict(
+                P=np.array([[0.5] * nfreq]*10).T,
+                cfifty=np.array([[0.5] * nfreq]*10).T,
+                Rmin=np.array([0] * nfreq),
+                Rmax=np.array([1] * nfreq),
+                Lcorr_all=np.eye(nfreq),#np.linalg.cholesky(corr),
+                tau=np.std(x, 0),
+            )
+
+        return foo
+
+    d = {
+        "N": x.shape[0],
+        "nfreq": x.shape[1],
+        "y": x,
+        "ones": cvals[:, 0] * 0 + 1,
+        "contrast": c,
+        "samples": s.astype(int)+1,
+        "rmin_emp": rmin,
+        "rmax_emp": rmax,
+        "nsamp": 10,
+    }
+
+    return d, init(d['y'])
 
 
 def ppc_figure(f, y, contrast):
