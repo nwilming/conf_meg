@@ -95,9 +95,14 @@ def set_n_threads(n):
     os.environ['OMP_NUM_THREADS'] = str(n)
 
 
-def submit(cluster='SLURM'):
+def submit(cluster='SLURM', subjects=range(1, 16),
+           ssd=False, epochs=['stimulus', 'response']):
     from pymeg import parallel
     decoder = decoders().keys()
+    if ssd:
+        decoder = [d for d in decoder if 'SSD' in d]
+    else:
+        decoder = [d for d in decoder if not ('SSD' in d)]
     if cluster == 'SLURM':
         pmap = partial(parallel.pmap, email=None, tasks=1, nodes=1,
                        memory=60,
@@ -109,9 +114,15 @@ def submit(cluster='SLURM'):
         pmap = partial(parallel.pmap, nodes=1, tasks=n_jobs, memory=61,
                        ssh_to=None,  walltime='72:00:00', env='py36')
 
-    for subject, epoch, dcd in product([1, 16],
-                                       ['stimulus', 'response'],
+    for subject, epoch, dcd in product(subjects,
+                                       epochs,
                                        decoder):
+        filename = outpath + '/concat_S%i-%s-%s-decoding.hdf' % (
+             subject, dcd, epoch)
+        import os.path
+        if os.path.isfile(filename):
+            print('Skipping ', subject, epoch, dcd)
+            continue
         pmap(run_decoder, [(subject, dcd, epoch)],
              name='DCD' + dcd + epoch + str(subject),
              )
@@ -200,8 +211,7 @@ def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
     start = time.time()
     if latencies is None:
         latencies = agg.columns.get_level_values('time').values
-
-    area = np.unique(agg.index.get_level_values('cluster'))
+    area = np.unique(agg.index.get_level_values('cluster'))    
     scores = []
     for latency in latencies:
         logging.info('Applying decoder %s at latency %s' % (decoder, latency))
