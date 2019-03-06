@@ -29,6 +29,12 @@ elif 'lisa.surfsara' in socket.gethostname():
     cachedir = '/nfs/nwilming'
     sraggregates = '/nfs/nwilming/MEG/sr_labeled'
     preprocessed = '/nfs/nwilming/MEG/preprocessed/'
+elif 'orthosie' in socket.gethostname():
+    home = '/net/home/student/n/nwilming'
+    project = '/net/home/student/n/nwilming/conf_analysis/'
+    cachedir = '/net/home/student/n/nwilming/pymeg_cache'
+    sraggregates = '/nfs/nwilming/MEG/sr_labeled'
+    preprocessed = '/nfs/nwilming/MEG/preprocessed/'
 else:
     home = '/Users/nwilming/'
     project = '/Users/nwilming/u/conf_analysis/'
