@@ -842,44 +842,246 @@ def crf_scaled(contrast, Rmax, Rmin, p, c50):
     )
 
 
+def sim_model_crf(cov=None):
+    """
+    Generate a ddict with simulated data.
+    """
+    nfreqs = 5
+    nsubs = 15
+
+    P_pop = np.random.rand(nfreqs) * 10
+    cfifty_pop = 0.5 + np.random.randn(nfreqs) * 0.1
+    cfifty_pop[cfifty_pop < 0] = 0
+    cfifty_pop[cfifty_pop > 1] = 1
+
+    P = np.abs(np.random.randn(nsubs, nfreqs) * 5 + P_pop)
+    cfifty = np.random.randn(nsubs, nfreqs) * 0.05 + cfifty_pop
+    cfifty[cfifty < 0] = 0
+    cfifty[cfifty > 1] = 1
+
+    Rmax = np.random.rand(nsubs, nfreqs) * 10
+    Rmin = -np.random.rand(nsubs, nfreqs) * 5
+
+    contrasts = np.random.randn(1000) * 0.1 + 0.5
+    contrasts[contrasts < 0] = 0
+    contrasts[contrasts > 1] = 1
+    mus = []
+    subject = []
+    CC = []
+    for sub in range(nsubs):
+        mu = np.ones((len(contrasts), nfreqs))
+        for freq in range(nfreqs):
+            mu[:, freq] = crf_scaled(
+                contrasts,
+                Rmax[sub, freq],
+                Rmin[sub, freq],
+                P[sub, freq],
+                cfifty[sub, freq],
+            ).ravel()
+        subject.append(mu[:, 0] * 0 + sub)
+        mus.append(mu)
+        CC.append(contrasts)
+    subject = np.concatenate(subject)
+    mus = np.vstack(mus)
+    if cov is None:
+        cov = np.eye(nfreqs)
+    from scipy.stats import multivariate_normal
+
+    x = np.vstack([multivariate_normal.rvs(m, cov) for m in mus])
+    d = {
+        "P_true": P,
+        "cfifty_true": cfifty,
+        "P_pop": P_pop,
+        "cfifty_pop": cfifty_pop,
+        "Rmin_true": Rmin,
+        "Rmax_true": Rmax,
+        "N": x.shape[0],
+        "nfreq": x.shape[1],
+        "y": x,
+        "contrast": np.concatenate(CC),
+        "rmin_emp": Rmin,
+        "rmax_emp": Rmax,
+        "subject": subject.astype(int) + 1,
+        "nsub": nsubs,
+    }
+
+    init = {
+        "P_pop": np.ones(nfreqs) * 10,
+        "P": np.ones((nsubs, nfreqs)) * 10,
+        "cfifty_pop": np.ones(nfreqs) * 0.5,
+        "cfifty": np.ones((nsubs, nfreqs)) * 0.5,
+        "rmin_emp": Rmin,
+        "rmax_emp": Rmax,
+        "Lcorr_all": cov * 0 + 0.1,
+        "tau": np.diag(cov),
+    }
+    return d, init
+
+
+def sim_model_linear(cov=None):
+    """
+    Generate a ddict with simulated data.
+    """
+    nfreqs = 5
+    nsubs = 15
+
+    P_pop = np.random.rand(nfreqs) * 10
+    P = np.abs(np.random.randn(nsubs, nfreqs) * 5 + P_pop)
+    Rmin = -np.random.rand(nsubs, nfreqs) * 5
+    contrasts = np.random.randn(500) * 0.1 + 0.5
+    contrasts[contrasts < 0] = 0
+    contrasts[contrasts > 1] = 1
+    mus = []
+    subject = []
+    CC = []
+    for sub in range(nsubs):
+        mu = np.ones((len(contrasts), nfreqs))
+        for freq in range(nfreqs):
+            mu[:, freq] = (contrasts * P[sub, freq] - Rmin[sub, freq]).ravel()
+        subject.append(mu[:, 0] * 0 + sub)
+        mus.append(mu)
+        CC.append(contrasts)
+    subject = np.concatenate(subject)
+    mus = np.vstack(mus)
+    if cov is None:
+        cov = np.eye(nfreqs)
+    from scipy.stats import multivariate_normal
+
+    x = np.vstack([multivariate_normal.rvs(m, cov) for m in mus])
+    d = {
+        "P_true": P,
+        "P_pop": P_pop,
+        "Rmin_true": Rmin,
+        "N": x.shape[0],
+        "nfreq": x.shape[1],
+        "y": x,
+        "contrast": np.concatenate(CC),
+        "rmin_emp": Rmin,
+        "subject": subject.astype(int) + 1,
+        "nsub": nsubs,
+    }
+    return d
+
+
+def prepare_ddict(subject, epoch="stimulus", latency=0.18):
+    from pymeg import aggregate_sr as asr
+    from conf_analysis.meg import preprocessing
+    from glob import glob
+
+    data = asr.delayed_agg(
+        "/home/nwilming/conf_meg/sr_labeled/aggs/S*i-*%s%.hdf" % (subject, epoch),
+        hemi="Averaged",
+        cluster="vfcPrimary",
+    )()
+    meta = preprocessing.get_meta(subject, epoch)
+    meta = meta.set_index("hash")
+    time = data.columns.get_level_values("time")
+    time = [time[np.argmin(np.abs(time - td))] for td in latency + np.arange(0, 1, 0.1)]
+    data = data.loc[:, time]
+    Xs = []
+    contrasts = []
+    samples = []
+    for sample, tidx in enumerate(time):
+        X = pd.pivot_table(data, index="trial", columns="freq", values=tidx)
+        trial = X.index
+        Xs.append(X)
+        cvals = np.vstack(meta.loc[trial, "contrast_probe"])[:, sample]
+        contrasts.append(cvals)
+        samples.append((cvals * 0 + sample))
+    contrasts = np.concatenate(contrasts)
+    samples = np.concatenate(samples)
+    Xs = np.vstack(Xs)
+    Xs = (Xs - Xs.mean(0)[np.newaxis, :]) / Xs.std(0)[np.newaxis, :]
+    return {
+        "y": Xs,
+        "contrast": contrasts,
+        "sample": samples,
+        "subject": samples * 0 + subject,
+    }
+
+
 def get_data_dict():
-    meta = pd.read_hdf("tmp.hdf", "meta")
-    agg = pd.read_hdf("tmp.hdf", "agg")
+    meta = pd.read_hdf(
+        "/home/student/n/nwilming/all_vfc_subs.hdf", "contrast"
+    ).to_frame()
+    agg = pd.read_hdf("/home/student/n/nwilming/all_vfc_subs.hdf", "df")
     Xs = []
     contrasts = []
     time = agg.columns.get_level_values("time")
+    trials = agg.index.get_level_values("trial")
+    subject = agg.index.get_level_values("subject")
+    dsub = pd.DataFrame(subject, index=trials)
+    dsub = dsub.loc[dsub.index.unique(), :]
     samples = []
-    for j, i in enumerate(np.arange(0, 1, 0.1)):
-        tidx = time[np.argmin(time - 0.2 + i)]
-        X = pd.pivot_table(agg, values=tidx, index="trial", columns="freq")
-
-        x = X.values
-        x = (x - x.mean(0)[np.newaxis, :]) / x.std(0)[np.newaxis, :]
-        Xs.append(x)
-        contrast = meta.loc[X.index, "contrast_probe"]
-        cvals = np.stack(contrast)
-        cvals[cvals < 0] = 0
-        cvals[cvals > 1] = 1
-        contrasts.append(cvals[:, j])
-        samples.append(cvals[:, j] * 0 + j)
-    x = np.vstack(Xs)[:, :]
+    subjects = []
+    rmins = []
+    rmaxs = []
+    Xsubs = []
+    for subject in np.arange(1, 16):
+        Xs = []
+        ccs = []
+        for j, i in enumerate(time):
+            X = pd.pivot_table(
+                agg.query("subject==%i" % subject),
+                values=i,
+                index="trial",
+                columns="freq",
+            )
+            x = X.values
+            x = (x - x.mean(0)[np.newaxis, :]) / x.std(0)[np.newaxis, :]
+            Xs.append(x)
+            contrast = meta.loc[X.index, "contrast_probe"]
+            subjects.append([subject] * x.shape[0])
+            cvals = np.stack(contrast)
+            cvals[cvals < 0] = 0
+            cvals[cvals > 1] = 1
+            ccs.append(cvals[:, j])
+            samples.append(cvals[:, j] * 0 + j)
+        Xsub = np.vstack(Xs)
+        Xsubs.append(Xsub)
+        c = np.concatenate(ccs)
+        contrasts.append(c)
+        rmin = Xsub[c < 0.2, :].mean(0)
+        rmax = Xsub[c > 0.8, :].mean(0) - rmin
+        rmins.append(rmin)
+        rmaxs.append(rmax)
+    x = np.vstack(Xsubs)[:, :]
     c = np.concatenate(contrasts)
     s = np.concatenate(samples)
-    rmin = x[c < 0.2, :].mean(0)
-    rmax = x[c > 0.8, :].mean(0) - rmin
+    subs = np.concatenate(subjects)
+    rmin = np.vstack(rmins)
+    rmax = np.vstack(rmaxs)
+    nsub = len(np.unique(subs))
 
     def init(x):
         nfreq = x.shape[1]
         corr = np.corrcoef(x.T)
 
+        def makend(val, shape):
+            return np.ones(shape) * val
+
         def foo():
+            """
+            // Priors:
+            [nsub, nfreq] Rmax;     
+            [nsub, nfreq] Rmin;       
+            [nfreq] P[nsub];                    
+            [nfreq] cfifty[nsub];   
+            [nfreq] Lcorr_all;                 
+            [nfreq] tau;                            
+
+            // Hyperpriors:
+            [nfreq] P_pop;                    
+            [nfreq] cfifty_pop;   
+            """
             return dict(
-                P=np.array([[0.5] * nfreq] * 10).T,
-                cfifty=np.array([[0.5] * nfreq] * 10).T,
-                Rmin=np.array([0] * nfreq),
-                Rmax=np.array([1] * nfreq),
+                P=makend(1, (nsub, nfreq)),
+                cfifty=makend(0.5, (nsub, nfreq)),
+                Rmin=makend(-0.5, (nsub, nfreq)),
+                Rmax=makend(1, (nsub, nfreq)),
                 Lcorr_all=np.eye(nfreq),  # np.linalg.cholesky(corr),
-                tau=np.std(x, 0),
+                P_pop=makend(1, (nfreq,)),
+                cfifty_pop=makend(0.5, (nfreq,)),
             )
 
         return foo
@@ -894,6 +1096,8 @@ def get_data_dict():
         "rmin_emp": rmin,
         "rmax_emp": rmax,
         "nsamp": 10,
+        "subject": subs,
+        "nsub": nsub,
     }
 
     return d, init(d["y"])
@@ -911,12 +1115,14 @@ def ppc_figure(f, y, contrast, subject, rmin_emp, rmax_emp, plot_ppc=True):
     plt.figure(figsize=(10, 10))
     for i in range(0, Rmax.shape[1]):
         plt.subplot(4, 5, i + 1)
-
-        for j in range(1, Rmax.shape[0]):
-            centers, power = ifo.cia(
-                y[subject == j, i],
-                contrast[subject == j],
-                centers=np.linspace(0.15, 0.85, 21),
+        centers, power = ifo.cia(y[:, i], contrast, centers=np.linspace(0.15, 0.85, 21))
+        for j in range(1, P.shape[0], 10):
+            plt.plot(
+                centers,
+                crf_scaled(centers, Rmax[j, i], Rmin[j, i], P[j, i], c50[j, i]),
+                "b",
+                alpha=0.2,
+                lw=0.1,
             )
             plt.plot(centers, power, "r")
             plt.plot(-0.1, rmin_emp[j, i], 'ro')
