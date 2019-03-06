@@ -874,11 +874,11 @@ def get_data_dict():
 
         def foo():
             return dict(
-                P=np.array([[0.5] * nfreq]*10).T,
-                cfifty=np.array([[0.5] * nfreq]*10).T,
+                P=np.array([[0.5] * nfreq] * 10).T,
+                cfifty=np.array([[0.5] * nfreq] * 10).T,
                 Rmin=np.array([0] * nfreq),
                 Rmax=np.array([1] * nfreq),
-                Lcorr_all=np.eye(nfreq),#np.linalg.cholesky(corr),
+                Lcorr_all=np.eye(nfreq),  # np.linalg.cholesky(corr),
                 tau=np.std(x, 0),
             )
 
@@ -890,40 +890,47 @@ def get_data_dict():
         "y": x,
         "ones": cvals[:, 0] * 0 + 1,
         "contrast": c,
-        "samples": s.astype(int)+1,
+        "samples": s.astype(int) + 1,
         "rmin_emp": rmin,
         "rmax_emp": rmax,
         "nsamp": 10,
     }
 
-    return d, init(d['y'])
+    return d, init(d["y"])
 
 
-def ppc_figure(f, y, contrast):
+def ppc_figure(f, y, contrast, subject, rmin_emp, rmax_emp, plot_ppc=True):
     from conf_analysis.meg import infoflow as ifo
 
-    Rmax = f["Rmax"].squeeze()
-    Rmin = f["Rmin"].squeeze()
-    P = f["P"].squeeze()
-    c50 = f["c50"].squeeze()
+    Rmax = f["Rmax"].data.squeeze().mean(0)
+    Rmin = f["Rmin"].data.squeeze().mean(0)
+    P = f["P"].data.squeeze().mean(0)
+    c50 = f["cfifty"].data.squeeze().mean(0)
     import pylab as plt
 
     plt.figure(figsize=(10, 10))
-    for i in range(1, 19):
+    for i in range(0, Rmax.shape[1]):
         plt.subplot(4, 5, i + 1)
-        centers, power = ifo.cia(
-            y[:, i], contrast + 0.5, centers=np.linspace(0.15, 0.85, 21)
-        )
-        for j in range(1, P.shape[0], 10):
-            plt.plot(
-                centers,
-                crf_scaled(centers, Rmax[j, i], Rmin[j, i], P[j, i], c50[j, i]),
-                "b",
-                alpha=0.2,
-                lw=0.1,
+
+        for j in range(1, Rmax.shape[0]):
+            centers, power = ifo.cia(
+                y[subject == j, i],
+                contrast[subject == j],
+                centers=np.linspace(0.15, 0.85, 21),
             )
-        plt.plot(centers, power, "r")
-        plt.ylim(-0.8, 0.8)
+            plt.plot(centers, power, "r")
+            plt.plot(-0.1, rmin_emp[j, i], 'ro')
+            plt.plot(1.1, rmin_emp[j, i]+rmax_emp[j,i], 'ro')
+            if plot_ppc:
+                plt.plot(
+                    centers,
+                    crf_scaled(centers, Rmax[j, i], Rmin[j, i], P[j, i], c50[j, i]),
+                    "b",
+                    alpha=1,
+                    lw=0.5,
+                )
+            
+        # plt.ylim(-0.8, 0.8)
 
 
 def mv_model_eval(contrast, power, magnitude=0, P=0, Q=1, c50=50, sigma=None, NU=1):
