@@ -40,13 +40,16 @@ def submit(older_than="201911010000"):
     from itertools import product
     cnt = 1
     older_than = datetime.datetime.strptime(older_than, '%Y%m%d%H%M')
-
-    # for subject, session, epoch, signal in product(
-    #        [8, 13, 15], [2], ['stimulus'], #, 'response'],
-    #        ['F', 'LF']):
-    for subject, session, epoch, signal in [[15, 0, 'stimulus', 'F'],
-                                            [13, 0, 'stimulus', 'F'],
-                                            [8, 2, 'stimulus', 'F']]:
+    cnt = 1
+    #for subject, session, epoch, signal in product(range(1, 16),
+    #                                                range(0, 4),
+    #                                                ['stimulus', 'response'],
+    #                                                ['F', 'LF']):
+    for subject, session, epoch, signal in [[3, 3, 'stimulus', 'F'],
+                                            [2, 1, 'response', 'F'],
+                                            [4, 2, 'stimulus', 'F'],
+                                            [8, 3, 'response', 'F'],
+                                            [10, 0, 'response', 'F']]:
         mod_time = [modification_date(x) for x in lcmvfilename(
             subject, session, signal, epoch, chunk='all')]
         # if(any([x > older_than for x in mod_time])):
@@ -56,9 +59,13 @@ def submit(older_than="201911010000"):
         print("Submitting %i %i %s %s" % (subject, session, epoch, signal))
         parallel.pmap(
             extract, [(subject, session, epoch, signal)],
-            walltime='10:00:00', memory=40, nodes=1, tasks=4, env='py36',
+            walltime='10:00:00', memory=40, nodes=1, tasks=5, env='py36',
             name='SR' + str(subject) + '_' + str(session) + epoch,
             ssh_to=None)
+        #if np.mod(cnt, 15) == 0:
+        #    import time
+        #    time.sleep(60 * 30)
+        cnt+=1
 
 
 def lcmvfilename(subject, session, signal, epoch_type, chunk=None):
