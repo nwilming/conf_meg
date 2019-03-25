@@ -384,8 +384,45 @@ def do_stats(x):
         x, threshold=dict(start=0, step=0.2))
 
 
+def ssd_overview_plot(ssd, area=['vfcPrimary', 'JWG_M1'], ylim=[0, 0.1]):
+    import matplotlib
+    signals = ['SSD', 'SSD_acc_contrast']
+    gs = matplotlib.gridspec.GridSpec(len(area), 2)
+    for j, a in enumerate(area):
+        for i, signal in enumerate(signals):
+            ax = plt.subplot(gs[j, i])
+            plot_ssd_per_sample(ssd.query('signal=="%s"' %
+                                          signal),
+                                area=a,
+                                ax=ax,
+                                ylim=ylim)
+            plt.title(signal)
+
+
+def ssd_encoding_plot(ssd, ylim=[-0.01, 0.11]):
+    import matplotlib
+    signals = ['SSD', 'SSD_acc_contrast']
+    gs = matplotlib.gridspec.GridSpec(2, 2)
+    for i, signal in enumerate(signals):
+        ax = plt.subplot(gs[0, i])
+        plot_ssd_per_sample(ssd.Averaged.query('signal=="%s"' %
+                                               signal),
+                            area='vfcPrimary',
+                            ax=ax,
+                            ylim=ylim)
+        plt.title(signal)
+    for i, signal in enumerate(signals):
+        ax = plt.subplot(gs[1, i])
+        plot_ssd_per_sample(ssd.Lateralized.query('signal=="%s"' %
+                                                  signal),
+                            area='JWG_M1',
+                            ax=ax,
+                            ylim=ylim)
+
+
 def plot_ssd_per_sample(ssd, area='vfcvisual', cmap='magma', alpha=0.05,
-                        latency=0.18, save=False, ax=None, stats=True):
+                        latency=0.18, save=False, ax=None, stats=True,
+                        ylim=[0, 0.1]):
     '''
     '''
     import pylab as plt
@@ -410,6 +447,7 @@ def plot_ssd_per_sample(ssd, area='vfcvisual', cmap='magma', alpha=0.05,
 
         ax.plot(k.columns.values + 0.1 * sample,
                 k.values.mean(0), color=cmap(sample / 10.))
+        ax.set_ylim(ylim)
         if stats:
             t_obs, clusters, cluster_pv, H0 = do_stats(
                 baseline_corrected.values)
@@ -432,7 +470,7 @@ def plot_ssd_peaks(peaks, palette, K=None):
     import seaborn as sns
     from adjustText import adjust_text
     # from scipy.stats import
-    plt.figure(figsize=(4.5, 3.5))
+    plt.figure(figsize=(5.5, 4.5))
     pvt = peaks  # pd.pivot_table(peaks.astype(
     # float), index='sample', columns='subject')
     texts = []
@@ -444,19 +482,30 @@ def plot_ssd_peaks(peaks, palette, K=None):
         except KeyError:
             continue
         x, y = apvt.index.values, apvt.mean(1).values
+        # Simple t-tests
+        p = 1.0
+        if K is not None:
+            from scipy.stats import ttest_1samp
+            Y = apvt.values
+            corrs = []
+            for sub in range(1, 16):
+                corrs.append(
+                    np.corrcoef(K.loc[:, sub].values,
+                                apvt.loc[:, sub].values)[0, 1])
+            _, p = ttest_1samp(np.tanh(corrs), 0)
 
         ps = plt.plot(x, y, color=color)
 
-        if key in visual_field_clusters:
-            t = plt.text(x[-1], y[-1], key.replace('vfc', ''),
+        if (key in visual_field_clusters) or ('cingulate_pos' in key):
+            key = key.replace('vfc', '')
+            key = key.replace('HCPMMP1_', '')
+            if p < 0.05:
+                key += '*'
+            t = plt.text(x[-1], y[-1], key,
                          color=color, size=10)
-            texts.append(t)
-            lines.append(ps[0])
-        if 'cingulate_pos' in key:
-            t = plt.text(x[-1], y[-1], key.replace('HCPMMP1_', ''),
-                         color=color, size=10)
-            texts.append(t)
-            lines.append(ps[0])
+
+        texts.append(t)
+        lines.append(ps[0])
 
     plt.xlim(-1, 11)
     adjust_text(texts, only_move={'text': 'x', 'objects': 'x'},
@@ -703,6 +752,6 @@ def plot_brain_color_legend(palette):
             for l0 in labelobjects:
                 if l0.hemi == 'lh':
                     brain.add_label(l0, color=color, alpha=1)
-    #brain.save_montage('/Users/nwilming/Dropbox/UKE/confidence_study/brain_colorbar.png',
+    # brain.save_montage('/Users/nwilming/Dropbox/UKE/confidence_study/brain_colorbar.png',
     #                   [[180., 90., 90.], [0., 90., -90.]])
     return brain

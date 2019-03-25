@@ -312,18 +312,52 @@ def plot_crfs(crfs, freqbins=[0, 10, 25, 45, 80, 150]):
 
 def std_corr(data, crfs):
     from conf_analysis.behavior import empirical
+    from scipy.stats import linregress
 
     bias = data.groupby(["snum"]).apply(empirical.crit).reset_index()
     bias.columns = ["subject", "bias"]
+    bias.set_index("subject", inplace=True)
     dp = data.groupby(["snum"]).apply(empirical.dp).reset_index()
     dp.columns = ["subject", "dp"]
+    dp.set_index("subject", inplace=True)
 
-    crfs = crfs.groupby(["subject", "bfreq"]).mean()
-    crfs = pd.pivot_table(crfs.reset_index(), columns="bfreq", index="subject")
+    # crfs = crfs.groupby(['subject', 'freq', 'contrast']).mean()
+
+    crfsd = (
+        crfs.groupby(["subject", "freq"]).max()
+        - crfs.groupby(["subject", "freq"]).min()
+    )
+    crfsd.name = "power"
+    crfsd = pd.pivot_table(
+        crfsd.reset_index(), columns="freq", index="subject", values="power"
+    )
+
+    # crfs = crfs.groupby(['subject', 'bfreq']).mean()
+    contrast = crfs.index.get_level_values("contrast")
+
+    crfs = (
+        crfs.loc[(0.6 < contrast) & (contrast < 0.7)]
+        .groupby(["subject", "freq"])
+        .mean()
+    ) - (
+        np.abs(
+            crfs.loc[(0.3 < contrast) & (contrast < 0.4)]
+            .groupby(["subject", "freq"])
+            .mean()
+        )
+    )
+    crfs.name = "power"
+    crfs = pd.pivot_table(
+        crfs.reset_index(), columns="freq", index="subject", values="power"
+    )
 
     results = []
-    for freq, fdata in crfs:
-        d = np.corrcoef(dp.loc[fdata.index, "dp"], fdata)[0, 1]
-        c = np.corrcoef(bias.loc[fdata.index, "bias"], fdata)[0, 1]
-        results.append({"freq": freq, "dp": d, "bias": c})
+    for freq in crfs:
+        df = crfs.loc[:, freq]
+        dff = crfsd.loc[:, freq]
+        slope, _, d, p_d, _ = linregress(dp.loc[df.index, "dp"].values, dff.values)
+        slope, _, c, p_c, _ = linregress(bias.loc[df.index, "bias"], df)
+        results.append(
+            {"freq": freq, "dp": d, "bias": c, "pval_dp": p_d, "pval_bias": p_c}
+        )
     return pd.DataFrame(results)
