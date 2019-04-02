@@ -41,11 +41,14 @@ def submit(older_than="201911010000"):
 
     cnt = 1
     older_than = datetime.datetime.strptime(older_than, "%Y%m%d%H%M")
-
-
-    for subject, session, epoch, signal in product(
-        [1], [2], ["stimulus"], ["F", "LF"]  # , 'response'],
-        ):
+    cnt = 1
+    for subject, session, epoch, signal in [
+        [3, 3, "stimulus", "F"],
+        [2, 1, "response", "F"],
+        [4, 2, "stimulus", "F"],
+        [8, 3, "response", "F"],
+        [10, 0, "response", "F"],
+    ]:
         mod_time = [
             modification_date(x)
             for x in lcmvfilename(subject, session, signal, epoch, chunk="all")
@@ -61,11 +64,15 @@ def submit(older_than="201911010000"):
             walltime="10:00:00",
             memory=40,
             nodes=1,
-            tasks=4,
+            tasks=5,
             env="py36",
             name="SR" + str(subject) + "_" + str(session) + epoch,
             ssh_to=None,
         )
+        # if np.mod(cnt, 15) == 0:
+        #    import time
+        #    time.sleep(60 * 30)
+        cnt += 1
 
 
 def lcmvfilename(subject, session, signal, epoch_type, chunk=None):

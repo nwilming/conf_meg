@@ -67,8 +67,12 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True):
 
 
 def get_ssd_data(ssd_classifier="Ridge", restrict=True):
-    df = pd.read_hdf(
-        '/Users/nwilming/u/conf_analysis/results/all_decoding_ssd_20190129.hdf')
+    try:
+        df = pd.read_hdf(
+            '/Users/nwilming/u/conf_analysis/results/all_decoding_ssd_20190129.hdf')
+    except FileNotFoundError:
+        df = pd.read_hdf(
+            '/home/nwilming/conf_analysis/results/all_decoding_ssd_20190129.hdf')
     df = df.loc[~np.isnan(df.subject), :]
     df = df.query(
         'Classifier=="%s"' % ssd_classifier)
@@ -546,22 +550,20 @@ def extract_peak_slope(ssd, latency=0.18, dt=0.01, peak_latencies=None):
     else:
         reslist = []
         assert(len(ssd.index.get_level_values('signal').unique()) == 1)
-        for idx, d in ssd.groupby(['subject', 'sample']):
-            peak_idx = peak_latencies.loc[idx, :]
-            ds = ssd.query('subject==%i & sample==%i' %
-                           idx)
-            levels = list(set(ssd.index.names) - set(['latency']))
-            ds.index = ds.index.droplevel(levels)
+        for idx, ds in ssd.groupby(['subject', 'sample']):            
+            peak_idx = peak_latencies.loc[idx, :]            
+            levels = list(set(ds.index.names) - set(['latency']))
+            ds.index = ds.index.droplevel(levels)            
             res = {'subject': idx[0], 'sample': idx[1]}
             for col in ds.columns:
-
                 latency = peak_idx.loc[col]
                 value = ds.loc[latency, col]
                 res.update({col: value})
             reslist.append(res)
         peaks = pd.DataFrame(reslist)
         peaks.set_index(['subject', 'sample'], inplace=True)
-        return pd.pivot_table(ssd, index='sample', columns='subject')
+        print('.')
+        return peaks#pd.pivot_table(ssd, index='sample', columns='subject')
 
 
 def extract_kernels(dz, contrast_mean=0.0):

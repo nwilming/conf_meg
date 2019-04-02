@@ -97,6 +97,7 @@ def set_n_threads(n):
     os.environ["OMP_NUM_THREADS"] = str(n)
 
 
+
 def submit(
     cluster="SLURM", subjects=range(1, 16), ssd=False, epochs=["stimulus", "response"]
 ):
@@ -166,12 +167,14 @@ def run_decoder(
     set_n_threads(1)
     from multiprocessing import Pool
     from glob import glob
+
     from pymeg import aggregate_sr as asr
     from conf_analysis.meg import srtfr
 
     clusters = srtfr.get_clusters()
     areas = clusters.keys()
     print('Areas:', areas)
+
     filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, epoch)))
 
     meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))
@@ -382,7 +385,6 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True, target_col="response
     # Map to nearest time point in data
     times = data.columns.get_level_values("time").values
     target_time_point = times[np.argmin(abs(times - latency))]
-    #logging.info("Selecting next available time point: %02.2f" % target_time_point)
     data = data.loc[:, target_time_point]
 
     # Turn data into (trial X Frequency)
@@ -404,6 +406,7 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True, target_col="response
             sub_meta = sub_meta.loc[sub_data.index, :]
             # Buld target vector
             target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
+
             #logging.info(
             #    "Class balance: %0.2f, Nr. of samples: %i"
             #    % ((target == 1).astype(float).mean(), len(target))
@@ -507,6 +510,238 @@ def SVMCV(params):
     return RandomizedSearchCV(svm.SVC(), params, n_iter=50, n_jobs=4)
 
 
+
+def submit_cross_area_decoding(subject):
+    pass
+
+
+
+def run_cross_area_decoding(subject, ntasks=1):
+    set_n_threads(1)
+    from multiprocessing import Pool
+    from glob import glob
+    from pymeg import atlas_glasser, aggregate_sr as asr
+    
+    low_level_areas = ["vfcPrimary", "vfcEarly", "vfcV3ab", "vfcIPS01", "vfcIPS23", 
+                       "vfcLO", "vfcTO", "vfcVO", "vfcPHC", "JWG_IPS_PCeS", "vfcFEF", 
+                       "HCPMMP1_dlpfc", "HCPMMP1_insular_front_opercular", 
+                       "HCPMMP1_frontal_inferior", "HCPMMP1_premotor", "JWG_M1"]
+    high_level_areas = ["JWG_IPS_PCeS", "vfcFEF", "HCPMMP1_dlpfc", "HCPMMP1_premotor", "JWG_M1"]
+    # First load low level averaged stimulus data
+    filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, 'stimulus')))
+
+
+    meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))    
+    args = []
+
+    for lla, hla in product(low_level_areas, high_level_areas):
+        #meta,
+        #low_level_data,
+        #low_level_area,
+        #motor_data,
+        #motor_area,
+        #low_level_peak,                
+        low_level_data = asr.delayed_agg(filenames, hemi='Averaged', cluster=lla)
+        high_level_data = asr.delayed_agg(filenames, hemi='Lateralized', cluster=hla)
+        args.append((meta, low_level_data, lla, high_level_data, hla, 0.18))
+    print('There are %i decoding tasks for subject %i'%(len(args), subject))
+    with Pool(ntasks) as p:
+        scores = p.starmap(motor_decoder, args)  # , chunksize=ntasks)
+    #scores = [motor_decoder(*arg) for arg in args]
+    scores = [s for s in scores if s is not None]
+    scores = pd.concat(scores)
+    scores.loc[:, 'subject'] = subject
+    filename = outpath + "/cross_area_S%i-decoding.hdf" % (subject)
+    scores.loc[:, "subject"] = subject
+    scores.to_hdf(filename, "decoding")
+
+    p.terminate()
+    return scores
+
+
+def motor_decoder(
+    meta,
+    low_level_data,
+    low_level_area,
+    motor_data,
+    motor_area,
+    low_level_peak,
+    target_col="response",
+):
+    """
+    This signal predicts motor activity from a set of time points in early visual cortex.
+
+    The idea is to train to decoders simultaneously:
+
+    1) Train a motor decoder and predict log(probability) of a choice. Do this 
+       on the training set.
+    2) Train a decoder from early visual cortex data that predicts the 
+       log(probability) of a choice. Train on training set, evaluate on test.
+    """
+    meta = meta.set_index("hash")
+    low_level_data = low_level_data()
+    motor_data = motor_data()
+
+    # Iterate over all high level time points:
+    times = motor_data.columns.get_level_values("time").values
+    dt = np.diff(times)[0]
+    t_idx = (-0.4<times) & (times<0.1)
+    all_scores = []
+    for high_level_latency in times[t_idx]:
+        # Make target data.
+        # Map to nearest time point in data
+        target_time_point = times[np.argmin(abs(times - high_level_latency))]
+        logging.info("Selecting next available time point: %02.2f" % target_time_point)
+        md = motor_data.loc[:, target_time_point]
+
+        # Turn data into (trial X Frequency)
+        X = []
+        for a in ensure_iter(motor_area):
+            x = pd.pivot_table(
+                md.query('cluster=="%s"' % a),
+                index="trial",
+                columns="freq",
+                values=target_time_point,
+            )
+            X.append(x)
+        md = pd.concat(X, 1)
+        motor_meta = meta.loc[md.index, :]
+        scores = []
+
+        # Buld target vector
+        motor_target = (motor_meta.loc[md.index, target_col]).astype(int)
+        logging.info(
+            "Class balance: %0.2f, Nr. of samples: %i"
+            % ((motor_target == 1).astype(float).mean(), len(motor_target))
+        )
+
+        low_times = low_level_data.columns.get_level_values("time").values
+        for low_level_latency in np.arange(-0.1, 0.2+dt, dt):
+            for s in np.arange(0, 1, 0.1) + low_level_peak + low_level_latency:
+                # Turn data into (trial X Frequency)
+                low_target_time_point = low_times[np.argmin(abs(low_times - s))]
+                lld = []
+                for a in ensure_iter(low_level_area):
+                    x = pd.pivot_table(
+                        low_level_data.query('cluster=="%s"' % a),
+                        index="trial",
+                        columns="freq",
+                        values=low_target_time_point,
+                    )
+                    lld.append(x)
+            lld_data = pd.concat(lld, 1)
+            del lld
+            low_level_meta = meta.loc[lld_data.index, :]
+            assert all(low_level_meta.index == motor_meta.index)
+            
+            print('Size motor:', md.shape, 'Size high-level:', low_level_data.shape)
+            scores = chained_categorize(motor_target, md, lld_data)
+            scores.loc[:, 'high_level_latency'] = high_level_latency
+            scores.loc[:, 'low_level_latency'] = low_level_latency
+            scores.loc[:, 'low_level_peak'] = low_level_peak
+            scores.loc[:, 'low_level_area'] = low_level_area
+            scores.loc[:, 'high_level_area'] = motor_area
+            all_scores.append(scores)
+    return pd.concat(all_scores)
+
+
+def chained_categorize(target_a, data_a, data_b):
+    """
+    Trains a classifier to predict target_a from data_a. Then
+    predicts log(pA) with that for training set and trains a 
+    second classifier to predict log(pA) with data_b.
+
+    target_a, data_a and data_b all need to have the same index.
+    """
+    from sklearn.model_selection import StratifiedShuffleSplit
+    from sklearn.linear_model import LinearRegression
+    from sklearn.metrics import roc_auc_score, mean_squared_error
+    from sklearn.decomposition import PCA
+    from sklearn.utils import shuffle
+    from imblearn.pipeline import Pipeline
+
+    if not (
+        all(target_a.index.values == data_a.index.values)
+        and all(data_a.index.values == data_b.index.values)
+    ):
+        raise RuntimeError("Target and data not aligned with same index.")
+
+    target_a = target_a.values
+    data_a = data_a.values
+    data_b = data_b.values
+    # Determine prediction target:
+    # y_type = type_of_target(target_a)
+
+    metrics = ["roc_auc", "accuracy"]
+    classifier_a = svm.SVC(kernel="linear", probability=True)
+    classifier_a = Pipeline(
+        [
+            ("Scaling", StandardScaler()),
+            ("Upsampler", RandomOverSampler(sampling_strategy="minority")),
+            ("SVM", classifier_a),
+        ]
+    )
+
+    
+    classifier_b = Pipeline(
+        [("Scaling", StandardScaler()), 
+        ('PCA', PCA(n_components=20)),
+        ("linear_regression", LinearRegression())]
+    )
+    classifier_b_baseline = Pipeline(
+        [("Scaling", StandardScaler()), 
+        ('PCA', PCA(n_components=20)),
+        ("linear_regression", LinearRegression())]
+    )
+
+    scores = []
+    sss = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=0)
+    for train_index, test_index in sss.split(data_a, target_a):
+        train_data_a = data_a[train_index]
+        train_target_a = target_a[train_index]
+        clf_a = classifier_a.fit(train_data_a, train_target_a)
+
+        train_data_b = data_b[train_index]
+        target_b = clf_a.predict_log_proba(train_data_a)[:, 0]
+        clf_b = classifier_b.fit(train_data_b, target_b)
+        clf_b_baseline = classifier_b_baseline.fit(train_data_b, shuffle(target_b))
+        classifier_a_roc = roc_auc_score(
+            target_a[test_index], clf_a.predict_log_proba(data_a[test_index])[:, 0]
+        )
+
+        clf_a_test_predicted = clf_a.predict_log_proba(data_a[test_index])[:, 0]
+        clf_b_test_predicted = clf_b.predict(data_b[test_index])
+        clf_b_baseline_test_predicted = clf_b_baseline.predict(data_b[test_index])
+
+        classifier_b_msqerr = mean_squared_error(
+            clf_a_test_predicted, clf_b_test_predicted
+        )
+        classifier_b_shuffled_msqerr = mean_squared_error(
+            clf_a_test_predicted, clf_b_baseline_test_predicted
+        )
+
+        classifier_b_corr = np.corrcoef(clf_a_test_predicted, clf_b_test_predicted)[
+            0, 1
+        ]
+        classifier_b_shuffled_corr = np.corrcoef(
+            clf_a_test_predicted, clf_b_baseline_test_predicted
+        )[0, 1]
+
+        scores.append(
+            {
+                "classifier_a_roc": classifier_a_roc,
+                "classifier_b_msqerr": classifier_b_msqerr,
+                "classifier_b_shuffled_msqerr": classifier_b_shuffled_msqerr,
+                "classifier_b_corr": classifier_b_corr,
+                "classifier_b_shuffled_corr": classifier_b_shuffled_corr,
+                "classifier_b_weights": clf_b.steps[-1][1].coef_,
+            }
+        )
+
+    return pd.DataFrame(scores)
+
+
+
 def get_tableau(
     meta,
     dresp,
@@ -584,6 +819,7 @@ def get_path(epoch, subject, session, cache=False):
 
 def submit_aggregates(cluster="uke"):
     from pymeg import parallel
+    import time
 
     for subject, epoch, session in product(range(1, 16), ["response"], range(4)):
         parallel.pmap(
@@ -597,6 +833,7 @@ def submit_aggregates(cluster="uke"):
 
 
 def aggregate(subject, session, epoch):
+    from conf_analysis.meg import srtfr
     from pymeg import aggregate_sr as asr
     from os.path import join
 
@@ -609,10 +846,11 @@ def aggregate(subject, session, epoch):
         % (subject, session)
     )
 
+    all_clusters = srtfr.get_clusters()
     if epoch == "stimulus":
-        agg = asr.aggregate_files(stim, stim, (-0.25, 0))
+        agg = asr.aggregate_files(stim, stim, (-0.25, 0), all_clusters=all_clusters)
     elif epoch == "response":
-        agg = asr.aggregate_files(resp, stim, (-0.25, 0))
+        agg = asr.aggregate_files(resp, stim, (-0.25, 0), all_clusters=all_clusters)
 
     filename = join(
         "/home/nwilming/conf_meg/sr_labeled/aggs/",
