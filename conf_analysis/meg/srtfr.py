@@ -30,13 +30,16 @@ contrasts = {
          'low_conf_high_contrast', 'low_conf_low_contrast'],
         (1, 1, -1, -1)),
     # (HCHCont - LCHCont) + (HCLCont - LCLCont) ->
-    #  HCHCont + HCLcont  -  LCHCont - LCLCont 
+    #  HCHCont + HCLcont  -  LCHCont - LCLCont
+    # Example:
+    # HCm = 10, LCm = 7 (10-7) + (1-4) = 3-3 == 0
+
     'confidence_asym': (
         ['high_conf_high_contrast', 'high_conf_low_contrast',
          'low_conf_high_contrast', 'low_conf_low_contrast'],
         (1, -1, -1, 1)),
     # (HCHCont - LCHCont) - (HCLCont - LCLCont) ->
-    #  HCHCont - HCLcont  -  LCHCont + LCLCont 
+    #  HCHCont - HCLcont  -  LCHCont + LCLCont
 }
 
 
@@ -49,7 +52,7 @@ def submit_contrasts(collect=False):
     for task in tasks:
         try:
             r = _eval(get_contrasts, task, collect=collect,
-                      walltime='01:30:00', tasks=5, memory=70)
+                      walltime='01:30:00', tasks=9, memory=70)
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
@@ -72,6 +75,30 @@ def _eval(func, args, collect=False, **kw):
             return df
         else:
             raise RuntimeError('Result not available.')
+
+
+def get_clusters():
+    '''
+    Pimp cluster defs
+    '''
+    from pymeg import atlas_glasser as ag
+    #['L_{}_ROI-lh'.format(area) for area in
+    areas = ['47s', '47m', 'a47r', '11l', '13l', 'a10p', 'p10p', '10pp',
+             '10d', 'OFC', 'pOFC', '44', '45', 'IFJp', 'IFJa', 'IFSp',
+             'IFSa', '47l', 'p47r', '8C', '8Av', 'i6-8', 's6-8', 'SFL',
+             '8BL', '9p', '9a', '8Ad', 'p9-46v', 'a9-46v', '46', '9-46d',
+             'SCEF', 'p32pr', 'a24pr', 'a32pr', 'p24', 'p32', 's32', 'a24',
+             '10v', '10r', '25', 'd32', '8BM', '9m']
+
+    areas = {'NSWFRONT_' + area: [
+        'L_{}_ROI-lh'.format(area), 'L_{}_ROI-lh'.format(area)]
+        for area in areas}
+    all_clusters, _, _, _ = ag.get_clusters()
+    all_clusters.update(areas)
+
+    all_clusters = {k:v for k, v in all_clusters.items() 
+        if (k.startswith('NSWFRONT')) or (k in ag.areas.values())}
+    return all_clusters
 
 
 @memory.cache(ignore=['scratch'])
@@ -110,8 +137,8 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False,
     stimulus = meta.side == 1
     meta = augment_data(meta, response_left, stimulus)
     meta["high_conf_high_contrast"] = (meta.confidence == 2) & (meta.mc > 0.5)
-    meta["high_conf_low_contrast"] = (meta.confidence == 1) & (meta.mc > 0.5)
-    meta["low_conf_high_contrast"] = (meta.confidence == 2) & (meta.mc <= 0.5)
+    meta["high_conf_low_contrast"] = (meta.confidence == 2) & (meta.mc <= 0.5)
+    meta["low_conf_high_contrast"] = (meta.confidence == 1) & (meta.mc > 0.5)
     meta["low_conf_low_contrast"] = (meta.confidence == 1) & (meta.mc <= 0.5)
     cps = []
     with Cache() as cache:
@@ -120,7 +147,7 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False,
                 contrasts, hemis, stim, stim,
                 meta, (-0.25, 0),
                 baseline_per_condition=baseline_per_condition,
-                n_jobs=1, cache=cache)
+                n_jobs=1, cache=cache, all_clusters=get_clusters())
             contrast.loc[:, 'epoch'] = 'stimulus'
             cps.append(contrast)
         except ValueError as e:
@@ -168,10 +195,10 @@ def plot_mosaics(df, stats=False):
 
 
 def submit_stats(
-                 contrasts=['all', 'choice', 'confidence',
-                            'confidence_asym', 'hand',
-                            'stimulus'],
-                 collect=False):
+        contrasts=['all', 'choice', 'confidence',
+                   'confidence_asym', 'hand',
+                   'stimulus'],
+        collect=False):
     all_stats = {}
     tasks = []
     for contrast in contrasts:
@@ -186,13 +213,14 @@ def submit_stats(
             res.append(r)
         except RuntimeError:
             print('Task', task, ' not available yet')
-    return res    
+    return res
 
 
 @memory.cache()
 def precompute_stats(contrast, epoch, hemi):
     from pymeg import atlas_glasser
-    df = pd.read_hdf('/home/nwilming/all_contrasts_confmeg-20190108.hdf')
+    df = pd.read_hdf(
+        '/home/nwilming/conf_analysis/results/all_contrasts_updated_confcon-2090122.hdf')
     if epoch == "stimulus":
         time_cutoff = (-0.5, 1.35)
     else:
@@ -202,7 +230,8 @@ def precompute_stats(contrast, epoch, hemi):
     df = df.query(query)
     all_stats = {}
     for (name, area) in atlas_glasser.areas.items():
-        task = contrast_tfr.get_tfr(df.query('cluster=="%s"' % area), time_cutoff)
+        task = contrast_tfr.get_tfr(
+            df.query('cluster=="%s"' % area), time_cutoff)
         all_stats.update(contrast_tfr.par_stats(*task, n_jobs=1))
     return all_stats
 
@@ -217,12 +246,16 @@ def plot_2epoch_mosaics(df, stats=False, contrasts=['all', 'choice', 'confidence
             query = 'contrast=="%s" & %s(hemi=="avg")' % (
                 contrast, {True: '~', False: ''}[hemi])
             d = df.query(query)
-            plot_2epoch_mosaic(d, stats=stats)
-            plt.suptitle(query)
+            plot_2epoch_mosaic(d, stats=stats, cmap='RdBu')
+            title = '%s, %s' % (
+                contrast, {True: 'Lateralized', False: 'Hemis avg.'}[hemi])
+            plt.suptitle(title)
             plt.savefig(
-                '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (contrast, hemi))
-            # plt.savefig(
-            #    '/Users/nwilming/Desktop/tfr_average_%s_%s_lat%s.svg' % (epoch, contrast, hemi))
+                '/Users/nwilming/Desktop/tfr_average_2e_%s_lat%s.pdf' % (
+                    contrast, hemi),
+                bbox_inches='tight')
+
+
 # Ignore following for now
 
 
