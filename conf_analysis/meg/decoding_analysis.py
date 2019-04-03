@@ -571,23 +571,27 @@ def run_cross_area_decoding(subject, ntasks=16):
     cnt = 0
     add_meta = {"subject": subject, "low_hemi": "Averaged", "high_hemi": "Lateralized"}
     for lla, hla in product(low_level_areas, high_level_areas):
-        low_level_data = asr.delayed_agg(filenames, hemi="Averaged", cluster=lla)
-        high_level_data = asr.delayed_agg(filenames, hemi="Lateralized", cluster=hla)
-        args.append(
-            (
-                subject,
-                low_level_data,
-                lla,
-                high_level_data,
-                hla,
-                0.18,
-                "response",
-                "cross_dcd",
-                "%s" % cnt,
-                add_meta,
+        for odd in [True, False]:
+            low_level_data = asr.delayed_agg(filenames, hemi="Averaged", cluster=lla)
+            high_level_data = asr.delayed_agg(
+                filenames, hemi="Lateralized", cluster=hla
             )
-        )
-        cnt += 1
+            args.append(
+                (
+                    subject,
+                    low_level_data,
+                    lla,
+                    high_level_data,
+                    hla,
+                    0.18,
+                    "response",
+                    "cross_dcd",
+                    "%s" % cnt,
+                    add_meta,
+                    odd,
+                )
+            )
+            cnt += 1
     print("There are %i decoding tasks for subject %i" % (len(args), subject))
     scratch = os.environ["TMPDIR"]
     try:
@@ -620,6 +624,7 @@ def motor_decoder(
     save_filename=None,
     save_prefix=None,
     add_meta={},
+    odd_times=None,
 ):
     """
     This signal predicts motor activity from a set of time points in early visual cortex.
@@ -643,6 +648,11 @@ def motor_decoder(
 
     cnt = 0
     time_points = times[t_idx]
+    if odd_times is not None:
+        if odd_times:
+            time_points = time_points[:-1:2]
+        else:
+            time_points = time_points[1::2]
     for high_level_latency in time_points:
         print("High level latency:", high_level_latency)
         target_time_point = times[np.argmin(abs(times - high_level_latency))]
@@ -660,9 +670,21 @@ def motor_decoder(
             scores = chained_categorize(motor_target, md, lld_data)
             scores.loc[:, "low_level_latency"] = low_level_latency
             all_scores.append(scores)
-        save_all_scores(all_scores, add_meta, save_filename, save_prefix, cnt)
+        save_all_scores(
+            all_scores,
+            add_meta,
+            save_filename,
+            save_prefix,
+            cnt,
+            high_level_latency,
+            low_level_peak,
+            low_level_area,
+            motor_area,
+        )
         cnt += 1
         del all_scores
+        del md
+        del motor_target
     del motor_data
     del low_level_data
 
@@ -701,7 +723,17 @@ def prep_low_level_data(
     return pd.concat(lld, 1)
 
 
-def save_all_scores(all_scores, add_meta, save_filename, save_prefix, cnt):
+def save_all_scores(
+    all_scores,
+    add_meta,
+    save_filename,
+    save_prefix,
+    cnt,
+    high_level_latency,
+    low_level_peak,
+    low_level_area,
+    motor_area,
+):
     all_scores = pd.concat(all_scores)
     all_scores.loc[:, "high_level_latency"] = high_level_latency
     all_scores.loc[:, "low_level_peak"] = low_level_peak
