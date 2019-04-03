@@ -550,7 +550,6 @@ def run_cross_area_decoding(subject, ntasks=16):
     # First load low level averaged stimulus data
     filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, 'stimulus')))
 
-    meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))    
     args = []
     filename = outpath + "/cross_area_S%i-decoding.hdf" % (subject)
     print('Save target:', filename)
@@ -559,7 +558,7 @@ def run_cross_area_decoding(subject, ntasks=16):
     for lla, hla in product(low_level_areas, high_level_areas):               
         low_level_data = asr.delayed_agg(filenames, hemi='Averaged', cluster=lla)
         high_level_data = asr.delayed_agg(filenames, hemi='Lateralized', cluster=hla)
-        args.append((meta, low_level_data, lla, high_level_data, hla, 0.18, 'response',
+        args.append((subject, low_level_data, lla, high_level_data, hla, 0.18, 'response',
             'cross_dcd', '%s'%cnt, add_meta))
         cnt+=1
     print('There are %i decoding tasks for subject %i'%(len(args), subject))
@@ -584,7 +583,7 @@ def run_cross_area_decoding(subject, ntasks=16):
 
 
 def motor_decoder(
-    meta,
+    subject,
     low_level_data,
     low_level_area,
     motor_data,
@@ -605,6 +604,7 @@ def motor_decoder(
     2) Train a decoder from early visual cortex data that predicts the 
        log(probability) of a choice. Train on training set, evaluate on test.
     """
+    meta = daugment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))    
     meta = meta.set_index("hash")
     low_level_data = low_level_data()
     motor_data = motor_data()
@@ -622,7 +622,7 @@ def motor_decoder(
         # Make target data.
         # Map to nearest time point in data
         target_time_point = times[np.argmin(abs(times - high_level_latency))]
-        print("Selecting next available time point: %02.2f" % target_time_point)
+        #print("Selecting next available time point: %02.2f" % target_time_point)
         md = motor_data.loc[:, target_time_point]
 
         # Turn data into (trial X Frequency)
@@ -677,8 +677,6 @@ def motor_decoder(
         all_scores = pd.concat(all_scores)    
         for key, value in add_meta.items():
             all_scores.loc[:, key] = value
-        import os
-        from os.path import join
         scratch = os.environ['TMPDIR']
         sf = join(scratch, save_filename + save_prefix + '_%i.hdf'%cnt)
         print('Saving to ', sf)
