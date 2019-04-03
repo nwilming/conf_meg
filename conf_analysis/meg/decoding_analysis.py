@@ -97,7 +97,6 @@ def set_n_threads(n):
     os.environ["OMP_NUM_THREADS"] = str(n)
 
 
-
 def submit(
     cluster="SLURM", subjects=range(1, 16), ssd=False, epochs=["stimulus", "response"]
 ):
@@ -173,7 +172,7 @@ def run_decoder(
 
     clusters = srtfr.get_clusters()
     areas = clusters.keys()
-    print('Areas:', areas)
+    print("Areas:", areas)
 
     filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, epoch)))
 
@@ -407,10 +406,10 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True, target_col="response
             # Buld target vector
             target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
 
-            #logging.info(
+            # logging.info(
             #    "Class balance: %0.2f, Nr. of samples: %i"
             #    % ((target == 1).astype(float).mean(), len(target))
-            #)
+            # )
             score = categorize(target, sub_data, target_time_point)
             score.loc[:, "mc<0.5"] = mc
             scores.append(score)
@@ -418,10 +417,10 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True, target_col="response
     else:
         # Buld target vector
         target = (meta.loc[data.index, target_col]).astype(int)
-        #logging.info(
+        # logging.info(
         #    "Class balance: %0.2f, Nr. of samples: %i"
         #    % ((target == 1).astype(float).mean(), len(target))
-        #)
+        # )
 
         scores = categorize(target, data, target_time_point)
     scores.loc[:, "area"] = str(area)
@@ -510,9 +509,9 @@ def SVMCV(params):
     return RandomizedSearchCV(svm.SVC(), params, n_iter=50, n_jobs=4)
 
 
-
 def submit_cross_area_decoding():
     from pymeg import parallel
+
     pmap = partial(
         parallel.pmap,
         email=None,
@@ -525,13 +524,8 @@ def submit_cross_area_decoding():
         env="py36",
     )
 
-    for subject in range(1, 16):       
-        pmap(
-            run_cross_area_decoding,
-            [(subject,)],
-            name="XA" + str(subject),
-        )
-
+    for subject in range(1, 16):
+        pmap(run_cross_area_decoding, [(subject,)], name="XA" + str(subject))
 
 
 def run_cross_area_decoding(subject, ntasks=16):
@@ -542,43 +536,76 @@ def run_cross_area_decoding(subject, ntasks=16):
     import os
     from os.path import join
     from glob import glob
-    low_level_areas = ["vfcPrimary", "vfcEarly", "vfcV3ab", "vfcIPS01", "vfcIPS23", 
-                       "vfcLO", "vfcTO", "vfcVO", "vfcPHC", "JWG_IPS_PCeS", "vfcFEF", 
-                       "HCPMMP1_dlpfc", "HCPMMP1_insular_front_opercular", 
-                       "HCPMMP1_frontal_inferior", "HCPMMP1_premotor", "JWG_M1"]
-    high_level_areas = ["JWG_IPS_PCeS", "vfcFEF", "HCPMMP1_dlpfc", "HCPMMP1_premotor", "JWG_M1"]
+
+    low_level_areas = [
+        "vfcPrimary",
+        "vfcEarly",
+        "vfcV3ab",
+        "vfcIPS01",
+        "vfcIPS23",
+        "vfcLO",
+        "vfcTO",
+        "vfcVO",
+        "vfcPHC",
+        "JWG_IPS_PCeS",
+        "vfcFEF",
+        "HCPMMP1_dlpfc",
+        "HCPMMP1_insular_front_opercular",
+        "HCPMMP1_frontal_inferior",
+        "HCPMMP1_premotor",
+        "JWG_M1",
+    ]
+    high_level_areas = [
+        "JWG_IPS_PCeS",
+        "vfcFEF",
+        "HCPMMP1_dlpfc",
+        "HCPMMP1_premotor",
+        "JWG_M1",
+    ]
     # First load low level averaged stimulus data
-    filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, 'stimulus')))
+    filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, "stimulus")))
 
     args = []
     filename = outpath + "/cross_area_S%i-decoding.hdf" % (subject)
-    print('Save target:', filename)
+    print("Save target:", filename)
     cnt = 0
-    add_meta = {'subject':subject, 'low_hemi':'Averaged', 'high_hemi':'Lateralized'}
-    for lla, hla in product(low_level_areas, high_level_areas):               
-        low_level_data = asr.delayed_agg(filenames, hemi='Averaged', cluster=lla)
-        high_level_data = asr.delayed_agg(filenames, hemi='Lateralized', cluster=hla)
-        args.append((subject, low_level_data, lla, high_level_data, hla, 0.18, 'response',
-            'cross_dcd', '%s'%cnt, add_meta))
-        cnt+=1
-    print('There are %i decoding tasks for subject %i'%(len(args), subject))
-    scratch = os.environ['TMPDIR']
+    add_meta = {"subject": subject, "low_hemi": "Averaged", "high_hemi": "Lateralized"}
+    for lla, hla in product(low_level_areas, high_level_areas):
+        low_level_data = asr.delayed_agg(filenames, hemi="Averaged", cluster=lla)
+        high_level_data = asr.delayed_agg(filenames, hemi="Lateralized", cluster=hla)
+        args.append(
+            (
+                subject,
+                low_level_data,
+                lla,
+                high_level_data,
+                hla,
+                0.18,
+                "response",
+                "cross_dcd",
+                "%s" % cnt,
+                add_meta,
+            )
+        )
+        cnt += 1
+    print("There are %i decoding tasks for subject %i" % (len(args), subject))
+    scratch = os.environ["TMPDIR"]
     try:
         with Pool(ntasks) as p:
             scores = p.starmap(motor_decoder, args)  # , chunksize=ntasks)
     except MemoryError:
         # Do this to find out why memory error occurs
-        cmd = join(scratch, '*.hdf')
-        os.system('cp %s /nfs/nwilming/MEG/scratch/')
-    #for arg in args[:2]:
+        cmd = join(scratch, "*.hdf")
+        os.system("cp %s /nfs/nwilming/MEG/scratch/")
+    # for arg in args[:2]:
     #    motor_decoder(*arg)
 
-    # Now collect all data from scratch    
-    save_filenames = join(scratch, 'cross_dcd' + '*.hdf')
+    # Now collect all data from scratch
+    save_filenames = join(scratch, "cross_dcd" + "*.hdf")
     scores = [pd.read_hdf(x) for x in glob(save_filenames)]
     scores = pd.concat(scores)
-    #scores.loc[:, 'subject'] = subject
-    scores.to_hdf(filename, "decoding")    
+    # scores.loc[:, 'subject'] = subject
+    scores.to_hdf(filename, "decoding")
     return scores
 
 
@@ -592,7 +619,7 @@ def motor_decoder(
     target_col="response",
     save_filename=None,
     save_prefix=None,
-    add_meta = {}
+    add_meta={},
 ):
     """
     This signal predicts motor activity from a set of time points in early visual cortex.
@@ -604,7 +631,7 @@ def motor_decoder(
     2) Train a decoder from early visual cortex data that predicts the 
        log(probability) of a choice. Train on training set, evaluate on test.
     """
-    meta = daugment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))    
+    meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))
     meta = meta.set_index("hash")
     low_level_data = low_level_data()
     motor_data = motor_data()
@@ -612,79 +639,79 @@ def motor_decoder(
     # Iterate over all high level time points:
     times = motor_data.columns.get_level_values("time").values
     dt = np.diff(times)[0]
-    t_idx = (-0.4<times) & (times<0.1)
-    
+    t_idx = (-0.4 < times) & (times < 0.1)
+
     cnt = 0
     time_points = times[t_idx]
     for high_level_latency in time_points:
-        all_scores = []
-        print('High level latency:', high_level_latency)
-        # Make target data.
-        # Map to nearest time point in data
+        print("High level latency:", high_level_latency)
         target_time_point = times[np.argmin(abs(times - high_level_latency))]
-        #print("Selecting next available time point: %02.2f" % target_time_point)
-        md = motor_data.loc[:, target_time_point]
-
-        # Turn data into (trial X Frequency)
-        X = []
-        for a in ensure_iter(motor_area):
-            x = pd.pivot_table(
-                md.query('cluster=="%s"' % a),
-                index="trial",
-                columns="freq",
-                values=target_time_point,
-            )
-            X.append(x)
-        md = pd.concat(X, 1)
-        del X
-        motor_meta = meta.loc[md.index, :]
-        scores = []
+        md = prep_motor_data(motor_area, motor_data, target_time_point)
 
         # Buld target vector
-        motor_target = (motor_meta.loc[md.index, target_col]).astype(int)
-        logging.info(
-            "Class balance: %0.2f, Nr. of samples: %i"
-            % ((motor_target == 1).astype(float).mean(), len(motor_target))
-        )
-
-        low_times = low_level_data.columns.get_level_values("time").values
-        for low_level_latency in np.arange(-0.1, 0.2+dt, dt):
-            lld = []
-            for s in np.arange(0, 1, 0.1) + low_level_peak + low_level_latency:
-                # Turn data into (trial X Frequency)
-                low_target_time_point = low_times[np.argmin(abs(low_times - s))]                
-                for a in ensure_iter(low_level_area):
-                    x = pd.pivot_table(
-                        low_level_data.query('cluster=="%s"' % a),
-                        index="trial",
-                        columns="freq",
-                        values=low_target_time_point,
-                    )
-                    lld.append(x)
-            lld_data = pd.concat(lld, 1)
-            del x
-            del lld
-            low_level_meta = meta.loc[lld_data.index, :]
-            assert all(low_level_meta.index == motor_meta.index)            
+        motor_target = (meta.loc[md.index, target_col]).astype(int)
+        all_scores = []
+        for low_level_latency in np.arange(-0.1, 0.2 + dt, dt):
+            lld_data = prep_low_level_data(
+                low_level_area, low_level_data, low_level_peak, low_level_latency
+            )
+            # low_level_meta = meta.loc[lld_data.index, :]
+            assert all(lld_data.index == motor_target.index)
             scores = chained_categorize(motor_target, md, lld_data)
-            del lld_data
-            scores.loc[:, 'high_level_latency'] = high_level_latency
-            scores.loc[:, 'low_level_latency'] = low_level_latency
-            scores.loc[:, 'low_level_peak'] = low_level_peak
-            scores.loc[:, 'low_level_area'] = low_level_area
-            scores.loc[:, 'high_level_area'] = motor_area
+            scores.loc[:, "low_level_latency"] = low_level_latency
             all_scores.append(scores)
-        all_scores = pd.concat(all_scores)    
-        for key, value in add_meta.items():
-            all_scores.loc[:, key] = value
-        scratch = os.environ['TMPDIR']
-        sf = join(scratch, save_filename + save_prefix + '_%i.hdf'%cnt)
-        print('Saving to ', sf)
-        all_scores.to_hdf(sf, 'df')
-        cnt+=1
-        del all_scores, md
+        save_all_scores(all_scores, add_meta, save_filename, save_prefix, cnt)
+        cnt += 1
+        del all_scores
+    del motor_data
+    del low_level_data
 
-    
+
+def prep_motor_data(motor_area, motor_data, target_time_point):
+    md = motor_data.loc[:, target_time_point]
+    # Turn data into (trial X Frequency)
+    X = []
+    for a in ensure_iter(motor_area):
+        x = pd.pivot_table(
+            md.query('cluster=="%s"' % a),
+            index="trial",
+            columns="freq",
+            values=target_time_point,
+        )
+        X.append(x)
+    return pd.concat(X, 1)
+
+
+def prep_low_level_data(
+    low_level_area, low_level_data, low_level_peak, low_level_latency
+):
+    lld = []
+    low_times = low_level_data.columns.get_level_values("time").values
+    for s in np.arange(0, 1, 0.1) + low_level_peak + low_level_latency:
+        # Turn data into (trial X Frequency)
+        low_target_time_point = low_times[np.argmin(abs(low_times - s))]
+        for a in ensure_iter(low_level_area):
+            x = pd.pivot_table(
+                low_level_data.query('cluster=="%s"' % a),
+                index="trial",
+                columns="freq",
+                values=low_target_time_point,
+            )
+            lld.append(x)
+    return pd.concat(lld, 1)
+
+def save_all_scores(all_scores, add_meta, save_filename, save_prefix, cnt):
+    all_scores = pd.concat(all_scores)
+    all_scores.loc[:, "high_level_latency"] = high_level_latency
+    all_scores.loc[:, "low_level_peak"] = low_level_peak
+    all_scores.loc[:, "low_level_area"] = low_level_area
+    all_scores.loc[:, "high_level_area"] = motor_area
+    for key, value in add_meta.items():
+        all_scores.loc[:, key] = value
+    scratch = os.environ["TMPDIR"]
+    sf = join(scratch, save_filename + save_prefix + "_%i.hdf" % cnt)
+    print("Saving to ", sf)
+    all_scores.to_hdf(sf, "df")
 
 
 def chained_categorize(target_a, data_a, data_b):
@@ -724,16 +751,19 @@ def chained_categorize(target_a, data_a, data_b):
         ]
     )
 
-    
     classifier_b = Pipeline(
-        [("Scaling", StandardScaler()), 
-        ('PCA', PCA(n_components=0.95, svd_solver='full')),
-        ("linear_regression", LinearRegression())]
+        [
+            ("Scaling", StandardScaler()),
+            ("PCA", PCA(n_components=0.95, svd_solver="full")),
+            ("linear_regression", LinearRegression()),
+        ]
     )
     classifier_b_baseline = Pipeline(
-        [("Scaling", StandardScaler()), 
-        ('PCA', PCA(n_components=0.95, svd_solver='full')),
-        ("linear_regression", LinearRegression())]
+        [
+            ("Scaling", StandardScaler()),
+            ("PCA", PCA(n_components=0.95, svd_solver="full")),
+            ("linear_regression", LinearRegression()),
+        ]
     )
 
     scores = []
@@ -776,12 +806,11 @@ def chained_categorize(target_a, data_a, data_b):
                 "classifier_b_shuffled_msqerr": classifier_b_shuffled_msqerr,
                 "classifier_b_corr": classifier_b_corr,
                 "classifier_b_shuffled_corr": classifier_b_shuffled_corr,
-                #"classifier_b_weights": clf_b.steps[-1][1].coef_,
+                # "classifier_b_weights": clf_b.steps[-1][1].coef_,
             }
         )
 
     return pd.DataFrame(scores)
-
 
 
 def get_tableau(
