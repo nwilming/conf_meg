@@ -660,7 +660,7 @@ def motor_decoder(
             scores = chained_categorize(motor_target, md, lld_data)
             scores.loc[:, "low_level_latency"] = low_level_latency
             all_scores.append(scores)
-        save_all_scores(all_scores, add_meta, save_filename, save_prefix, cnt)
+        save_all_scores(all_scores, add_meta, save_filename, save_prefix, cnt, high_level_latency, low_level_peak, low_level_area, motor_area)
         cnt += 1
         del all_scores
     del motor_data
@@ -700,7 +700,8 @@ def prep_low_level_data(
             lld.append(x)
     return pd.concat(lld, 1)
 
-def save_all_scores(all_scores, add_meta, save_filename, save_prefix, cnt):
+def save_all_scores(all_scores, add_meta, save_filename, save_prefix, cnt,
+        high_level_latency, low_level_peak, low_level_area, motor_area):
     all_scores = pd.concat(all_scores)
     all_scores.loc[:, "high_level_latency"] = high_level_latency
     all_scores.loc[:, "low_level_peak"] = low_level_peak
