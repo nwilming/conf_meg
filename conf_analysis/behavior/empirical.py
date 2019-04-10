@@ -29,7 +29,7 @@ else:
     print('Not importing pylab')
     gs = None
 
-memory = Memory(cachedir=metadata.cachedir, verbose=0)
+memory = Memory(location=metadata.cachedir, verbose=0)
 
 
 def load_jw():
