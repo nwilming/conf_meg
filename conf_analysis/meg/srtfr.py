@@ -53,12 +53,14 @@ contrasts = {
 
 
 def submit_contrasts(collect=False):
+    import numpy as np
+    import time
+
     tasks = []
     for subject in range(1, 16):
-        # for session in range(0, 4):
         tasks.append((contrasts, subject))
     res = []
-    for task in tasks:
+    for cnt, task in enumerate(tasks):
         try:
             r = _eval(
                 get_contrasts,
@@ -69,6 +71,9 @@ def submit_contrasts(collect=False):
                 memory=70,
             )
             res.append(r)
+            #if np.mod(cnt + 1, 10)==0:
+            #    if not collect:
+            #        time.sleep(60 * 10)
         except RuntimeError:
             print("Task", task, " not available yet")
     return res
@@ -80,7 +85,8 @@ def _eval(func, args, collect=False, **kw):
     """
     if not collect:
         if not func.in_store(*args):
-            print("Submitting %s to %s for parallel execution" % (str(args), func))
+            print("Submitting %s to %s for parallel execution" % (len(args), func))
+            print(args)
             parallel.pmap(func, [args], **kw)
     else:
         if func.in_store(*args):
@@ -96,7 +102,6 @@ def get_clusters():
     Pimp cluster defs
     """
     from pymeg import atlas_glasser as ag
-
     # fmt: off
     areas = ["47s", "47m", "a47r", "11l", "13l", "a10p", "p10p", "10pp", "10d", "OFC",
              "pOFC", "44", "45", "IFJp", "IFJa", "IFSp", "IFSa", "47l", "p47r", "8C", "8Av",
@@ -122,11 +127,10 @@ def get_clusters():
 
 @memory.cache(ignore=["scratch"])
 def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=False):
-
     if subject < 8:
-        hemi = "lh_is_ipsi"
-    else:
         hemi = "rh_is_ipsi"
+    else:
+        hemi = "lh_is_ipsi"
     hemis = [hemi, "avg"]
     from os.path import join
 
@@ -278,7 +282,7 @@ def precompute_stats(contrast, epoch, hemi):
     from pymeg import atlas_glasser
 
     df = pd.read_hdf(
-        "/home/nwilming/conf_analysis/results/all_contrasts_confmeg-20190304.hdf"
+        "/home/nwilming/conf_analysis/results/all_contrasts_confmeg-20190308.hdf"
     )
     if epoch == "stimulus":
         time_cutoff = (-0.5, 1.35)
@@ -435,6 +439,7 @@ def plot_stream_figures(
         #plt.savefig("/Users/nwilming/Desktop/nsf_%s-%s.svg" % (contrast_name, suffix))
 
  
+
 # Ignore following for now
 
 
