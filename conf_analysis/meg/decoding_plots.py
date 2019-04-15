@@ -16,6 +16,8 @@ from conf_analysis.behavior import metadata
 from pymeg.contrast_tfr_plots import PlotConfig
 from joblib import Memory
 
+import pickle
+
 if "RRZ_LOCAL_TMPDIR" in os.environ.keys():
     memory = Memory(location=os.environ["RRZ_LOCAL_TMPDIR"], verbose=-1)
 if "TMPDIR" in os.environ.keys():
@@ -113,10 +115,12 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True):
 def get_ssd_data(ssd_classifier="Ridge", restrict=True):
     try:
         df = pd.read_hdf(
-            '/Users/nwilming/u/conf_analysis/results/all_decoding_ssd_20190129.hdf')
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_ssd_20190129.hdf"
+        )
     except FileNotFoundError:
         df = pd.read_hdf(
-            '/home/nwilming/conf_analysis/results/all_decoding_ssd_20190129.hdf')
+            "/home/nwilming/conf_analysis/results/all_decoding_ssd_20190129.hdf"
+        )
     df = df.loc[~np.isnan(df.subject), :]
     df = df.query('Classifier=="%s"' % ssd_classifier)
     df.loc[:, "cluster"] = [
@@ -189,6 +193,12 @@ class StreamPlotter(object):
             np.diff(conf.time_windows["response"])[0]
             / np.diff(conf.time_windows["stimulus"])[0]
         )
+        self.cache = '/Users/nwilming/u/conf_analysis/results/pymc_fig_2_posterior.pickle'
+        try:
+            self.post = pickle.load(open(self.cache, 'rb'))
+        except IOError:
+            print('No posterior loaded')
+            self.post = {}
 
     def add_dataset(self, key, df):
         """
@@ -201,9 +211,13 @@ class StreamPlotter(object):
         Different signal will be plotted in the same subplot
         """
         self.signals = signals
-    
+
     def get_data(self, signal, hemi, cluster, epoch):
         df = self.data[hemi]
+        try:
+            return self.post[(signal, hemi, cluster, epoch)]
+        except KeyError:
+            pass
         dclust = (
             df.query('signal=="%s" & epoch=="%s"' % (signal, epoch))
             .loc[:, cluster]
@@ -230,9 +244,14 @@ class StreamPlotter(object):
                 if split == "True":
                     base = -base + 1
                     values = -values + 1
-                _, hdi, phdi, _, _ = get_baseline_posterior(
+                _, hdi, phdi, samples, model = get_baseline_posterior(
                     base.loc[:, -0.25:0], values
                 )
+                import pymc3 as pm
+                mu = samples.get_values("mu_ind")
+                ppc = pm.sample_posterior_predictive(samples, samples=2500, model=model)
+                phdi = pm.stats.hpd(ppc["Out"].mean(2).ravel(), 0.01)
+                hdi = pm.stats.hpd(mu, 0.01)
                 results[split] = (values.columns.values, values.mean(0), hdi, phdi)
         else:
             values = pd.pivot_table(
@@ -241,8 +260,17 @@ class StreamPlotter(object):
             base = pd.pivot_table(
                 data=dbase, index="subject", columns="latency", values=cluster
             )
-            _, hdi, phdi, _, _ = get_baseline_posterior(base.loc[:, -0.25:0], values)
-            results['nosplit'] = (values.columns.values, values.mean(0), hdi, phdi)
+            _, hdi, phdi, samples, model = get_baseline_posterior(base.loc[:, -0.25:0], values)
+            import pymc3 as pm
+            mu = samples.get_values("mu_ind")
+            ppc = pm.sample_posterior_predictive(samples, samples=2500, model=model)
+            phdi = pm.stats.hpd(ppc["Out"].mean(2).ravel(), 0.01)
+            hdi = pm.stats.hpd(mu, 0.01)
+            results["nosplit"] = (values.columns.values, values.mean(0), hdi, phdi)
+            #print(hemi, epoch, results['nosplit'][0])
+        self.post[(signal, hemi, cluster, epoch)] = results
+        print('Dumping pickle')
+        pickle.dump(self.post, open(self.cache, 'wb'))
         return results
 
     def plot(self, stats=False, flip_cbar=False, palette=None):
@@ -273,10 +301,9 @@ class StreamPlotter(object):
                     color=color,
                     ax_prefix=i,
                 )
-                return
 
     def plot_decoding_selected_rois(
-        self,        
+        self,
         signal,
         hemi,
         layout,
@@ -291,17 +318,10 @@ class StreamPlotter(object):
         if color is not None:
             palette = {P.cluster: color for P in layout}
 
-        # fig = plt.figure(figsize=(nr_cols * 1.5, 3.5))
         fig = None
 
-        #df = df.query('signal=="%s"' % signal)
         for P in layout:
             cluster = P.cluster
-            #try:
-            #    dclust = df.loc[:, cluster].to_frame()
-            #except KeyError:
-            #    print("KeyErr", cluster)
-            #    continue
 
             for j, timelock in enumerate(["stimulus", "response"]):
                 cluster_name = P.name
@@ -317,20 +337,20 @@ class StreamPlotter(object):
 
                 time_cutoff = conf.time_windows[timelock]  # (-0.2, 1.1)
 
-                #dcd = dclust.query(
-                #    'epoch=="%s" & (%f<=latency) & (latency<=%f)'
-                #    % (timelock, time_cutoff[0], time_cutoff[1])
-                #)
-                
                 self.plot_one_signal(
-                    signal, hemi, cluster, timelock,
+                    signal,
+                    hemi,
+                    cluster,
+                    timelock,
                     palette[cluster],
                     "test_roc_auc",
                     plot_uncertainty=True,
                     ax=ax,
                 )
-
+                #print(timelock, ax.get_xlim(), end='-->')
                 conf.markup(timelock, ax, left=P.annot_y, bottom=P.annot_x)
+                ax.set_xlim(conf.time_windows[timelock])
+                #print(ax.get_xlim())
                 ax.set_ylim(0.15, 0.85)
                 if j == 1:
                     ax.set_yticks([])
@@ -341,14 +361,21 @@ class StreamPlotter(object):
                     plt.title(cluster_name, {"fontsize": 8})
                 else:
                     plt.title("", {"fontsize": 8})
-                
-        # gs.update(wspace=0.05, hspace=0.5)
+
         sns.despine()
         return gs
 
-
-    def plot_one_signal(self, 
-        signal, hemi, cluster, epoch, color, measure, plot_uncertainty=True, ax=None, **kw
+    def plot_one_signal(
+        self,
+        signal,
+        hemi,
+        cluster,
+        epoch,
+        color,
+        measure,
+        plot_uncertainty=True,
+        ax=None,
+        **kw,
     ):
         """
         Plot one signal for one cluster. 
@@ -357,18 +384,49 @@ class StreamPlotter(object):
         """
         if ax is None:
             ax = plt.gca()
-        data = self.get_data(signal, hemi, cluster, epoch)
-        
+        try:
+            data = self.get_data(signal, hemi, cluster, epoch)
+        except KeyError:
+            return
 
         for key, (latency, mu, hdi, phdi) in data.items():
             ax.plot(latency, latency * 0 + 0.5, "k", zorder=-1)
-            ax.plot(latency, mu, color="k", **kw)
-            ax.fill_between(
-                latency, phdi[0], phdi[1], facecolor=color, alpha=0.25, lw=0
-            )
-            #idsig = ~((hdi[:, 0] <= 0.5) & (0.5 <= hdi[:, 1]))
-            #ax.plot(latency, 0.25 * idsig, ".", color=color, **kw)
-        
+            id_sig = ~((phdi[0] <= mu) & (mu<=phdi[1]))
+            id_sigh = ~((hdi[:, 0] <= 0.5) & (0.5<=hdi[:, 1]))                        
+            i = 0            
+            col = color[0].lower()
+            offsets = {'r':0.2, 'b':0.19, 'g':0.18}
+            ax.fill_between(latency, hdi[:, 0], hdi[:, 1], facecolor=col, 
+                alpha=0.25, edgecolor=(0,0,0,0), lw=0)
+            ax.plot(latency, mu, color=col)            
+            draw_sig(ax, latency, id_sig&id_sigh ,offsets[col], col)                        
+
+
+
+def draw_sig(ax, x, id_sig,offset, color):
+    dt = np.diff(x)[0]
+    #print(dt)
+    id_sig = np.array([0] + list(id_sig.astype(float)) + [0])
+    x = np.array(list(x) + [x[-1]])
+    d = np.where(np.diff(id_sig)!=0)[0]
+    #print(d)
+    for low, high in zip(d[0::2], d[1::2]):
+        if (high-low) < 3:
+            continue 
+        ax.plot([x[low], x[high]], [offset, offset], color=color, lw=0.5)
+
+
+def multicolor_line(ax, x, y, colorval, cmin, cmax, cmap='Reds'):
+    #https://matplotlib.org/gallery/lines_bars_and_markers/multicolored_line.html
+    from matplotlib.collections import LineCollection
+    from matplotlib.colors import ListedColormap, BoundaryNorm    
+    xnew = np.linspace(x.min(), x.max(), len(x)*5)
+    points = np.array([x, y]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    norm = plt.Normalize(cmin, cmax)
+    lc = LineCollection(segments, cmap=cmap, norm=norm)
+    lc.set_array(colorval)    
+    return ax.add_collection(lc)
 
 
 def get_cvals(epoch, data):
@@ -661,7 +719,7 @@ def make_state_space_triplet(df):
     plt.savefig("/Users/nwilming/Dropbox/UKE/confidence_study/state_space_plot.pdf")
 
 
-def state_space_plot(df_a, signal_a, signal_b, df_b=None):
+def state_space_plot(df_a, signal_a, signal_b, df_b=None, a_max=0.6, color=None):
     def reshuffle(x, y):
         """Reshape the line represented by "x" and "y" into an array of individual
         segments.
@@ -679,10 +737,12 @@ def state_space_plot(df_a, signal_a, signal_b, df_b=None):
         segments = reshuffle(x, y)
         coll = LineCollection(segments, cmap=palette)
         coll.set_array(np.linspace(0, 1, len(x)))
-
+        coll.set_linewidth(1)
         ax.add_collection(coll)
 
     palette = get_area_palette()
+    if color is not None:
+        palette = {k:color for k in palette.keys()}
     # plt.clf()
     ax = plt.gca()  # ().add_subplot(111)
     # ax.plot([0.5, .5], [0, 1], 'k')
@@ -701,10 +761,19 @@ def state_space_plot(df_a, signal_a, signal_b, df_b=None):
             index="signal",
             columns="latency",
             values=area,
-        )
-        plot_with_color(
-            Aarea.loc[signal_a, :], Barea.loc[signal_b, :], palette[area], ax
-        )
+        )        
+        try:
+            color=palette[area]
+        except KeyError:
+            if color is None:
+                color = 'k'
+        #plot_with_color(
+        #    Aarea.loc[signal_a, :], Barea.loc[signal_b, :], color, ax
+        #)
+        if Aarea.loc[signal_a,:].max()>=a_max:
+            #print(Aarea.loc[signal_a,:].values)
+            ax.plot(Aarea.loc[signal_a, :].values, Barea.loc[signal_b, :].values, 
+                color=color, alpha=0.5, label=area)
 
     # plt.show()
 
@@ -714,7 +783,8 @@ The next section plots decoding values from all signals and many areas at one ti
 """
 
 
-def plot_signal_comp(df, latency=0, xlim=[0.49, 0.85]):
+def plot_signal_comp(df, latency=1.2,  xlim=[0.49, 0.85], auc_cutoff=0.6, 
+     gs=None, idx=None):
     """
     Call this function to plot all decoding values at latency=x in df
     during the response period.
@@ -732,28 +802,33 @@ def plot_signal_comp(df, latency=0, xlim=[0.49, 0.85]):
     time point in response period.)
     """
 
-    df = df.query("latency==%f" % latency)
-    df_resp = df.query("epoch=='response'")
-    df_stim = df.query("epoch=='stimulus'")
-
-    plt.figure(figsize=(5.5, 10))
-    plt.subplot(1, 2, 2)
+    #df = df.query("latency==%f" % latency)
+    df_interest = df.query("epoch=='stimulus'").query("latency==%f" % latency)
+    df_base = df.query("epoch=='stimulus'").query("-0.25<latency<0")
+    if gs is None:
+        gs = matplotlib.gridspec.GridSpec(1,2)
+    else:
+        gs = matplotlib.gridspec.GridSpecFromSubplotSpec(1,2, gs)
+    #plt.figure(figsize=(5.5, 10))
+    plt.subplot(gs[0, 1])
+    
     idx, pval_agreement = plot_max_per_area(
-        df_resp.Lateralized,
-        df_stim.Lateralized,
+        df_interest.Lateralized,
+        df_base.Lateralized,
         "MIDC_split",
         ["CONF_signed", "CONF_unsigned"],
         text="right",
+        sorting=idx   
     )
 
     # plt.cla()
     plt.axvline(0.5, color="k", lw=0.5)
     plt.xlim(xlim)
     plt.title("Lateralized H")
-    plt.subplot(1, 2, 1)
+    plt.subplot(gs[0,0])
     agr, pval_agreement2 = plot_max_per_area(
-        df_resp.Averaged,
-        df_stim.Averaged,
+        df_interest.Averaged,
+        df_base.Averaged,
         "MIDC_split",
         ["CONF_signed", "CONF_unsigned"],
         sorting=idx,
@@ -762,81 +837,7 @@ def plot_signal_comp(df, latency=0, xlim=[0.49, 0.85]):
     plt.title("Averaged H")
     plt.xlim(xlim[::-1])
     plt.axvline(0.5, color="k", lw=0.5)
-    return {"lateralized": pval_agreement, "averaged": pval_agreement2}
-
-
-@memory.cache
-def get_posterior_diff(data, ref_data):
-    """
-    Get uncertainty around average mean by means of bayesian 
-    inference. For AUC values, nothing else.
-    """
-    import pymc3 as pm
-
-    with pm.Model():
-        mu_d = pm.Normal("mud", 0.5, 1)
-        std_d = pm.Uniform("stdd", lower=0, upper=1)
-        mu_r = pm.Normal("mur", 0.5, 1)
-        std_r = pm.Uniform("stdr", lower=0, upper=1)
-        v = pm.Exponential("ν_minus_one", 1 / 29.0) + 1
-        pm.StudentT("OutD", mu=mu_d, lam=std_d ** -2, nu=v, observed=data)
-        pm.StudentT("OutR", mu=mu_r, lam=std_r ** -2, nu=v, observed=ref_data)
-        diffs = pm.Deterministic("mu_diff", mu_d - mu_r)
-        k = pm.sample()
-    mud = k.get_values("mud")
-    mur = k.get_values("mur")
-    mudiff = k.get_values("mu_diff")
-    return mud.mean(0), mur.mean(0), pm.stats.hpd(mudiff)
-
-
-@memory.cache
-def get_many_posterior_diff_one_group(data, ref_data):
-    """
-    Get uncertainty around average mean by means of bayesian 
-    inference. For AUC values, nothing else.
-    """
-    import pymc3 as pm
-
-    n = data.shape[1]
-
-    with pm.Model():
-        mu_d = pm.Normal("mud", data.mean(0), data.std(0) * 5, shape=n)
-        std_d = pm.Uniform("stdd", lower=0, upper=data.std(0) * 20, shape=n)
-        mu_r = pm.Normal("mur", ref_data.mean(0), data.std(0) * 5, shape=n)
-        std_r = pm.Uniform("stdr", lower=0, upper=data.std(0) * 20, shape=n)
-        # v = pm.Exponential("ν_minus_one", 1 / 29.0, shape=n) + 1
-        # pm.StudentT("OutD", mu=mu_d, lam=std_d ** -2, nu=v, observed=data, shape=n)
-        # pm.StudentT("OutR", mu=mu_r, lam=std_r ** -2, nu=v, observed=ref_data, shape=n)
-        pm.Normal("OutD", mu_d, std_d, observed=data, shape=n)
-        pm.Normal("OutR", mu_r, std_r, observed=ref_data, shape=n)
-        diffs = pm.Deterministic("mu_diff", mu_d - mu_r)
-        k = pm.sample(tune=1500, draws=1500)
-    mud = k.get_values("mud")
-    mur = k.get_values("mur")
-    mudiff = k.get_values("mu_diff")
-    return pm.stats.hpd(mud), pm.stats.hpd(mur), pm.stats.hpd(mudiff)
-
-
-@memory.cache
-def get_many_posterior_diff_one_group(data):
-    """
-    Get uncertainty around average mean by means of bayesian 
-    inference. For AUC values, nothing else.
-    """
-    import pymc3 as pm
-
-    n = data.shape[1]
-
-    with pm.Model():
-        mu_d = pm.Normal("mud", data.mean(0), data.std(0) * 10, shape=n)
-        std_d = pm.Uniform("stdd", lower=0, upper=data.std(0) * 20, shape=n)
-        # v = pm.Exponential("ν_minus_one", 1 / 29.0, shape=n) + 1
-        # pm.StudentT("OutD", mu=mu_d, lam=std_d ** -2, nu=v, observed=data, shape=n)
-        # pm.StudentT("OutR", mu=mu_r, lam=std_r ** -2, nu=v, observed=ref_data, shape=n)
-        pm.Normal("OutD", mu_d, std_d, observed=data, shape=n)
-        k = pm.sample(tune=1500, draws=1500)
-    mud = k.get_values("mud")
-    return pm.stats.hpd(mud)
+    return idx, {"lateralized": pval_agreement, "averaged": pval_agreement2}
 
 
 def get_uncertainty(df, df_ref, signal, name, latency):
@@ -845,11 +846,18 @@ def get_uncertainty(df, df_ref, signal, name, latency):
     Both dfs should contain one time point, df the one of interest,
     df_ref a baseline time-point (e.g. pre-stimulus). 
     """
-    df = df.query("signal=='%s' & latency==%f" % (signal, latency)).loc[:, name]
-    df = df.groupby(["subject"]).mean()
-    df_ref = df_ref.query("signal=='%s' & latency==%f" % (signal, latency)).loc[:, name]
-    df_ref = df_ref.groupby(["subject"]).mean()
-    return get_posterior_diff(df.values[:, np.newaxis], df_ref.values[:, np.newaxis])
+    df = df.query("signal=='%s' " % (signal)).loc[:, name]
+    #df = df.groupby(["subject"]).mean()
+    df = pd.pivot_table(data=df.reset_index(), index="subject", columns="latency",
+                    values=name)
+    df_ref = df_ref.query("signal=='%s'" % (signal)).loc[:, name]
+    df_ref = pd.pivot_table(data=df_ref.reset_index(), index="subject", columns="latency",
+                    values=name)
+    #df_ref = df_ref.groupby(["subject"]).mean()
+    mu, mu_hdi, phdi, _, _ = get_baseline_posterior(df, df_ref)
+    #m  = df.mean().values
+    #s= df.std().values 
+    return mu, mu_hdi, phdi
 
 
 def plot_scatter_with_sorting(
@@ -867,14 +875,13 @@ def plot_scatter_with_sorting(
     colors = cm(l[::-1] / 2)
     from scipy.stats import ttest_1samp
 
-    for x, (name, latency) in enumerate(zip(names, latency)):
-
+    for x, (name, latency) in enumerate(zip(names, latency)):        
         mu, mu_ref, hpd = get_uncertainty(df, df_ref, signal, name, latency)
         hpd = 0.5 + hpd.ravel()
         df2 = df.query("signal=='%s' & latency==%f" % (signal, latency)).loc[:, name]
         df2 = df2.groupby(["subject"]).mean()
         tval, pval = ttest_1samp(df2.values.ravel(), 0.5)
-
+        
         plt.plot(hpd, [x, x], color=colors[x], lw=0.5)
         if (hpd[0] <= 0.5) and (0.5 <= hpd[1]):
             if pval > 0.05:
@@ -909,6 +916,13 @@ def plot_max_per_area(
         idx = sorting
     else:
         idx = np.argsort(values)
+
+        # Filter to max_val >= 0.55
+        i = 0
+        for i in idx:
+            if values[i] > 0.55:
+                break
+        idx = idx[i:]
     latency = np.array([x[1] for _, x in idxmax.iteritems()])
     agr = plot_scatter_with_sorting(
         df, df_ref, signal, values[idx], latency[idx], idxmax.index.values[idx]
@@ -961,8 +975,7 @@ def plot_max_per_area(
             pval_agreement[signal] = agr
 
     import seaborn as sns
-
-    sns.despine(left=True)
+    sns.despine(left=True, ax=plt.gca())
     plt.yticks([], [])
     plt.xlabel("AUC")
     return idx, pval_agreement
@@ -1408,7 +1421,7 @@ def sps_2lineartime(sps):
 
 def get_max_encoding(sps, lim=slice(0.4, 1.4)):
     sps = sps.loc[lim, :].T.max()
-    return np.trapz(sps.values, sps.index.values)
+    return np.mean(sps.index.values) #np.trapz(sps.values, sps.index.values)
 
 
 def plot_ssd_per_sample(
@@ -1554,21 +1567,20 @@ def extract_peak_slope(ssd, latency=0.18, dt=0.01, peak_latencies=None):
         return pd.pivot_table(ssd, index="sample", columns="subject")
     else:
         reslist = []
-        assert(len(ssd.index.get_level_values('signal').unique()) == 1)
-        for idx, ds in ssd.groupby(['subject', 'sample']):            
-            peak_idx = peak_latencies.loc[idx, :]            
-            levels = list(set(ds.index.names) - set(['latency']))
-            ds.index = ds.index.droplevel(levels)            
-            res = {'subject': idx[0], 'sample': idx[1]}
+        assert len(ssd.index.get_level_values("signal").unique()) == 1
+        for idx, ds in ssd.groupby(["subject", "sample"]):
+            peak_idx = peak_latencies.loc[idx, :]
+            levels = list(set(ds.index.names) - set(["latency"]))
+            ds.index = ds.index.droplevel(levels)
+            res = {"subject": idx[0], "sample": idx[1]}
             for col in ds.columns:
                 latency = peak_idx.loc[col]
                 value = ds.loc[latency, col]
                 res.update({col: value})
             reslist.append(res)
         peaks = pd.DataFrame(reslist)
-        peaks.set_index(['subject', 'sample'], inplace=True)
-        return peaks#pd.pivot_table(ssd, index='sample', columns='subject')
-
+        peaks.set_index(["subject", "sample"], inplace=True)
+        return peaks  # pd.pivot_table(ssd, index='sample', columns='subject')
 
 
 def extract_kernels(dz, contrast_mean=0.0):
@@ -1785,3 +1797,78 @@ def plot_brain_color_legend(palette):
     # brain.save_montage('/Users/nwilming/Dropbox/UKE/confidence_study/brain_colorbar.png',
     #                   [[180., 90., 90.], [0., 90., -90.]])
     return brain
+
+
+
+@memory.cache
+def get_posterior_diff(data, ref_data):
+    """
+    Get uncertainty around average mean by means of bayesian 
+    inference. For AUC values, nothing else.
+    """
+    import pymc3 as pm
+
+    with pm.Model():
+        mu_d = pm.Normal("mud", 0.5, 1)
+        std_d = pm.Uniform("stdd", lower=0, upper=1)
+        mu_r = pm.Normal("mur", 0.5, 1)
+        std_r = pm.Uniform("stdr", lower=0, upper=1)
+        v = pm.Exponential("ν_minus_one", 1 / 29.0) + 1
+        pm.StudentT("OutD", mu=mu_d, lam=std_d ** -2, nu=v, observed=data)
+        pm.StudentT("OutR", mu=mu_r, lam=std_r ** -2, nu=v, observed=ref_data)
+        diffs = pm.Deterministic("mu_diff", mu_d - mu_r)
+        k = pm.sample()
+    mud = k.get_values("mud")
+    mur = k.get_values("mur")
+    mudiff = k.get_values("mu_diff")
+    return mud.mean(0), mur.mean(0), pm.stats.hpd(mudiff)
+
+
+@memory.cache
+def get_many_posterior_diff_one_group(data, ref_data):
+    """
+    Get uncertainty around average mean by means of bayesian 
+    inference. For AUC values, nothing else.
+    """
+    import pymc3 as pm
+
+    n = data.shape[1]
+
+    with pm.Model():
+        mu_d = pm.Normal("mud", data.mean(0), data.std(0) * 5, shape=n)
+        std_d = pm.Uniform("stdd", lower=0, upper=data.std(0) * 20, shape=n)
+        mu_r = pm.Normal("mur", ref_data.mean(0), data.std(0) * 5, shape=n)
+        std_r = pm.Uniform("stdr", lower=0, upper=data.std(0) * 20, shape=n)
+        # v = pm.Exponential("ν_minus_one", 1 / 29.0, shape=n) + 1
+        # pm.StudentT("OutD", mu=mu_d, lam=std_d ** -2, nu=v, observed=data, shape=n)
+        # pm.StudentT("OutR", mu=mu_r, lam=std_r ** -2, nu=v, observed=ref_data, shape=n)
+        pm.Normal("OutD", mu_d, std_d, observed=data, shape=n)
+        pm.Normal("OutR", mu_r, std_r, observed=ref_data, shape=n)
+        diffs = pm.Deterministic("mu_diff", mu_d - mu_r)
+        k = pm.sample(tune=1500, draws=1500)
+    mud = k.get_values("mud")
+    mur = k.get_values("mur")
+    mudiff = k.get_values("mu_diff")
+    return pm.stats.hpd(mud), pm.stats.hpd(mur), pm.stats.hpd(mudiff)
+
+
+@memory.cache
+def get_many_posterior_diff_one_group(data):
+    """
+    Get uncertainty around average mean by means of bayesian 
+    inference. For AUC values, nothing else.
+    """
+    import pymc3 as pm
+
+    n = data.shape[1]
+
+    with pm.Model():
+        mu_d = pm.Normal("mud", data.mean(0), data.std(0) * 10, shape=n)
+        std_d = pm.Uniform("stdd", lower=0, upper=data.std(0) * 20, shape=n)
+        # v = pm.Exponential("ν_minus_one", 1 / 29.0, shape=n) + 1
+        # pm.StudentT("OutD", mu=mu_d, lam=std_d ** -2, nu=v, observed=data, shape=n)
+        # pm.StudentT("OutR", mu=mu_r, lam=std_r ** -2, nu=v, observed=ref_data, shape=n)
+        pm.Normal("OutD", mu_d, std_d, observed=data, shape=n)
+        k = pm.sample(tune=1500, draws=1500)
+    mud = k.get_values("mud")
+    return pm.stats.hpd(mud)
