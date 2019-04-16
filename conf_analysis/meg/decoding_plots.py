@@ -115,11 +115,11 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True):
 def get_ssd_data(ssd_classifier="Ridge", restrict=True):
     try:
         df = pd.read_hdf(
-            "/Users/nwilming/u/conf_analysis/results/all_decoding_ssd_20190129.hdf"
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_ssd_20190415.hdf"
         )
     except FileNotFoundError:
         df = pd.read_hdf(
-            "/home/nwilming/conf_analysis/results/all_decoding_ssd_20190129.hdf"
+            "/home/nwilming/conf_analysis/results/all_decoding_ssd_20190415.hdf"
         )
     df = df.loc[~np.isnan(df.subject), :]
     df = df.query('Classifier=="%s"' % ssd_classifier)
@@ -193,11 +193,13 @@ class StreamPlotter(object):
             np.diff(conf.time_windows["response"])[0]
             / np.diff(conf.time_windows["stimulus"])[0]
         )
-        self.cache = '/Users/nwilming/u/conf_analysis/results/pymc_fig_2_posterior.pickle'
+        self.cache = (
+            "/Users/nwilming/u/conf_analysis/results/pymc_fig_2_posterior.pickle"
+        )
         try:
-            self.post = pickle.load(open(self.cache, 'rb'))
+            self.post = pickle.load(open(self.cache, "rb"))
         except IOError:
-            print('No posterior loaded')
+            print("No posterior loaded")
             self.post = {}
 
     def add_dataset(self, key, df):
@@ -248,6 +250,7 @@ class StreamPlotter(object):
                     base.loc[:, -0.25:0], values
                 )
                 import pymc3 as pm
+
                 mu = samples.get_values("mu_ind")
                 ppc = pm.sample_posterior_predictive(samples, samples=2500, model=model)
                 phdi = pm.stats.hpd(ppc["Out"].mean(2).ravel(), 0.01)
@@ -260,17 +263,20 @@ class StreamPlotter(object):
             base = pd.pivot_table(
                 data=dbase, index="subject", columns="latency", values=cluster
             )
-            _, hdi, phdi, samples, model = get_baseline_posterior(base.loc[:, -0.25:0], values)
+            _, hdi, phdi, samples, model = get_baseline_posterior(
+                base.loc[:, -0.25:0], values
+            )
             import pymc3 as pm
+
             mu = samples.get_values("mu_ind")
             ppc = pm.sample_posterior_predictive(samples, samples=2500, model=model)
             phdi = pm.stats.hpd(ppc["Out"].mean(2).ravel(), 0.01)
             hdi = pm.stats.hpd(mu, 0.01)
             results["nosplit"] = (values.columns.values, values.mean(0), hdi, phdi)
-            #print(hemi, epoch, results['nosplit'][0])
+            # print(hemi, epoch, results['nosplit'][0])
         self.post[(signal, hemi, cluster, epoch)] = results
-        print('Dumping pickle')
-        pickle.dump(self.post, open(self.cache, 'wb'))
+        print("Dumping pickle")
+        pickle.dump(self.post, open(self.cache, "wb"))
         return results
 
     def plot(self, stats=False, flip_cbar=False, palette=None):
@@ -347,10 +353,10 @@ class StreamPlotter(object):
                     plot_uncertainty=True,
                     ax=ax,
                 )
-                #print(timelock, ax.get_xlim(), end='-->')
+                # print(timelock, ax.get_xlim(), end='-->')
                 conf.markup(timelock, ax, left=P.annot_y, bottom=P.annot_x)
                 ax.set_xlim(conf.time_windows[timelock])
-                #print(ax.get_xlim())
+                # print(ax.get_xlim())
                 ax.set_ylim(0.15, 0.85)
                 if j == 1:
                     ax.set_yticks([])
@@ -391,41 +397,48 @@ class StreamPlotter(object):
 
         for key, (latency, mu, hdi, phdi) in data.items():
             ax.plot(latency, latency * 0 + 0.5, "k", zorder=-1)
-            id_sig = ~((phdi[0] <= mu) & (mu<=phdi[1]))
-            id_sigh = ~((hdi[:, 0] <= 0.5) & (0.5<=hdi[:, 1]))                        
-            i = 0            
+            id_sig = ~((phdi[0] <= mu) & (mu <= phdi[1]))
+            id_sigh = ~((hdi[:, 0] <= 0.5) & (0.5 <= hdi[:, 1]))
+            i = 0
             col = color[0].lower()
-            offsets = {'r':0.2, 'b':0.19, 'g':0.18}
-            ax.fill_between(latency, hdi[:, 0], hdi[:, 1], facecolor=col, 
-                alpha=0.25, edgecolor=(0,0,0,0), lw=0)
-            ax.plot(latency, mu, color=col)            
-            draw_sig(ax, latency, id_sig&id_sigh ,offsets[col], col)                        
+            offsets = {"r": 0.2, "b": 0.19, "g": 0.18}
+            ax.fill_between(
+                latency,
+                hdi[:, 0],
+                hdi[:, 1],
+                facecolor=col,
+                alpha=0.25,
+                edgecolor=(0, 0, 0, 0),
+                lw=0,
+            )
+            ax.plot(latency, mu, color=col)
+            draw_sig(ax, latency, id_sig & id_sigh, offsets[col], col)
 
 
-
-def draw_sig(ax, x, id_sig,offset, color):
+def draw_sig(ax, x, id_sig, offset, color):
     dt = np.diff(x)[0]
-    #print(dt)
+    # print(dt)
     id_sig = np.array([0] + list(id_sig.astype(float)) + [0])
     x = np.array(list(x) + [x[-1]])
-    d = np.where(np.diff(id_sig)!=0)[0]
-    #print(d)
+    d = np.where(np.diff(id_sig) != 0)[0]
+    # print(d)
     for low, high in zip(d[0::2], d[1::2]):
-        if (high-low) < 3:
-            continue 
+        if (high - low) < 3:
+            continue
         ax.plot([x[low], x[high]], [offset, offset], color=color, lw=0.5)
 
 
-def multicolor_line(ax, x, y, colorval, cmin, cmax, cmap='Reds'):
-    #https://matplotlib.org/gallery/lines_bars_and_markers/multicolored_line.html
+def multicolor_line(ax, x, y, colorval, cmin, cmax, cmap="Reds"):
+    # https://matplotlib.org/gallery/lines_bars_and_markers/multicolored_line.html
     from matplotlib.collections import LineCollection
-    from matplotlib.colors import ListedColormap, BoundaryNorm    
-    xnew = np.linspace(x.min(), x.max(), len(x)*5)
+    from matplotlib.colors import ListedColormap, BoundaryNorm
+
+    xnew = np.linspace(x.min(), x.max(), len(x) * 5)
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
     norm = plt.Normalize(cmin, cmax)
     lc = LineCollection(segments, cmap=cmap, norm=norm)
-    lc.set_array(colorval)    
+    lc.set_array(colorval)
     return ax.add_collection(lc)
 
 
@@ -742,7 +755,7 @@ def state_space_plot(df_a, signal_a, signal_b, df_b=None, a_max=0.6, color=None)
 
     palette = get_area_palette()
     if color is not None:
-        palette = {k:color for k in palette.keys()}
+        palette = {k: color for k in palette.keys()}
     # plt.clf()
     ax = plt.gca()  # ().add_subplot(111)
     # ax.plot([0.5, .5], [0, 1], 'k')
@@ -761,19 +774,24 @@ def state_space_plot(df_a, signal_a, signal_b, df_b=None, a_max=0.6, color=None)
             index="signal",
             columns="latency",
             values=area,
-        )        
+        )
         try:
-            color=palette[area]
+            color = palette[area]
         except KeyError:
             if color is None:
-                color = 'k'
-        #plot_with_color(
+                color = "k"
+        # plot_with_color(
         #    Aarea.loc[signal_a, :], Barea.loc[signal_b, :], color, ax
-        #)
-        if Aarea.loc[signal_a,:].max()>=a_max:
-            #print(Aarea.loc[signal_a,:].values)
-            ax.plot(Aarea.loc[signal_a, :].values, Barea.loc[signal_b, :].values, 
-                color=color, alpha=0.5, label=area)
+        # )
+        if Aarea.loc[signal_a, :].max() >= a_max:
+            # print(Aarea.loc[signal_a,:].values)
+            ax.plot(
+                Aarea.loc[signal_a, :].values,
+                Barea.loc[signal_b, :].values,
+                color=color,
+                alpha=0.5,
+                label=area,
+            )
 
     # plt.show()
 
@@ -783,8 +801,42 @@ The next section plots decoding values from all signals and many areas at one ti
 """
 
 
-def plot_signal_comp(df, latency=1.2,  xlim=[0.49, 0.85], auc_cutoff=0.6, 
-     gs=None, idx=None):
+def get_signal_comp_data(df, latency, epoch="stimulus"):
+    df_interest = df.query("epoch=='%s'" % epoch).query("latency==%f" % latency)
+    #print(df_interest.index.get_level_values('epoch').unique())
+    #df_base = df.query("epoch=='stimulus'").query("-0.25<latency<0")
+    df_interest = df_interest.stack().reset_index()
+    data = []
+    signals = []
+    subjects = []
+    areas = []
+    for signal in ["MIDC_split", "CONF_unsigned", "CONF_signed"]:
+        X = pd.pivot_table(
+            data=df_interest.query('signal=="%s"' % signal),
+            index="cluster",
+            columns="subject",
+            values=0,
+        )
+        signals += [signal]
+        areas = X.index.values.to_dense()
+        subjects = X.columns.values
+        data.append(X.values)
+    data = np.stack(data)
+    return np.array(signals), subjects, areas, data
+
+
+def plot_signal_comp(
+    df,
+    latency=1.2,
+    xlim=[0.49, 0.85],
+    xlim_avg=[0.45, 0.6],
+    auc_cutoff=0.6,
+    gs=None,
+    alpha=0.05,
+    epoch="stimulus",
+    idx=None,
+    colors = {"MIDC_split": "r", "CONF_unsigned": "b", "CONF_signed": "g"}
+):
     """
     Call this function to plot all decoding values at latency=x in df
     during the response period.
@@ -801,184 +853,93 @@ def plot_signal_comp(df, latency=1.2,  xlim=[0.49, 0.85], auc_cutoff=0.6,
     (because latency = 0 -> pre stimulus baseline and interesting
     time point in response period.)
     """
+    import joblib
+    from conf_analysis.meg import stats
 
-    #df = df.query("latency==%f" % latency)
-    df_interest = df.query("epoch=='stimulus'").query("latency==%f" % latency)
-    df_base = df.query("epoch=='stimulus'").query("-0.25<latency<0")
+    def plot(df, latency, idx, colors, title, plot_labels=False):
+        signals, subjects, areas, data = get_signal_comp_data(df, latency, epoch)
+        # data is signals x areas x subs
+        signal_delta = {"MIDC_split": 0.15, "CONF_unsigned": 0, "CONF_signed": -0.15}
+        id_midc = np.where(signals == "MIDC_split")[0]
+        print(joblib.hash(data))
+        k, mdl = stats.auc_get_sig_cluster_posterior(data)
+        mu = k.get_values("mu_ind")
+        hdi = pm.stats.hpd(mu, alpha)
+        # HDI = clusters x signals x hdi
+        if idx is None:
+            mean_data = data[id_midc, :].mean(-1).ravel()
+            idx = np.argsort(mean_data).squeeze()
+            idx = [i for i in idx if mean_data[i] > auc_cutoff]
+        y = np.arange(len(idx))
+        for isig, name in enumerate(signals):
+            # Plot means
+            x = data.mean(2)[isig, idx]
+
+            # Plot hdi
+            for il, icl in enumerate(idx):
+                low, high = hdi[icl, isig]
+                if (low <= 0.5) and (0.5 <= high):
+                    ax.plot(
+                        x[il],
+                        y[il] + signal_delta[signals[isig]],
+                        "o",
+                        markerfacecolor="none",
+                        markeredgecolor=colors[signals[isig]],
+                    )
+                else:
+                    ax.plot(
+                        x[il],
+                        y[il] + signal_delta[signals[isig]],
+                        "o",
+                        color=colors[signals[isig]],
+                    )
+                ax.plot(
+                    [low, high],
+                    np.array([il, il]) + signal_delta[signals[isig]],
+                    color=colors[signals[isig]],
+                )
+                if plot_labels and (name == "MIDC_split"):
+                    cluster = (
+                        areas[idx[il]]
+                        .replace("NSWFRONT_", "")
+                        .replace("HCPMMP1_", "")
+                        .replace("JWG_", "")
+                    )
+                    ax.text(1.05 * high, y[il], cluster)
+
+        plt.axvline(0.5, color="k", lw=0.5)
+        # plt.xlim(xlim)
+        plt.title(title)
+        plt.xlim([0.4, 0.75])
+        plt.yticks([])
+        sns.despine(left=True, ax=ax)
+        return idx
+
+    import pymc3 as pm
+
+    # Plot Lateralized first.
+
     if gs is None:
-        gs = matplotlib.gridspec.GridSpec(1,2)
+        gs = matplotlib.gridspec.GridSpec(1, 3)
     else:
-        gs = matplotlib.gridspec.GridSpecFromSubplotSpec(1,2, gs)
-    #plt.figure(figsize=(5.5, 10))
-    plt.subplot(gs[0, 1])
-    
-    idx, pval_agreement = plot_max_per_area(
-        df_interest.Lateralized,
-        df_base.Lateralized,
-        "MIDC_split",
-        ["CONF_signed", "CONF_unsigned"],
-        text="right",
-        sorting=idx   
+        gs = matplotlib.gridspec.GridSpecFromSubplotSpec(1, 5, gs)
+    # plt.figure(figsize=(5.5, 10))
+    ax = plt.subplot(gs[0, 3:])
+    idx = plot(
+        df.test_roc_auc.Lateralized,
+        latency,
+        idx,
+        colors,
+        "Lateralized H",
+        plot_labels=True,
     )
-
-    # plt.cla()
-    plt.axvline(0.5, color="k", lw=0.5)
     plt.xlim(xlim)
-    plt.title("Lateralized H")
-    plt.subplot(gs[0,0])
-    agr, pval_agreement2 = plot_max_per_area(
-        df_interest.Averaged,
-        df_base.Averaged,
-        "MIDC_split",
-        ["CONF_signed", "CONF_unsigned"],
-        sorting=idx,
-        text="none",
+    ax = plt.subplot(gs[0, :2])
+    plot(
+        df.test_roc_auc.Averaged, latency, idx, colors, "Averaged H", plot_labels=False
     )
-    plt.title("Averaged H")
-    plt.xlim(xlim[::-1])
-    plt.axvline(0.5, color="k", lw=0.5)
-    return idx, {"lateralized": pval_agreement, "averaged": pval_agreement2}
-
-
-def get_uncertainty(df, df_ref, signal, name, latency):
-    """
-    Compute HDI for comparing data in df against df_ref. 
-    Both dfs should contain one time point, df the one of interest,
-    df_ref a baseline time-point (e.g. pre-stimulus). 
-    """
-    df = df.query("signal=='%s' " % (signal)).loc[:, name]
-    #df = df.groupby(["subject"]).mean()
-    df = pd.pivot_table(data=df.reset_index(), index="subject", columns="latency",
-                    values=name)
-    df_ref = df_ref.query("signal=='%s'" % (signal)).loc[:, name]
-    df_ref = pd.pivot_table(data=df_ref.reset_index(), index="subject", columns="latency",
-                    values=name)
-    #df_ref = df_ref.groupby(["subject"]).mean()
-    mu, mu_hdi, phdi, _, _ = get_baseline_posterior(df, df_ref)
-    #m  = df.mean().values
-    #s= df.std().values 
-    return mu, mu_hdi, phdi
-
-
-def plot_scatter_with_sorting(
-    df, df_ref, signal, values, latency, names, uncertainty=True, cmap="Greens"
-):
-    """
-    For statistics to work correctly df and df_ref should have one time-point only.
-
-    Plot decoding values in df.
-    """
-    cm = matplotlib.cm.get_cmap(cmap)
-    l = 1 + 0 * np.abs(latency.copy())  # Should be min 0 now
-    pval_agreement = 0
-    cnt = 0
-    colors = cm(l[::-1] / 2)
-    from scipy.stats import ttest_1samp
-
-    for x, (name, latency) in enumerate(zip(names, latency)):        
-        mu, mu_ref, hpd = get_uncertainty(df, df_ref, signal, name, latency)
-        hpd = 0.5 + hpd.ravel()
-        df2 = df.query("signal=='%s' & latency==%f" % (signal, latency)).loc[:, name]
-        df2 = df2.groupby(["subject"]).mean()
-        tval, pval = ttest_1samp(df2.values.ravel(), 0.5)
-        
-        plt.plot(hpd, [x, x], color=colors[x], lw=0.5)
-        if (hpd[0] <= 0.5) and (0.5 <= hpd[1]):
-            if pval > 0.05:
-                pval_agreement += 1
-            plt.plot(values[x], x, "o", fillstyle="none", color=colors[x])
-        else:
-            if pval <= 0.05:
-                pval_agreement += 1
-            plt.plot(values[x], x, "o", fillstyle="full", color=colors[x])
-        cnt += 1
-    return pval_agreement / cnt
-
-
-def plot_max_per_area(
-    df,
-    df_ref,
-    signal,
-    auxil_signal=None,
-    auxmaps=["Reds", "Blues"],
-    sorting=None,
-    text="right",
-):
-    """
-    Plot max for each area and color code latency.
-    """
-    df_main = df.groupby(["signal", "latency"]).mean().query('signal=="%s"' % signal)
-    idxmax = df_main.idxmax()
-    xticks = []
-    values = df_main.max().values
-    pval_agreement = {}
-    if sorting is not None:
-        idx = sorting
-    else:
-        idx = np.argsort(values)
-
-        # Filter to max_val >= 0.55
-        i = 0
-        for i in idx:
-            if values[i] > 0.55:
-                break
-        idx = idx[i:]
-    latency = np.array([x[1] for _, x in idxmax.iteritems()])
-    agr = plot_scatter_with_sorting(
-        df, df_ref, signal, values[idx], latency[idx], idxmax.index.values[idx]
-    )
-    pval_agreement[signal] = agr
-    xticks = np.array(
-        [
-            name.replace("NSWFRONT_", "").replace("HCPMMP1_", "")
-            for name in idxmax.index.values
-        ]
-    )
-    if text == "left":
-        dx = -0.005
-        text = "right"
-    elif text == "right":
-        dx = +0.025
-        text = "left"
-    elif text == "center":
-        dx = 0
-    if not text == "none":
-        for x, y, t in zip(values[idx], np.arange(len(values)), xticks[idx]):
-            if text == "center":
-                x = 0.45
-            plt.text(
-                x + dx,
-                y,
-                t,
-                verticalalignment="center",
-                horizontalalignment=text,
-                fontsize=8,
-            )
-
-    if auxil_signal is not None:
-        for signal, cmap in zip(auxil_signal, auxmaps):
-            df_aux = (
-                df.groupby(["signal", "latency"]).mean().query('signal=="%s"' % signal)
-            )
-            idxmax_aux = df_aux.idxmax()
-            latency_aux = np.array([x[1] for _, x in idxmax_aux.iteritems()])
-            values_aux = df_aux.max().values
-            agr = plot_scatter_with_sorting(
-                df,
-                df_ref,
-                signal,
-                values_aux[idx],
-                latency_aux[idx],
-                idxmax_aux.index.values[idx],
-                cmap=cmap,
-            )
-            pval_agreement[signal] = agr
-
-    import seaborn as sns
-    sns.despine(left=True, ax=plt.gca())
-    plt.yticks([], [])
-    plt.xlabel("AUC")
-    return idx, pval_agreement
+    plt.xlim(xlim_avg[::-1])
+    return idx, plt.subplot(gs[0, 2])
 
 
 """
@@ -1116,7 +1077,8 @@ def errorbar(x, y, xerr=None, yerr=None, color="b"):
             plt.plot(o, [yy, yy], color=color, lw=0.5)
 
 
-def ssd_index_plot(idx, ssd, labels=None, rgb=False, brain=None):
+def ssd_index_plot(idx, ssd, labels=None, rgb=True, brain=None,
+    integration_slice=slice(0.4, 1.2)):
     import seaborn as sns
     import matplotlib
 
@@ -1158,7 +1120,7 @@ def ssd_index_plot(idx, ssd, labels=None, rgb=False, brain=None):
     plt.legend()
     yl = plt.ylim()
     plt.fill_between(
-        [0.4, 1.4],
+        [integration_slice.start, integration_slice.stop],
         [yl[0], yl[0]],
         [yl[1], yl[1]],
         color="k",
@@ -1184,7 +1146,7 @@ def ssd_index_plot(idx, ssd, labels=None, rgb=False, brain=None):
     yl = plt.ylim()
     plt.title("M1")
     plt.fill_between(
-        [0.4, 1.4],
+        [integration_slice.start, integration_slice.stop],
         [yl[0], yl[0]],
         [yl[1], yl[1]],
         color="k",
@@ -1194,42 +1156,9 @@ def ssd_index_plot(idx, ssd, labels=None, rgb=False, brain=None):
     )
 
     plt.subplot(gs[1, 0])
-    # plt.subplot(3,2,3)
-    # mu_ssd_l, mu_acc_l, mu_diff_l  = get_many_posterior_diff(lat.SSD.T.values,
-    #    lat.SSD_acc_contrast.T.values)
-    # mu_ssd_a, mu_acc_a, mu_diff_a  = get_many_posterior_diff(avg.SSD.T.values,
-    #    avg.SSD_acc_contrast.T.values)
-
-    # plt.errorbar(
-    #    avg.SSD.mean(1),
-    #    avg.SSD_acc_contrast.mean(1),
-    #    mu_ssd_a[:, 0] - avg.SSD.mean(1),
-    #    mu_acc_a[:, 1] - avg.SSD_acc_contrast.mean(1),
-    #    'b.',
-    #    elinewidth=0.5,
-    #    label='Averaged')
-    # print(avg.SSD.mean(1), np.diff(mu_ssd_a))
     plt.plot(avg.SSD.mean(1), avg.SSD_acc_contrast.mean(1), "m.", label="Averaged")
-    """
-    errorbar(
-        avg.SSD.mean(1), 
-        avg.SSD_acc_contrast.mean(1), 
-        color='r',
-        xerr=mu_ssd_a, 
-        yerr=mu_acc_a)
-        #linewidth=0.5,
-        #label='Averaged')
-    """
     plt.plot(lat.SSD.mean(1), lat.SSD_acc_contrast.mean(1), "c.", label="Lateralized")
-    """
-    plt.errorbar(lat.SSD.mean(1), 
-        lat.SSD_acc_contrast.mean(1), 
-        mu_ssd_l[:, 0] - lat.SSD.mean(1), 
-        mu_acc_l[:, 1] - lat.SSD_acc_contrast.mean(1), 
-        'r.',
-        elinewidth=0.5, 
-        label='Lateralized')
-    """
+  
     plt.legend(loc="upper right")
     plt.xlabel("Contrast enc.")
     plt.ylabel("Average contrast enc.")
@@ -1241,14 +1170,14 @@ def ssd_index_plot(idx, ssd, labels=None, rgb=False, brain=None):
 
     gs01 = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[1, 1])
 
-    plt.subplot(gs01[1, 0])
+    
     palette = {}
     avg_index = avg.SSD - avg.SSD_acc_contrast
     lat_index = lat.SSD - lat.SSD_acc_contrast
 
     x = np.arange(avg_index.shape[0])
     d = avg.SSD - lat.SSD_acc_contrast  # (avg_index+lat_index)
-    print(d.shape)
+    
     d_hpd = get_many_posterior_diff_one_group(d.T.values)
     d = d.mean(1)
     k = np.argsort(d)
@@ -1258,22 +1187,35 @@ def ssd_index_plot(idx, ssd, labels=None, rgb=False, brain=None):
         value = d[name]
         if rgb:
             import matplotlib
-
-            norm = matplotlib.colors.Normalize(vmin=-0.03, vmax=0.03)
+            norm = matplotlib.colors.Normalize(vmin=-0.04, vmax=0.04)
             cm = matplotlib.cm.get_cmap("RdBu_r")
             palette[name] = cm(norm(value))
         else:
             palette[name] = value
 
     # plt.plot(x, d[k], '.', color=sns.xkcd_rgb['yellow orange'])
-    for name, xx, val, o in zip(d[k].index, x, d[k], d_hpd[k, :]):
-        plt.plot([xx, xx], o, color=palette[name], lw=1)
-        plt.plot(xx, val, ".", color="k")
-    plt.axhline(0, color="k", lw=0.25)
-    plt.xlabel("Area")
-    plt.ylabel("Selectivity index")
-    plt.xticks([])
-    plt.yticks([-0.04, 0, 0.04])
+    cnt = 0
+    from brokenaxes import brokenaxes
+    bax = plt.subplot(gs01[1, 0])
+    cnt = 0
+    for name, xx, val, o in zip(d[k].index, x, d[k], d_hpd[k, :]):  
+        if (xx>9) and (xx<58):
+            continue
+        bax.plot([cnt, cnt], o, color=palette[name], lw=1)
+        bax.plot(cnt, val, ".", color=palette[name])
+        cnt+=1
+    
+    d = .015  # how big to make the diagonal lines in axes coordinates
+    # arguments to pass to plot, just so we don't keep repeating them
+    kwargs = dict(transform=bax.transAxes, color='k', clip_on=False)
+    bax.plot(np.array([-d, +d])+0.5, 2*np.array((-d, +d))-0.085, **kwargs)        # top-left diagonal
+    #bax.plot((1 - d, 1 + d), (-d, +d), **kwargs)  # top-right diagonal
+
+    bax.axhline(0, color="k", lw=0.25)
+    bax.set_xlabel("Area")
+    bax.set_ylabel("Selectivity index")
+    bax.set_xticks([])
+    bax.set_yticks([-0.04, 0, 0.04])
     plt.subplot(gs01[0, 0])
     plt.plot(avg.SSD.mean(1), lat.SSD_acc_contrast.mean(1), ".")
     plt.ylabel("Accum. lat")
@@ -1286,7 +1228,18 @@ def ssd_index_plot(idx, ssd, labels=None, rgb=False, brain=None):
     plt.subplot(gs[2:, :])
     # plt.subplot(3,2,5)
     if brain is None:
-        brain = plot_brain_color_legend(palette)
+        from conf_analysis.meg import srtfr
+        del palette['HCPMMP1_insular_front_opercular']
+        del palette['HCPMMP1_cingulate_pos']
+        del palette['HCPMMP1_frontal_orbital_polar']
+        del palette['HCPMMP1_frontal_inferior']
+        del palette['HCPMMP1_dlpfc']
+        #del palette['HCPMMP1_premotor']
+        del palette['HCPMMP1_paracentral_midcingulate']
+        del palette['post_medial_frontal']
+        del palette['vent_medial_frontal']
+        del palette['ant_medial_frontal']
+        brain = plot_brain_color_legend(palette, srtfr.get_clusters())
     img = brain.save_montage(
         "/Users/nwilming/Desktop/acc_vs_ssd_spec.png", ["lat", "pa"]
     )
@@ -1352,7 +1305,7 @@ def get_label_in_mni(name, labels):
 
 
 @memory.cache()
-def get_ssd_idx(ssd):
+def get_ssd_idx(ssd, integration_slice=slice(0.4, 1.2)):    
     ssd_indices = (
         ssd.Averaged.stack()
         .groupby(["subject", "signal", "cluster"])
@@ -1378,11 +1331,11 @@ def get_ssd_idx(ssd):
     return pd.concat([ssd_indices, ssd_indices2])
 
 
-def get_ssd_index(ssd, signal=None, area=None):
+def get_ssd_index(ssd, signal=None, area=None, integration_slice=slice(0.4, 1.2)):
     if signal is None:
         signal = ssd.index.get_level_values("signal").unique()[0]
     sps = sps_2lineartime(get_ssd_per_sample(ssd, signal, area))
-    return get_max_encoding(sps)
+    return get_max_encoding(sps, lim=integration_slice)
 
 
 def get_ssd_per_sample(ssd, signal, area=None):
@@ -1419,9 +1372,9 @@ def sps_2lineartime(sps):
     return pd.concat(rows, sort=True, axis=1)
 
 
-def get_max_encoding(sps, lim=slice(0.4, 1.4)):
+def get_max_encoding(sps, lim=slice(0.4, 1.2)):
     sps = sps.loc[lim, :].T.max()
-    return np.mean(sps.index.values) #np.trapz(sps.values, sps.index.values)
+    return np.mean(sps.values)  # np.trapz(sps.values, sps.index.values)
 
 
 def plot_ssd_per_sample(
@@ -1765,7 +1718,7 @@ def fit_correlation_model(data, area):
     return df, r
 
 
-def plot_brain_color_legend(palette):
+def plot_brain_color_legend(palette, clusters=None):
     """
     Plot all ROIs on pysurfer brain. Colors given by palette.
     """
@@ -1786,18 +1739,18 @@ def plot_brain_color_legend(palette):
     )
     labels = sr.labels_remove_overlap(labels=labels, priority_filters=["wang", "JWDG"])
 
-    lc = ag.labels2clusters(labels)
+    lc = ag.labels2clusters(labels, clusters)
     brain = Brain("S04", "lh", "inflated", views=["lat"], background="w")
     for cluster, labelobjects in lc.items():
         if cluster in palette.keys():
             color = palette[cluster]
             for l0 in labelobjects:
                 if l0.hemi == "lh":
+                    #print('Placing ', cluster, ':', l0.name)
                     brain.add_label(l0, color=color, alpha=1)
     # brain.save_montage('/Users/nwilming/Dropbox/UKE/confidence_study/brain_colorbar.png',
     #                   [[180., 90., 90.], [0., 90., -90.]])
     return brain
-
 
 
 @memory.cache
