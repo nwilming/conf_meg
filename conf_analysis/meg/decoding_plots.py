@@ -72,9 +72,14 @@ def filter_latency(data, min, max):
 
 
 def get_decoding_data(decoding_classifier="SCVlin", restrict=True):
-    df = pd.read_hdf(
-        "/Users/nwilming/u/conf_analysis/results/all_decoding_20190307.hdf"
-    )
+    try:
+        df = pd.read_hdf(
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_20190307.hdf"
+        )
+    except FileError:
+        df = pd.read_hdf(
+            "/home/nwilming/conf_analysis/results/all_decoding_20190307.hdf"
+        )
     df.loc[:, "latency"] = df.latency.round(3)
     idnan = np.isnan(df.subject)
     df.loc[idnan, "subject"] = df.loc[idnan, "sub"]
