@@ -32,7 +32,7 @@ from mne.transforms import apply_trans
 from pymeg import preprocessing as pymegprepr
 from functools import reduce
 
-memory = Memory(cachedir=metadata.cachedir)
+memory = Memory(location=metadata.cachedir)
 import locale
 locale.setlocale(locale.LC_ALL, "en_US")
 

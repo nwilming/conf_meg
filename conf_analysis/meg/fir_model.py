@@ -1125,8 +1125,8 @@ def ppc_figure(f, y, contrast, subject, rmin_emp, rmax_emp, plot_ppc=True):
                 lw=0.1,
             )
             plt.plot(centers, power, "r")
-            plt.plot(-0.1, rmin_emp[j, i], 'ro')
-            plt.plot(1.1, rmin_emp[j, i]+rmax_emp[j,i], 'ro')
+            plt.plot(-0.1, rmin_emp[j, i], "ro")
+            plt.plot(1.1, rmin_emp[j, i] + rmax_emp[j, i], "ro")
             if plot_ppc:
                 plt.plot(
                     centers,
@@ -1135,8 +1135,29 @@ def ppc_figure(f, y, contrast, subject, rmin_emp, rmax_emp, plot_ppc=True):
                     alpha=1,
                     lw=0.5,
                 )
-            
+
         # plt.ylim(-0.8, 0.8)
+
+
+def ppc_linear_figure(f, y, contrast, subject, nth=10):
+    from conf_analysis.meg import infoflow as ifo
+
+    Rmin = f["Rmin"].data.squeeze()
+    P = f["P"].data.squeeze()
+    import pylab as plt
+
+    plt.figure(figsize=(20, 20))
+    for sub in range(0, P.shape[1]):
+        plt.subplot(3, 5, sub + 1)
+        idx = subject == sub
+        for freq in range(0, P.shape[2]):            
+            centers, power = ifo.cia(
+                y[idx, freq], contrast[idx], centers=np.linspace(0.15, 0.85, 21)
+            )
+            plt.plot(centers, power, "r")
+            for i in range(0, P.shape[0], nth):
+                plt.plot(centers, centers * P[i, sub, freq] + Rmin[i, sub, freq], "b", alpha=0.25, lw=0.5)
+            
 
 
 def mv_model_eval(contrast, power, magnitude=0, P=0, Q=1, c50=50, sigma=None, NU=1):

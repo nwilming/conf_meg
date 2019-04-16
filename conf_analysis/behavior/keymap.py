@@ -7,7 +7,8 @@ import os
 mapname = os.path.join(metadata.project, 'key_map.pickle')
 
 try:
-    cache = pickle.load(open(mapname))
+    with open(mapname) as f:
+        cache = pickle.load(f)
 except (IOError, UnicodeDecodeError):
     cache = {'start': 0}
 

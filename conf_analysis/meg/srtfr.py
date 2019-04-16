@@ -76,7 +76,6 @@ def submit_contrasts(collect=False):
             #        time.sleep(60 * 10)
         except RuntimeError:
             print("Task", task, " not available yet")
-
     return res
 
 
@@ -103,18 +102,16 @@ def get_clusters():
     Pimp cluster defs
     """
     from pymeg import atlas_glasser as ag
-
-    # ['L_{}_ROI-lh'.format(area) for area in
     # fmt: off
-    areas = ['47s', '47m', 'a47r', '11l', '13l', 'a10p', 'p10p', '10pp',\
-             '10d', 'OFC', 'pOFC', '44', '45', 'IFJp', 'IFJa', 'IFSp',\
-             'IFSa', '47l', 'p47r', '8C', '8Av', 'i6-8', 's6-8', 'SFL',\
-             '8BL', '9p', '9a', '8Ad', 'p9-46v', 'a9-46v', '46', '9-46d',\
-             'SCEF', 'p32pr', 'a24pr', 'a32pr', 'p24', 'p32', 's32', 'a24',\
-             '10v', '10r', '25', 'd32', '8BM', '9m']
+    areas = ["47s", "47m", "a47r", "11l", "13l", "a10p", "p10p", "10pp", "10d", "OFC",
+             "pOFC", "44", "45", "IFJp", "IFJa", "IFSp", "IFSa", "47l", "p47r", "8C", "8Av",
+             "i6-8", "s6-8", "SFL", "8BL", "9p", "9a", "8Ad", "p9-46v", "a9-46v", "46",
+             "9-46d", "SCEF", "p32pr", "a24pr", "a32pr", "p24", "p32", "s32", "a24", "10v",
+             "10r", "25", "d32", "8BM", "9m"]
     # fmt: on
+
     areas = {
-        "NSWFRONT_" + area: ["L_{}_ROI-lh".format(area), "R_{}_ROI-rh".format(area)]
+        "NSWFRONT_" + area: ["L_{}_ROI-lh".format(area), "L_{}_ROI-lh".format(area)]
         for area in areas
     }
     all_clusters, _, _, _ = ag.get_clusters()
@@ -130,7 +127,6 @@ def get_clusters():
 
 @memory.cache(ignore=["scratch"])
 def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=False):
-    print('invalidate')
     if subject < 8:
         hemi = "rh_is_ipsi"
     else:
@@ -311,8 +307,18 @@ def plot_2epoch_mosaics(
     contrasts=["all", "choice", "confidence", "confidence_asym", "hand", "stimulus"],
 ):
     import pylab as plt
+    import numpy as np
     from pymeg.contrast_tfr import plot_2epoch_mosaic
 
+    # fmt: off
+    remove = ["vfcPrimary", "vfcEarly", "vfcV3ab", "vfcIPS01",
+              "vfcIPS23", "JWG_IPS_PCeS", "vfcFEF", "HCPMMP1_dlpfc",
+              "vfcLO", "vfcTO", "vfcVO", "vfcPHC", "Insula",
+              "HCPMMP1_frontal_inferior", "HCPMMP1_premotor", "JWG_M1"]
+    # fmt: on
+    clusters = df.index.get_level_values("cluster")
+    clusters = np.array([c in remove for c in clusters])
+    df = df.loc[~clusters, :]
     for contrast in contrasts:
         for hemi in [True, False]:
             plt.figure()
@@ -333,6 +339,106 @@ def plot_2epoch_mosaics(
                 bbox_inches="tight",
             )
 
+
+def plot_stream_figures(
+    df,
+    stats=False,
+    contrasts=["all", "choice", "stimulus"],
+    flip_cbar=False,
+    suffix="",
+    gs=None
+):
+    import matplotlib
+    from pymeg import contrast_tfr_plots
+    import pylab as plt
+    conf = contrast_tfr_plots.PlotConfig(
+        {"stimulus": (-0.35, 1.1), "response": (-0.35, 0.1)},  # Time windows for epochs
+        [
+            "all",
+            "choice",
+            "confidence",
+            "confidence_asym",
+            "hand",
+            "stimulus",
+        ],  # Contrast names
+        stat_windows={"stimulus": (-0.5, 1.35), "response": (-1, 0.5)},
+    )
+
+    conf.configure_epoch(
+        "stimulus",
+        **{
+            "xticks": [0, 1],
+            "xticklabels": ["0", "1"],
+            "yticks": [25, 50, 75, 100],
+            "yticklabels": [25, 50, 75, 100],
+            "xlabel": "time",
+            "ylabel": "Freq",
+        },
+    )
+    conf.configure_epoch(
+        "response",
+        **{
+            "xticks": [0],
+            "xticklabels": ["0"],
+            "yticks": [25, 50, 75, 100],
+            "yticklabels": [25, 50, 75, 100],
+            "xlabel": "time",
+            "ylabel": "Freq",
+        },
+    )
+    for key, values in {
+        "all": {"vmin": -50, "vmax": 50},
+        "choice": {"vmin": -25, "vmax": 25},
+        "confidence": {"vmin": -25, "vmax": 25},
+        "confidence_asym": {"vmin": -25, "vmax": 25},
+        "hand": {"vmin": -25, "vmax": 25},
+        "stimulus": {"vmin": -25, "vmax": 25},
+    }.items():
+        conf.configure_contrast(key, **values)
+        from collections import namedtuple
+
+    Plot = namedtuple(
+        "Plot", ["name", "cluster", "location", "annot_y", "annot_x"]
+    )
+
+    top, middle, bottom = slice(0, 2), slice(1, 3), slice(2, 4)
+    # fmt: off
+    layout = [
+        Plot("V1", "vfcPrimary", [0, middle], True, True),
+        Plot("V2-V4", "vfcEarly", [1, middle], False, True),
+        # Dorsal
+        Plot("V3ab", "vfcV3ab", [2, top], False, False),
+        Plot("IPS0/1", "vfcIPS01", [3, top], False, False),
+        Plot("IPS2/3", "vfcIPS23", [4, top], False, False),
+        Plot("aIPS", "JWG_aIPS", [5, top], False, False),
+        
+        # Ventral
+        Plot("Lateral Occ", "vfcLO", [2, bottom], False, True),
+        Plot("MT+", "vfcTO", [3, bottom], False, True),
+        Plot("Ventral Occ", "vfcVO", [4, bottom], False, True),
+        Plot("PHC", "vfcPHC", [5, bottom], False, True),
+        
+        
+        Plot("IPS P-Cent", "JWG_IPS_PCeS", [6, middle], False, True),
+        Plot("M1 (hand)", "JWG_M1", [7, middle], False, True),
+    ]
+
+    if flip_cbar:
+        cmap = "RdBu"
+    else:
+        cmap = "RdBu_r"            
+    for i, contrast_name in enumerate(contrasts):        
+
+        fig = contrast_tfr_plots.plot_tfr_selected_rois(
+            contrast_name, df, layout, conf, cluster_correct=stats, 
+            cmap=cmap,
+            gs=gs
+            )
+        #plt.suptitle(contrast_name)
+        #plt.savefig("/Users/nwilming/Desktop/nsf_%s-%s.pdf" % (contrast_name, suffix))
+        #plt.savefig("/Users/nwilming/Desktop/nsf_%s-%s.svg" % (contrast_name, suffix))
+
+ 
 
 # Ignore following for now
 
