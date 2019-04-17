@@ -47,7 +47,7 @@ else:
     outpath = "/home/nwilming/conf_meg/sr_decoding"
     memory = Memory(cachedir=metadata.cachedir)
 
-n_jobs = 10
+n_jobs = 15
 
 n_trials = {
     1: {"stimulus": 1565, "response": 245},
@@ -71,12 +71,12 @@ n_trials = {
 def decoders():
     return {
         "SSD": ssd_decoder,
-        "SSD_delta_contrast": partial(ssd_decoder, target_value="delta_contrast"),
+        # "SSD_delta_contrast": partial(ssd_decoder, target_value="delta_contrast"),
         "SSD_acc_contrast": partial(ssd_decoder, target_value="acc_contrast"),
-        "SSD_acc_contrast_diff": partial(ssd_decoder, target_value="acc_contrast_diff"),
+        # "SSD_acc_contrast_diff": partial(ssd_decoder, target_value="acc_contrast_diff"),
         "MIDC_split": partial(midc_decoder, splitmc=True, target_col="response"),
-        "MIDC_nosplit": partial(midc_decoder, splitmc=False, target_col="response"),
-        "SIDE_nosplit": partial(midc_decoder, splitmc=False, target_col="side"),
+        # "MIDC_nosplit": partial(midc_decoder, splitmc=False, target_col="response"),
+        # "SIDE_nosplit": partial(midc_decoder, splitmc=False, target_col="side"),
         "CONF_signed": partial(
             midc_decoder, splitmc=False, target_col="signed_confidence"
         ),
@@ -187,13 +187,23 @@ def run_decoder(
             (meta, asr.delayed_agg(filenames, hemi=hemi, cluster=area), decoder, hemi)
         )
     print("Processing %i tasks" % (len(args)))
+    from contextlib import closing
 
-    with Pool(ntasks) as p:
-        scores = p.starmap(_par_apply_decode, args)  # , chunksize=ntasks)
-    scores = [s for s in scores if s is not None]
+    scores = []
+
+    for arglist in range(0, len(args), ntasks):
+        with closing(Pool(ntasks, maxtasksperchild=1)) as p:
+            sc = p.starmap(
+                _par_apply_decode, args[arglist : arglist + ntasks]
+            )  # , chunksize=ntasks)
+            sc = [s for s in sc if s is not None]
+        scores.extend(sc)
+    print("Concat ", len(scores))
     scores = pd.concat(scores)
     filename = outpath + "/concat_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
     scores.loc[:, "subject"] = subject
+
+    print("Saving as ", filename)
     scores.to_hdf(filename, "decoding")
 
     p.terminate()
@@ -205,9 +215,13 @@ def _par_apply_decode(meta, delayed_agg, decoder, hemi=None):
     dt = np.diff(agg.columns.get_level_values("time"))[0]
     latencies = None
     if "SSD" in decoder:
-        latencies = np.arange(-0.1, 0.75, dt)
-
-    return apply_decoder(meta, agg, decoders()[decoder], latencies=latencies, hemi=hemi)
+        latencies = np.arange(-0.1, 0.65, dt)
+    # print('Starting', delayed_agg)
+    scores = apply_decoder(
+        meta, agg, decoders()[decoder], latencies=latencies, hemi=hemi
+    )
+    print("Ending", scores.memory_usage().sum() / 1024 / 1024)
+    return scores
 
 
 def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
@@ -233,7 +247,7 @@ def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
     area = np.unique(agg.index.get_level_values("cluster"))
     scores = []
     for latency in latencies:
-        logging.info("Applying decoder %s at latency %s" % (decoder, latency))
+        # logging.info("Applying decoder %s at latency %s" % (decoder, latency))
         try:
             s = decoder(meta, agg, area, latency=latency)
             s.loc[:, "cluster"] = str(area)
@@ -332,8 +346,8 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value="contrast"):
         }
 
         classifiers = {
-            "OLS": linear_model.LinearRegression(),
-            "Ridge": linear_model.RidgeCV(),
+            # "OLS": linear_model.LinearRegression(),
+            "Ridge": linear_model.RidgeCV()
         }
 
         for name, clf in list(classifiers.items()):
@@ -525,10 +539,11 @@ def submit_cross_area_decoding():
     )
 
     for subject in range(1, 16):
-        pmap(run_cross_area_decoding, [(subject,)], name="XA" + str(subject))
+        for odd in [True, False]:
+            pmap(run_cross_area_decoding, [(subject, [odd])], name="XA" + str(subject))
 
 
-def run_cross_area_decoding(subject, ntasks=16):
+def run_cross_area_decoding(subject, odd_partition=[True, False], ntasks=15):
     set_n_threads(1)
     from multiprocessing import Pool
     from glob import glob
@@ -566,12 +581,15 @@ def run_cross_area_decoding(subject, ntasks=16):
     filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, "stimulus")))
 
     args = []
-    filename = outpath + "/cross_area_S%i-decoding.hdf" % (subject)
+    filename = outpath + "/cross_area_S%i-decoding_%s.hdf" % (
+        subject,
+        str(odd_partition),
+    )
     print("Save target:", filename)
     cnt = 0
     add_meta = {"subject": subject, "low_hemi": "Averaged", "high_hemi": "Lateralized"}
     for lla, hla in product(low_level_areas, high_level_areas):
-        for odd in [True, False]:
+        for odd in odd_partition:
             low_level_data = asr.delayed_agg(filenames, hemi="Averaged", cluster=lla)
             high_level_data = asr.delayed_agg(
                 filenames, hemi="Lateralized", cluster=hla
@@ -585,7 +603,7 @@ def run_cross_area_decoding(subject, ntasks=16):
                     hla,
                     0.18,
                     "response",
-                    "cross_dcd",
+                    "cross_dcd_S%i-" % subject,
                     "%s" % cnt,
                     add_meta,
                     odd,
@@ -595,22 +613,24 @@ def run_cross_area_decoding(subject, ntasks=16):
     print("There are %i decoding tasks for subject %i" % (len(args), subject))
     scratch = os.environ["TMPDIR"]
     try:
-        with Pool(ntasks) as p:
+        with Pool(ntasks, maxtasksperchild=1) as p:
             scores = p.starmap(motor_decoder, args)  # , chunksize=ntasks)
-    except MemoryError:
+    finally:
         # Do this to find out why memory error occurs
-        cmd = join(scratch, "*.hdf")
-        os.system("cp %s /nfs/nwilming/MEG/scratch/")
-    # for arg in args[:2]:
-    #    motor_decoder(*arg)
+        print("Saving data")
+        try:
+            cmd = join(scratch, "*.hdf")
+            os.system("cp %s /nfs/nwilming/MEG/scratch/" % join(scratch, "*.hdf"))
+        except Exception:
+            pass
 
-    # Now collect all data from scratch
-    save_filenames = join(scratch, "cross_dcd" + "*.hdf")
-    scores = [pd.read_hdf(x) for x in glob(save_filenames)]
-    scores = pd.concat(scores)
-    # scores.loc[:, 'subject'] = subject
-    scores.to_hdf(filename, "decoding")
-    return scores
+        # Now collect all data from scratch
+        save_filenames = join(scratch, "cross_dcd" + "*.hdf")
+        scores = [pd.read_hdf(x) for x in glob(save_filenames)]
+        scores = pd.concat(scores)
+        # scores.loc[:, 'subject'] = subject
+        scores.to_hdf(filename, "decoding")
+        return scores
 
 
 def motor_decoder(
