@@ -125,6 +125,40 @@ def get_clusters():
     return all_clusters
 
 
+def get_ogl_clusters():
+    """
+    Pimp cluster defs
+    """
+    from pymeg import atlas_glasser as ag
+    # fmt: off
+    areas = ["TE1a", "VVC", "FOP1", "10v", "6r", "H", "LIPv", "OFC", "PFop", "STSvp",
+             "VMV1", "STGa", "p24pr", "TGv", "3a", "p9-46v", "9m", "IFJp", "LIPd", "pOFC",
+             "IPS1", "7PC", "PIT", "V1", "SCEF", "i6-8", "25", "PoI2", "a24pr", "8Av",
+             "V2", "p47r", "V4", "p10p", "10d", "3b", "a24", "TA2", "10pp", "AIP",
+             "PCV", "6d", "TF", "31pd", "FOP5", "MST", "IP1", "LO3", "PH", "45",
+             "8Ad", "s6-8", "VMV2", "a47r", "46", "a9-46v", "FOP2", "V3CD", "PEF", "ProS",
+             "p24", "MI", "PreS", "STSdp", "a10p", "MBelt", "FFC", "VMV3", "V3A", "VIP",
+             "PoI1", "TE2p", "52", "9a", "31pv", "PeEc", "PI", "IFSp", "4", "A4",
+             "AAIC", "RI", "5m", "23c", "7m", "PGp", "PHT", "p32", "6a", "FOP4",
+             "PGi", "47l", "PGs", "MT", "55b", "A1", "TPOJ2", "Pir", "PHA3", "LO2",
+             "IFSa", "p32pr", "8C", "LO1", "d32", "V3B", "V3", "V7", "6mp", "AVI",
+             "d23ab", "31a", "DVT", "47m", "PFt", "9-46d", "A5", "V4t", "TPOJ1", "1",
+             "PF", "6v", "PBelt", "OP2-3", "PHA2", "V8", "V6", "STSva", "44", "v23ab",
+             "7Pm", "24dd", "TE1p", "OP4", "TE1m", "2", "V6A", "8BM", "IFJa", "10r",
+             "IP0", "43", "OP1", "TE2a", "7Am", "6ma", "PFcm", "47s", "TPOJ3", "33pr",
+             "FEF", "STSda", "MIP", "23d", "13l", "PHA1", "Ig", "24dv", "11l", "a32pr",
+             "FST", "s32", "STV", "5mv", "9p", "TGd", "RSC", "POS1", "PFm", "IP2",
+             "EC", "POS2", "FOP3", "LBelt"]
+    # fmt: on
+
+    areas = {
+        area: ["L_{}_ROI-lh".format(area), "L_{}_ROI-lh".format(area)]
+        for area in areas
+    }
+
+    return areas
+
+
 @memory.cache(ignore=["scratch"])
 def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=False):
     if subject < 8:
