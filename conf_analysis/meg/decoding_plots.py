@@ -71,10 +71,15 @@ def filter_latency(data, min, max):
     return data.loc[(min < lat) & (lat < max), :]
 
 
-def get_decoding_data(decoding_classifier="SCVlin", restrict=True):
-    df = pd.read_hdf(
-        "/Users/nwilming/u/conf_analysis/results/all_decoding_20190307.hdf"
-    )
+def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
+    if not ogl:
+        df = pd.read_hdf(
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_merged_w0415_20190423.hdf"
+        )
+    else:
+        df = pd.read_hdf(
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_20190424.hdf"
+        )
     df.loc[:, "latency"] = df.latency.round(3)
     idnan = np.isnan(df.subject)
     df.loc[idnan, "subject"] = df.loc[idnan, "sub"]
@@ -115,11 +120,11 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True):
 def get_ssd_data(ssd_classifier="Ridge", restrict=True):
     try:
         df = pd.read_hdf(
-            "/Users/nwilming/u/conf_analysis/results/all_decoding_ssd_20190415.hdf"
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
         )
     except FileNotFoundError:
         df = pd.read_hdf(
-            "/home/nwilming/conf_analysis/results/all_decoding_ssd_20190415.hdf"
+            "/home/nwilming/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
         )
     df = df.loc[~np.isnan(df.subject), :]
     df = df.query('Classifier=="%s"' % ssd_classifier)
@@ -1718,38 +1723,41 @@ def fit_correlation_model(data, area):
     return df, r
 
 
-def plot_brain_color_legend(palette, clusters=None):
+def plot_brain_color_legend(palette, clusters=None, ogl=False):
     """
     Plot all ROIs on pysurfer brain. Colors given by palette.
     """
     from surfer import Brain
     from pymeg import atlas_glasser as ag
 
-    labels = sr.get_labels(
-        subject="S04", filters=["*wang*.label", "*JWDG*.label"], annotations=["HCPMMP1"]
-    )
-    labels = sr.labels_exclude(
-        labels=labels,
-        exclude_filters=[
-            "wang2015atlas.IPS4",
-            "wang2015atlas.IPS5",
-            "wang2015atlas.SPL",
-            "JWDG_lat_Unknown",
-        ],
-    )
-    labels = sr.labels_remove_overlap(labels=labels, priority_filters=["wang", "JWDG"])
-
-    lc = ag.labels2clusters(labels, clusters)
+    if not ogl:
+        labels = sr.get_labels(
+            subject="S04", filters=["*wang*.label", "*JWDG*.label"], annotations=["HCPMMP1"]
+        )
+        labels = sr.labels_exclude(
+            labels=labels,
+            exclude_filters=[
+                "wang2015atlas.IPS4",
+                "wang2015atlas.IPS5",
+                "wang2015atlas.SPL",
+                "JWDG_lat_Unknown",
+            ],
+        )
+        labels = sr.labels_remove_overlap(labels=labels, priority_filters=["wang", "JWDG"])
+        lc = ag.labels2clusters(labels, clusters)
+    else:
+        labels = sr.get_labels(
+            subject="S04", filters=[], annotations=["HCPMMP1"]
+        )
+        lc = ag.labels2clusters(labels, clusters)
     brain = Brain("S04", "lh", "inflated", views=["lat"], background="w")
     for cluster, labelobjects in lc.items():
         if cluster in palette.keys():
             color = palette[cluster]
             for l0 in labelobjects:
-                if l0.hemi == "lh":
-                    #print('Placing ', cluster, ':', l0.name)
+                if l0.hemi == "lh":                
                     brain.add_label(l0, color=color, alpha=1)
-    # brain.save_montage('/Users/nwilming/Dropbox/UKE/confidence_study/brain_colorbar.png',
-    #                   [[180., 90., 90.], [0., 90., -90.]])
+    
     return brain
 
 
