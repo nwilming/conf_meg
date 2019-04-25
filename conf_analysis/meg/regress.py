@@ -273,10 +273,6 @@ def coupling(target, X, n_iter=50, pcdist=sp_randint(5, 40)):
             )
             for o in scores["estimator"]
         ]
-    )
-    #print(
-    #    "#PCs: ",
-    #    scores["estimator"][0].best_estimator_.steps[-2][1].components_.shape[0],
-    #)
+
     coefs = coefs.mean(0)
     return scores["test_score"].mean(), coefs[:-1], coefs[-1]

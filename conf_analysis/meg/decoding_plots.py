@@ -71,10 +71,19 @@ def filter_latency(data, min, max):
     return data.loc[(min < lat) & (lat < max), :]
 
 
-def get_decoding_data(decoding_classifier="SCVlin", restrict=True):
-    df = pd.read_hdf(
-        "/Users/nwilming/u/conf_analysis/results/all_decoding_20190307.hdf"
-    )
+def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
+    if not ogl:
+        try:
+            df = pd.read_hdf(
+                "/Users/nwilming/u/conf_analysis/results/all_decoding_merged_w0415_20190423.hdf"
+            )
+        except FileNotFoundError:
+            df = pd.read_hdf(
+                "/net/store/users/nwilming/all_decoding_merged_w0415_20190423.hdf"
+    else:
+        df = pd.read_hdf(
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_20190424.hdf"
+        )
     df.loc[:, "latency"] = df.latency.round(3)
     idnan = np.isnan(df.subject)
     df.loc[idnan, "subject"] = df.loc[idnan, "sub"]
@@ -115,11 +124,11 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True):
 def get_ssd_data(ssd_classifier="Ridge", restrict=True):
     try:
         df = pd.read_hdf(
-            "/Users/nwilming/u/conf_analysis/results/all_decoding_ssd_20190415.hdf"
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
         )
     except FileNotFoundError:
         df = pd.read_hdf(
-            "/home/nwilming/conf_analysis/results/all_decoding_ssd_20190415.hdf"
+            "/home/nwilming/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
         )
     df = df.loc[~np.isnan(df.subject), :]
     df = df.query('Classifier=="%s"' % ssd_classifier)
@@ -153,6 +162,46 @@ def get_ssd_data(ssd_classifier="Ridge", restrict=True):
     o.loc[:, "latency"] = o.latency.round(3)
     df.index = pd.MultiIndex.from_frame(o)
     return df
+
+
+@memory.cache()
+def _get_data(df, signal, hemi, cluster, epoch, split=None):
+    dclust = (
+        df.query('signal=="%s" & epoch=="%s"' % (signal, epoch))
+        .loc[:, cluster]
+        .to_frame()
+    )
+    dbase = (
+        df.query('signal=="%s" & epoch=="stimulus"' % signal)
+        .loc[:, cluster]
+        .to_frame()
+    )
+    if not split:
+        values = pd.pivot_table(
+            data=dclust, index="subject", columns="latency", values=cluster
+        )
+        base = pd.pivot_table(
+            data=dbase, index="subject", columns="latency", values=cluster
+        )
+        return {'nosplit':(values, base)}
+    else:
+        res = {}
+        for split, ds in dclust.groupby("mc<0.5"):
+            values = pd.pivot_table(
+                    data=ds, index="subject", columns="latency", values=cluster
+                )
+            idx = dbase.index.get_level_values("mc<0.5") == split
+            base = pd.pivot_table(
+                data=dbase.loc[idx],
+                index="subject",
+                columns="latency",
+                values=cluster,
+            )
+            if split == "True":
+                base = -base + 1
+                values = -values + 1
+            res[split] = values, base
+        return res
 
 
 class StreamPlotter(object):
@@ -194,13 +243,22 @@ class StreamPlotter(object):
             / np.diff(conf.time_windows["stimulus"])[0]
         )
         self.cache = (
-            "/Users/nwilming/u/conf_analysis/results/pymc_fig_2_posterior.pickle"
+            "/net/store/users/nwilming/pymc_fig_2_posterior.pickle"
         )
         try:
-            self.post = pickle.load(open(self.cache, "rb"))
+            print("Now Loading posterioe")
+            self.post = pickle.load(open(self.cache, "rb"))            
         except IOError:
             print("No posterior loaded")
             self.post = {}
+        self.cluster_test_cache = (
+             "/net/store/users/nwilming/pymc_fig_2_cluster.pickle"
+        )
+        try:
+            self.cluster = pickle.load(open(self.cluster_test_cache, "rb"))
+        except IOError:
+            print("No cluster test loaded")
+            self.cluster = {}
 
     def add_dataset(self, key, df):
         """
@@ -214,70 +272,60 @@ class StreamPlotter(object):
         """
         self.signals = signals
 
-    def get_data(self, signal, hemi, cluster, epoch):
+    def get_data(self, signal, hemi, cluster, epoch, split=None):
         df = self.data[hemi]
+        return _get_data(df, signal, hemi, cluster, epoch, split)
+
+    def get_posterior(self, signal, hemi, cluster, epoch):
+        import pymc3 as pm
         try:
             return self.post[(signal, hemi, cluster, epoch)]
         except KeyError:
-            pass
-        dclust = (
-            df.query('signal=="%s" & epoch=="%s"' % (signal, epoch))
-            .loc[:, cluster]
-            .to_frame()
-        )
-        dbase = (
-            df.query('signal=="%s" & epoch=="stimulus"' % signal)
-            .loc[:, cluster]
-            .to_frame()
-        )
+            pass        
+        print('Get posterior:', signal, hemi, cluster, epoch)            
+        data = self.get_data(signal, hemi, cluster, epoch, 'split' in signal)
         results = {}
-        if "split" in signal:
-            for split, ds in dclust.groupby("mc<0.5"):
-                values = pd.pivot_table(
-                    data=ds, index="subject", columns="latency", values=cluster
-                )
-                idx = dbase.index.get_level_values("mc<0.5") == split
-                base = pd.pivot_table(
-                    data=dbase.loc[idx],
-                    index="subject",
-                    columns="latency",
-                    values=cluster,
-                )
-                if split == "True":
-                    base = -base + 1
-                    values = -values + 1
-                _, hdi, phdi, samples, model = get_baseline_posterior(
-                    base.loc[:, -0.25:0], values
-                )
-                import pymc3 as pm
-
-                mu = samples.get_values("mu_ind")
-                ppc = pm.sample_posterior_predictive(samples, samples=2500, model=model)
-                phdi = pm.stats.hpd(ppc["Out"].mean(2).ravel(), 0.01)
-                hdi = pm.stats.hpd(mu, 0.01)
-                results[split] = (values.columns.values, values.mean(0), hdi, phdi)
-        else:
-            values = pd.pivot_table(
-                data=dclust, index="subject", columns="latency", values=cluster
-            )
-            base = pd.pivot_table(
-                data=dbase, index="subject", columns="latency", values=cluster
-            )
+        for split, (values, base) in data.items():
             _, hdi, phdi, samples, model = get_baseline_posterior(
                 base.loc[:, -0.25:0], values
-            )
-            import pymc3 as pm
-
+            )            
             mu = samples.get_values("mu_ind")
             ppc = pm.sample_posterior_predictive(samples, samples=2500, model=model)
             phdi = pm.stats.hpd(ppc["Out"].mean(2).ravel(), 0.01)
             hdi = pm.stats.hpd(mu, 0.01)
-            results["nosplit"] = (values.columns.values, values.mean(0), hdi, phdi)
-            # print(hemi, epoch, results['nosplit'][0])
+            results[split] = (values.columns.values, values.mean(0), hdi, phdi)
+
         self.post[(signal, hemi, cluster, epoch)] = results
-        print("Dumping pickle")
+        print("Dumping pickle: ", len(results))
         pickle.dump(self.post, open(self.cache, "wb"))
         return results
+
+    def get_cluster_result(self, signal, hemi, cluster, epoch):
+        try:
+            return self.cluster[(signal, hemi, cluster, epoch)]
+        except KeyError:
+            pass
+        print('Get cluster:', signal, hemi, cluster, epoch)
+        from mne.stats import permutation_cluster_1samp_test as cluster_test
+        from joblib import parallel_backend
+        data = self.get_data(signal, hemi, cluster, epoch, 'split' in signal)
+        results = {}
+        with parallel_backend('multiprocessing', n_jobs=12):
+            for split, (values, base) in data.items():                
+                t_obs, _, p, H0 = cluster_test(
+                    values.values-0.5,
+                    threshold={"start": 0, "step": 0.2},
+                    connectivity=None,
+                    tail=0,
+                    n_permutations=1000,
+                    n_jobs=12,
+                )   
+                results[split] = (t_obs, p)
+        self.cluster[(signal, hemi, cluster, epoch)] = results
+        print("Dumping cluster pickle")
+        pickle.dump(self.cluster, open(self.cluster_test_cache, "wb"))
+        return results
+
 
     def plot(self, stats=False, flip_cbar=False, palette=None):
 
@@ -391,14 +439,13 @@ class StreamPlotter(object):
         if ax is None:
             ax = plt.gca()
         try:
-            data = self.get_data(signal, hemi, cluster, epoch)
+            data = self.get_posterior(signal, hemi, cluster, epoch)
         except KeyError:
             return
-
+        cluster_test = self.get_cluster_result(signal, hemi, cluster, epoch)
         for key, (latency, mu, hdi, phdi) in data.items():
             ax.plot(latency, latency * 0 + 0.5, "k", zorder=-1)
-            id_sig = ~((phdi[0] <= mu) & (mu <= phdi[1]))
-            id_sigh = ~((hdi[:, 0] <= 0.5) & (0.5 <= hdi[:, 1]))
+            
             i = 0
             col = color[0].lower()
             offsets = {"r": 0.2, "b": 0.19, "g": 0.18}
@@ -412,7 +459,11 @@ class StreamPlotter(object):
                 lw=0,
             )
             ax.plot(latency, mu, color=col)
-            draw_sig(ax, latency, id_sig & id_sigh, offsets[col], col)
+            tvals, pvals = cluster_test[key]
+            #print(hemi, cluster)
+            #if (hemi=="Lateralized") and (cluster=="JWG_M1"):
+            #    import pdb; pdb.set_trace()
+            draw_sig(ax, latency, pvals<0.05, offsets[col], col)
 
 
 def draw_sig(ax, x, id_sig, offset, color):
@@ -422,9 +473,7 @@ def draw_sig(ax, x, id_sig, offset, color):
     x = np.array(list(x) + [x[-1]])
     d = np.where(np.diff(id_sig) != 0)[0]
     # print(d)
-    for low, high in zip(d[0::2], d[1::2]):
-        if (high - low) < 3:
-            continue
+    for low, high in zip(d[0::2], d[1::2]):        
         ax.plot([x[low], x[high]], [offset, offset], color=color, lw=0.5)
 
 
@@ -861,7 +910,7 @@ def plot_signal_comp(
         # data is signals x areas x subs
         signal_delta = {"MIDC_split": 0.15, "CONF_unsigned": 0, "CONF_signed": -0.15}
         id_midc = np.where(signals == "MIDC_split")[0]
-        print(joblib.hash(data))
+        #print(joblib.hash(data))
         k, mdl = stats.auc_get_sig_cluster_posterior(data)
         mu = k.get_values("mu_ind")
         hdi = pm.stats.hpd(mu, alpha)
@@ -1718,38 +1767,41 @@ def fit_correlation_model(data, area):
     return df, r
 
 
-def plot_brain_color_legend(palette, clusters=None):
+def plot_brain_color_legend(palette, clusters=None, ogl=False):
     """
     Plot all ROIs on pysurfer brain. Colors given by palette.
     """
     from surfer import Brain
     from pymeg import atlas_glasser as ag
 
-    labels = sr.get_labels(
-        subject="S04", filters=["*wang*.label", "*JWDG*.label"], annotations=["HCPMMP1"]
-    )
-    labels = sr.labels_exclude(
-        labels=labels,
-        exclude_filters=[
-            "wang2015atlas.IPS4",
-            "wang2015atlas.IPS5",
-            "wang2015atlas.SPL",
-            "JWDG_lat_Unknown",
-        ],
-    )
-    labels = sr.labels_remove_overlap(labels=labels, priority_filters=["wang", "JWDG"])
-
-    lc = ag.labels2clusters(labels, clusters)
+    if not ogl:
+        labels = sr.get_labels(
+            subject="S04", filters=["*wang*.label", "*JWDG*.label"], annotations=["HCPMMP1"]
+        )
+        labels = sr.labels_exclude(
+            labels=labels,
+            exclude_filters=[
+                "wang2015atlas.IPS4",
+                "wang2015atlas.IPS5",
+                "wang2015atlas.SPL",
+                "JWDG_lat_Unknown",
+            ],
+        )
+        labels = sr.labels_remove_overlap(labels=labels, priority_filters=["wang", "JWDG"])
+        lc = ag.labels2clusters(labels, clusters)
+    else:
+        labels = sr.get_labels(
+            subject="S04", filters=[], annotations=["HCPMMP1"]
+        )
+        lc = ag.labels2clusters(labels, clusters)
     brain = Brain("S04", "lh", "inflated", views=["lat"], background="w")
     for cluster, labelobjects in lc.items():
         if cluster in palette.keys():
             color = palette[cluster]
             for l0 in labelobjects:
-                if l0.hemi == "lh":
-                    #print('Placing ', cluster, ':', l0.name)
+                if l0.hemi == "lh":                
                     brain.add_label(l0, color=color, alpha=1)
-    # brain.save_montage('/Users/nwilming/Dropbox/UKE/confidence_study/brain_colorbar.png',
-    #                   [[180., 90., 90.], [0., 90., -90.]])
+    
     return brain
 
 
