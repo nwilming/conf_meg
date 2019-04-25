@@ -35,32 +35,41 @@ def modification_date(filename):
         return datetime.datetime.strptime("19700101", "%Y%m%d")
 
 
-def submit(older_than="201911010000"):
+def submit(older_than="201911010000", only_glasser=False):
     from pymeg import parallel
     from itertools import product
 
     cnt = 1
     older_than = datetime.datetime.strptime(older_than, "%Y%m%d%H%M")
     cnt = 1
-    for subject, session, epoch, signal in [
-        [3, 3, "stimulus", "F"],
-        [2, 1, "response", "F"],
-        [4, 2, "stimulus", "F"],
-        [8, 3, "response", "F"],
-        [10, 0, "response", "F"],
-    ]:
+    #for subject, session, epoch, signal in [
+    #   [3, 0, "stimulus", "F"],       
+    #   [9, 2, "stimulus", "F"],
+    #   [10, 0, "response", "F"],       
+    #]:
+    for subject, session, epoch, signal in product(
+        range(1, 16), range(4), ["response"], ["F", "LF"]
+    ):
         mod_time = [
             modification_date(x)
-            for x in lcmvfilename(subject, session, signal, epoch, chunk="all")
+            for x in lcmvfilename(
+                subject, session, signal, epoch, chunk="all", only_glasser=only_glasser
+            )
         ]
         # if(any([x > older_than for x in mod_time])):
         #    print("Skipping %i %i %s %s because existing output is newer than requested date" % (
         #        subject, session, epoch, signal))
         #    continue
+        # def extract(
+        #    subject,
+        #    session,
+        #    epoch_type="stimulus",
+        #    signal_type="BB",
+        #    only_glasser=False,
         print("Submitting %i %i %s %s" % (subject, session, epoch, signal))
         parallel.pmap(
             extract,
-            [(subject, session, epoch, signal)],
+            [(subject, session, epoch, signal, only_glasser)],
             walltime="10:00:00",
             memory=40,
             nodes=1,
@@ -75,7 +84,7 @@ def submit(older_than="201911010000"):
         cnt += 1
 
 
-def lcmvfilename(subject, session, signal, epoch_type, chunk=None):
+def lcmvfilename(subject, session, signal, epoch_type, chunk=None, only_glasser=False):
     try:
         makedirs(path)
     except:
@@ -101,7 +110,11 @@ def lcmvfilename(subject, session, signal, epoch_type, chunk=None):
             signal,
             chunk,
         )
-    return join(path, filename)
+    if only_glasser:
+        filename = "ogl_" + filename
+        return join(path, "ogl", filename)
+    else:
+        return join(path, filename)
 
 
 def get_stim_epoch(subject, session):
@@ -184,6 +197,7 @@ def extract(
     session,
     epoch_type="stimulus",
     signal_type="BB",
+    only_glasser=False,
     BEM="three_layer",
     debug=False,
     chunks=100,
@@ -205,23 +219,30 @@ def extract(
 
     forward, bem, source = get_leadfield(subject, session, BEM)
 
-    labels = pymegsr.get_labels(
-        subject="S%02i" % subject,
-        filters=["*wang*.label", "*JWDG*.label"],
-        annotations=["HCPMMP1"],
-    )
-    labels = pymegsr.labels_exclude(
-        labels=labels,
-        exclude_filters=[
-            "wang2015atlas.IPS4",
-            "wang2015atlas.IPS5",
-            "wang2015atlas.SPL",
-            "JWDG_lat_Unknown",
-        ],
-    )
-    labels = pymegsr.labels_remove_overlap(
-        labels=labels, priority_filters=["wang", "JWDG"]
-    )
+    if not only_glasser:
+        labels = pymegsr.get_labels(
+            subject="S%02i" % subject,
+            filters=["*wang*.label", "*JWDG*.label"],
+            annotations=["HCPMMP1"],
+        )
+        labels = pymegsr.labels_exclude(
+            labels=labels,
+            exclude_filters=[
+                "wang2015atlas.IPS4",
+                "wang2015atlas.IPS5",
+                "wang2015atlas.SPL",
+                "JWDG_lat_Unknown",
+            ],
+        )
+        labels = pymegsr.labels_remove_overlap(
+            labels=labels, priority_filters=["wang", "JWDG"]
+        )
+    else:
+        labels = pymegsr.get_labels(
+            subject="S%02i" % subject,
+            filters=["select_nothing"],
+            annotations=["HCPMMP1"],
+        )
     # Now chunk Reconstruction into blocks of ~100 trials to save Memory
     fois = np.arange(10, 150, 5)
     lfois = np.arange(1, 10, 1)
@@ -250,7 +271,8 @@ def extract(
     set_n_threads(1)
 
     for i in range(0, len(events), chunks):
-        filename = lcmvfilename(subject, session, signal_type, epoch_type, chunk=i)
+        filename = lcmvfilename(subject, session, signal_type, epoch_type, chunk=i, 
+            only_glasser=only_glasser)
         logging.info(filename)
         # if os.path.isfile(filename):
         #    continue
