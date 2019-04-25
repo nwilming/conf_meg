@@ -117,15 +117,26 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
     return df
 
 
-def get_ssd_data(ssd_classifier="Ridge", restrict=True):
+def get_ssd_data(ssd_classifier="Ridge", restrict=True, ogl=False):
+
     try:
-        df = pd.read_hdf(
-            "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
-        )
+        if not ogl:
+            df = pd.read_hdf(
+                "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
+            )
+        else:
+            df = pd.read_hdf(
+                "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_ogl_20190424.hdf"
+            )
     except FileNotFoundError:
-        df = pd.read_hdf(
-            "/home/nwilming/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
-        )
+        if not ogl:
+            df = pd.read_hdf(
+                "/home/nwilming/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
+            )
+        else:
+            df = pd.read_hdf(
+                "/home/nwilming/conf_analysis/results/all_decoding_SSD_ogl_20190424.hdf"
+            )
     df = df.loc[~np.isnan(df.subject), :]
     df = df.query('Classifier=="%s"' % ssd_classifier)
     df.loc[:, "cluster"] = [
@@ -1310,28 +1321,52 @@ def get_label_in_mni(name, labels):
 
 
 @memory.cache()
-def get_ssd_idx(ssd, integration_slice=slice(0.4, 1.2)):    
-    ssd_indices = (
-        ssd.Averaged.stack()
-        .groupby(["subject", "signal", "cluster"])
-        .apply(get_ssd_index)
-        .unstack("signal")
-    )
+def get_ssd_idx(ssd, integration_slice=slice(0.4, 1.2), pair=False):
+    if not pair:    
+        ssd_indices = (
+            ssd.Averaged.stack()
+            .groupby(["subject", "signal", "cluster"])
+            .apply(get_ssd_index)
+            .unstack("signal")
+        )
+    else:
+        ssd_indices = (
+            ssd.Pair.stack()
+            .groupby(["subject", "signal", "cluster"])
+            .apply(get_ssd_index)
+            .unstack("signal")
+        )
+
     ssd_indices.loc[:, "SSDvsACC"] = (
         ssd_indices.loc[:, "SSD"] - ssd_indices.loc[:, "SSD_acc_contrast"]
     )
-    ssd_indices.loc[:, "hemi"] = "Averaged"
+    if not pair:
+        ssd_indices.loc[:, "hemi"] = "Averaged"
+    else:
+        ssd_indices.loc[:, "hemi"] = "Pair"
     ssd_indices.set_index("hemi", append=True, inplace=True)
-    ssd_indices2 = (
-        ssd.Lateralized.stack()
-        .groupby(["subject", "signal", "cluster"])
-        .apply(get_ssd_index)
-        .unstack("signal")
-    )
+
+    if not pair:
+        ssd_indices2 = (
+            ssd.Lateralized.stack()
+            .groupby(["subject", "signal", "cluster"])
+            .apply(get_ssd_index)
+            .unstack("signal")
+        )
+    else:
+        ssd_indices2 = (
+            ssd.Pair.stack()
+            .groupby(["subject", "signal", "cluster"])
+            .apply(get_ssd_index)
+            .unstack("signal")
+        )
     ssd_indices2.loc[:, "SSDvsACC"] = (
         ssd_indices2.loc[:, "SSD"] - ssd_indices2.loc[:, "SSD_acc_contrast"]
     )
-    ssd_indices2.loc[:, "hemi"] = "Lateralized"
+    if not pair:
+        ssd_indices2.loc[:, "hemi"] = "Lateralized"
+    else:
+        ssd_indices2.loc[:, "hemi"] = "Pair"
     ssd_indices2.set_index("hemi", append=True, inplace=True)
     return pd.concat([ssd_indices, ssd_indices2])
 
@@ -1723,7 +1758,7 @@ def fit_correlation_model(data, area):
     return df, r
 
 
-def plot_brain_color_legend(palette, clusters=None, ogl=False):
+def plot_brain_color_legend(palette, ogl=False):
     """
     Plot all ROIs on pysurfer brain. Colors given by palette.
     """
@@ -1746,9 +1781,11 @@ def plot_brain_color_legend(palette, clusters=None, ogl=False):
         labels = sr.labels_remove_overlap(labels=labels, priority_filters=["wang", "JWDG"])
         lc = ag.labels2clusters(labels, clusters)
     else:
+        from conf_analysis.meg import srtfr
         labels = sr.get_labels(
             subject="S04", filters=[], annotations=["HCPMMP1"]
         )
+        clusters = srtfr.get_ogl_clusters()
         lc = ag.labels2clusters(labels, clusters)
     brain = Brain("S04", "lh", "inflated", views=["lat"], background="w")
     for cluster, labelobjects in lc.items():
@@ -1760,6 +1797,34 @@ def plot_brain_color_legend(palette, clusters=None, ogl=False):
     
     return brain
 
+
+def plot_brain_color_annotations(palette, brain=None, low=0.3, high=0.7):
+    """
+    Plot all ROIs on pysurfer brain. Colors given by palette.
+
+    Assume that labels match annotation HCPMMP1
+    """
+    from surfer import Brain
+    import nibabel as nib
+    from pymeg import atlas_glasser as ag
+    labels, cmap, names = nib.freesurfer.read_annot('/Users/nwilming/u/freesurfer_subjects/fsaverage/label/lh.HCPMMP1.annot', orig_ids=True)
+    data = labels.astype(float)*0 + -1
+    for roi, color in palette.items():
+        idx = np.where([('L_'+roi+'_ROI') in l.decode('utf-8') for l in np.array(names)])[0]
+        if len(idx)==1:
+            tval = cmap[idx[0], -1]
+            #print(any(labels==tval))
+            data[labels==tval] = color
+            #print(np.unique(data))
+            pass
+        else:
+            raise RuntimeError('Non unique ROI name in palette')    
+    
+    if brain is None:
+        brain = Brain("fsaverage", "lh", "inflated", views=["lat"], background="w")    
+    brain.add_data(data, low, high, thresh=0, colormap='RdBu_r', alpha=0.9, colorbar=False)  
+    
+    return brain
 
 @memory.cache
 def get_posterior_diff(data, ref_data):
