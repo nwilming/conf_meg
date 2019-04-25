@@ -103,9 +103,14 @@ def figure2(df=None):
         plotter.plot()
 
         plt.tight_layout()
-    savefig(
-        "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/fig2.pdf"
-    )
+    try:
+        savefig(
+            "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/fig2.pdf"
+        )
+    except FileNotFoundError:
+        savefig(
+            "/home/student/n/nwilming/conf_fig2.pdf"
+        )
     return df
 
 
