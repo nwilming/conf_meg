@@ -219,7 +219,7 @@ def figure3(df=None, quick=False):
     return k, mdl
 
 
-def figure4(ssd=None, idx=None, brain=None, integration_slice=slice(0.4, 1.1)):
+def figure4(ssd=None, idx=None, brain=None, integration_slice=slice(0.4, 1.15)):
     from conf_analysis.meg import decoding_plots as dp
     if ssd is None:
         ssd = dp.get_ssd_data(restrict=False)
@@ -238,3 +238,6 @@ def figure4(ssd=None, idx=None, brain=None, integration_slice=slice(0.4, 1.1)):
     )
     return ssd, idx, brain 
 
+
+def sup_figure1(df=None):
+    pass
