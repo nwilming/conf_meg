@@ -946,7 +946,7 @@ def submit_aggregates(cluster="uke", only_glasser=False):
 
     for subject, epoch, session in product(
             [1, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 3, 9], 
-            [ "response"], 
+            ["stimulus"], 
             range(4)):
         parallel.pmap(
             aggregate,
@@ -989,10 +989,12 @@ def aggregate(subject, session, epoch, glasser=False):
             "/home/nwilming/conf_meg/sr_labeled/ogl/S%i-SESS%i-response-*-chunk*-lcmv.hdf"
             % (subject, session)
         )
-        all_clusters = ag.get_all_glasser_clusters()
+        #all_clusters = ag.get_all_glasser_clusters()
+        all_clusters = srtfr.get_ogl_clusters()
+        all_clusters = {'5L': all_clusters['5L'], 'PSL':all_clusters['PSL'], 'SFL':all_clusters['SFL']}
         filename = join(
-            "/home/nwilming/conf_meg/sr_labeled/aggs/",
-            "ogl_S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
+            "/home/nwilming/conf_meg/sr_labeled/aggs/ogl/",
+            "ms_ogl_S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
         )
     print('Will save agg as:', filename)
     if epoch == "stimulus":
