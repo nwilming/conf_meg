@@ -305,6 +305,43 @@ def asfuncof_lin(xval, data, edges=np.linspace(-.5, .5, 7), aggregate=np.mean):
     return centers, frac
 
 
+def fit_choice_logistic(df, summary=True):
+    cvals = (np.stack(df.contrast_probe)-0.5)
+    for i in range(10):
+        df.loc[:, 'C%i'%i] = cvals[:, i]
+    df.loc[:, 'conf0'] = (df.confidence-1)
+    df.loc[:, 'resp0'] = (df.response+1)/2
+    formula = 'resp0 ~ C0 + C1 + C2 + C3 + C4 + C5 + C6 + C7 + C8 + C9 + 1'
+    #formula = 'conf0 ~ np.abs(mc)'
+    #formula = 'conf0 ~ mc'
+    y, X = patsy.dmatrices(formula, df, return_type='dataframe')
+    log_res = sm.GLM(y, X, family=sm.families.Binomial())
+    results = log_res.fit(disp=False)
+    if summary:
+        print(results.summary())
+    predict = results.predict(X)
+    accuracy = (np.mean((predict.values>0.5) == y.values.ravel()))
+    return accuracy #log_res, results, y, predict
+
+def fit_conf_logistic(df, summary=True):
+    cvals = (np.stack(df.contrast_probe)-0.5)
+    for i in range(10):
+        df.loc[:, 'C%i'%i] = cvals[:, i]
+    df.loc[:, 'conf0'] = (df.confidence-1)
+    df.loc[:, 'resp0'] = (df.response+1)/2
+    formula = 'conf0 ~ C0 + C1 + C2 + C3 + C4 + C5 + C6 + C7 + C8 + C9 + 1'
+    #formula = 'conf0 ~ np.abs(mc)'
+    #formula = 'conf0 ~ mc'
+    y, X = patsy.dmatrices(formula, df, return_type='dataframe')
+    log_res = sm.GLM(y, X, family=sm.families.Binomial())
+    results = log_res.fit(disp=False)
+    if summary:
+        print(results.summary())
+    predict = results.predict(X)
+    accuracy = (np.mean((predict.values>0.5) == y.values.ravel()))
+    return accuracy #log_res, results, y, predict
+
+
 def fit_logistic(df, formula, summary=True):
     y, X = patsy.dmatrices(formula, df, return_type='dataframe')
     log_res = sm.GLM(y, X, family=sm.families.Binomial())
@@ -364,7 +401,7 @@ def plot_model(df, model, bins=[np.linspace(0, .25, 100), np.linspace(0, 1, 100)
 
 
 # Compute kernel data frame
-def get_pk(data, contrast_mean=0.5, response_field='response'):
+def get_pk(data, contrast_mean=0.5, response_field='response', include_ref=False):
     '''
     Converts data to a data frame that is long form for different contrast probes.
     I.e. indexed by trial, time and whether contrast was for chosen or non-chosen option.
@@ -378,10 +415,12 @@ def get_pk(data, contrast_mean=0.5, response_field='response'):
                      - (dr1.cbm * dr1.side)[:, np.newaxis])
     con_select1st = (np.vstack(dr2.contrast_probe) - contrast_mean
                      - (dr2.cbm * dr2.side)[:, np.newaxis])
-
-    sel = np.vstack((con_select2nd, 0 * con_select1st))
-    nsel = np.vstack((con_select1st, 0 * con_select2nd))
-
+    if include_ref:
+        sel = np.vstack((con_select2nd, 0 * con_select1st+contrast_mean))
+        nsel = np.vstack((con_select1st, 0 * con_select2nd+contrast_mean))
+    else:        
+        sel = con_select2nd
+        nsel = con_select1st
     sel = pd.DataFrame(sel)
     sel.index.name = 'trial'
     sel.columns.name = 'time'
@@ -400,16 +439,19 @@ def get_pk(data, contrast_mean=0.5, response_field='response'):
     return df
 
 
-def get_decision_kernel(data, contrast_mean=0.5, response_field='response'):
+def get_decision_kernel(data, contrast_mean=0.5, response_field='response', 
+        include_ref=False):
     kernel = (data.groupby(['snum'])
               .apply(lambda x: get_pk(x, contrast_mean=contrast_mean,
-                                      response_field=response_field))
+                                      response_field=response_field, 
+                                      include_ref=include_ref))
               .groupby(level=['snum', 'time', 'optidx']).mean()
               .reset_index())
 
     kernel_diff = (data.groupby(['snum'])
                    .apply(lambda x: get_pk(x, contrast_mean=contrast_mean,
-                                           response_field=response_field))
+                                           response_field=response_field,
+                                           include_ref=include_ref))
                    .groupby(level=['snum', 'time'])
                    .apply(lambda x: x.query('optidx==1').mean() + x.query('optidx==0').mean())
                    .reset_index())
@@ -424,9 +466,10 @@ def get_decision_kernel(data, contrast_mean=0.5, response_field='response'):
     return kernel
 
 
-def get_confidence_kernels(data, confidence_field='confidence', response_field='response'):
+def get_confidence_kernels(data, confidence_field='confidence', response_field='response',
+    contrast_mean=0):
     kernel = (data.groupby([confidence_field, 'snum'])
-              .apply(lambda x: get_pk(x, contrast_mean=0, response_field=response_field))
+              .apply(lambda x: get_pk(x, contrast_mean=contrast_mean, response_field=response_field))
               .groupby(level=[confidence_field, 'optidx', 'snum', 'time']).mean()
               .reset_index())
     condition = (kernel[confidence_field] * (kernel.optidx - 0.5))
@@ -440,9 +483,10 @@ def get_confidence_kernels(data, confidence_field='confidence', response_field='
     return kernel
 
 
-def get_confidence_kernel(data, confidence_field='confidence', response_field='response'):
+def get_confidence_kernel(data, confidence_field='confidence', 
+        response_field='response', contrast_mean=0):
     kernel = (data.groupby([confidence_field, 'snum'])
-              .apply(lambda x: get_pk(x, contrast_mean=0, response_field=response_field))
+              .apply(lambda x: get_pk(x, contrast_mean=contrast_mean, response_field=response_field))
               .groupby(level=['optidx', 'snum', 'time'])
               .apply(lambda x: x.query('%s==2' % confidence_field).mean()
                      - x.query('%s==1' % confidence_field).mean())
@@ -463,13 +507,16 @@ def get_confidence_kernel(data, confidence_field='confidence', response_field='r
     return kd
 
 
-def plot_kernel(kernel, colors, legend=True, trim=True):
+def plot_kernel(kernel, colors, legend=True, trim=False):
     g = sns.tsplot(time='time', unit='snum', value='contrast', condition='Kernel',
                    data=kernel, ci=95, color=colors, legend=legend)
 
-    plt.plot([0, 9], [0, 0], lw=1, color='k', alpha=0.5)
-    plt.yticks([-0.2, 0, 0.2])
+    #plt.plot([0, 9], [0, 0], lw=1, color='k', alpha=0.5)
+    plt.axhline(0, lw=1, color='k', alpha=0.5)
+    #plt.yticks([-0.03, 0, 0.03])
+    plt.yticks([-0.04, -0.02, 0, 0.02, 0.04])
     plt.xlim([-0.5, 9.25])
     plt.xlabel('Sample #')
-    sns.despine(trim=True, ax=plt.gca())
+    plt.xticks(np.arange(10), np.arange(10)+1)
+    sns.despine(trim=trim, ax=plt.gca())
     return g

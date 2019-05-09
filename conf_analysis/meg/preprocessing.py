@@ -141,7 +141,7 @@ def get_meta_from_ds():
             for block_in_raw, block_in_experiment in block_map[subject][session].items():
                 metas.append(get_block_meta(subject, session, block_in_raw, block_in_experiment))
     return metas
-    
+
 
 def get_block_meta(snum, session, block_in_raw, block_in_experiment):
     data = empirical.load_data()
