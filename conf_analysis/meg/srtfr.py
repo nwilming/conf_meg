@@ -152,7 +152,7 @@ def get_ogl_clusters():
     # fmt: on
 
     areas = {
-        area: ["L_{}_ROI-lh".format(area), "L_{}_ROI-lh".format(area)]
+        area: ["L_{}_ROI-lh".format(area), "R_{}_ROI-rh".format(area)]
         for area in areas
     }
 

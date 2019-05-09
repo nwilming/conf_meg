@@ -20,7 +20,7 @@ from functools import partial
 from itertools import product
 
 from sklearn import linear_model, discriminant_analysis, svm
-from sklearn.model_selection import cross_validate, RandomizedSearchCV
+from sklearn.model_selection import cross_validate, cross_val_predict,  RandomizedSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
@@ -377,7 +377,9 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value="contrast"):
     return pd.DataFrame(sample_scores)
 
 
-def midc_decoder(meta, data, area, latency=0, splitmc=True, target_col="response"):
+def midc_decoder(
+    meta, data, area, latency=0, splitmc=True, target_col="response", predict=False
+):
     """
     This signal decodes choices of participants based on local
     reconstructed brain activity. The decoding needs to be decoupled
@@ -419,25 +421,25 @@ def midc_decoder(meta, data, area, latency=0, splitmc=True, target_col="response
             sub_data = data.loc[sub_meta.index, :]
             sub_meta = sub_meta.loc[sub_data.index, :]
             # Buld target vector
-            target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
-
-            # logging.info(
-            #    "Class balance: %0.2f, Nr. of samples: %i"
-            #    % ((target == 1).astype(float).mean(), len(target))
-            # )
-            score = categorize(target, sub_data, target_time_point)
-            score.loc[:, "mc<0.5"] = mc
+            target = (sub_meta.loc[sub_data.index, target_col]).astype(int)            
+            if not predict:
+                score = categorize(target, sub_data, target_time_point, predict=False)
+                score.loc[:, "mc<0.5"] = mc
+            else:
+                score = categorize(target, sub_data, target_time_point, predict=True)
+                #score = score["SCVlin"]
+                score = pd.DataFrame(score, index=sub_data.index)
             scores.append(score)
         scores = pd.concat(scores)
     else:
-        # Buld target vector
-        target = (meta.loc[data.index, target_col]).astype(int)
-        # logging.info(
-        #    "Class balance: %0.2f, Nr. of samples: %i"
-        #    % ((target == 1).astype(float).mean(), len(target))
-        # )
-
-        scores = categorize(target, data, target_time_point)
+        # Buld target vector        
+        target = (meta.loc[data.index, target_col]).astype(int)        
+        if not predict:
+            scores = categorize(target, data, target_time_point, predict=False)
+        else:
+            scores = categorize(target, data, target_time_point, predict=True)
+            #scores = scores["SCVlin"]
+            scores = pd.DataFrame(scores, index=data.index)
     scores.loc[:, "area"] = str(area)
     scores.loc[:, "latency"] = latency
     return scores
@@ -454,7 +456,7 @@ def multiclass_roc(y_true, y_predict, **kwargs):
     )
 
 
-def categorize(target, data, latency):
+def categorize(target, data, latency, predict=False):
     """
     Expects a pandas series and a pandas data frame.
     Both need to be indexed with the same index.
@@ -476,20 +478,9 @@ def categorize(target, data, latency):
             "roc_auc": make_scorer(multiclass_roc, average="weighted"),
             "accuracy": "accuracy",
         }
-        #'recall': make_scorer(recall_score,
-        #                      average='weighted'),
-        #'precision': make_scorer(precision_score,
-        #                         average='weighted')}
     else:
         metrics = ["roc_auc", "accuracy", "precision", "recall"]
-    classifiers = {
-        "SCVrbf": svm.SVC(kernel="rbf"),
-        "SCVlin": svm.SVC(kernel="linear"),
-        "LDA": discriminant_analysis.LinearDiscriminantAnalysis(
-            shrinkage="auto", solver="eigen"
-        ),
-        "RForest": RandomForestClassifier(),
-    }
+    classifiers = {"SCVlin": svm.SVC(kernel="linear", probability=True)}
 
     scores = []
     for name, clf in list(classifiers.items()):
@@ -501,23 +492,30 @@ def categorize(target, data, latency):
                 (name, clf),
             ]
         )
-        # print('Running', name)
-        score = cross_validate(
-            clf,
-            data,
-            target,
-            cv=10,
-            scoring=metrics,
-            return_train_score=False,
-            n_jobs=1,
-        )
-        del score["fit_time"]
-        del score["score_time"]
-        score = {k: np.mean(v) for k, v in list(score.items())}
-        score["latency"] = latency
-        score["Classifier"] = name
-        scores.append(score)
-    return pd.DataFrame(scores)
+        if not predict:
+            score = cross_validate(
+                clf,
+                data,
+                target,
+                cv=10,
+                scoring=metrics,
+                return_train_score=False,
+                n_jobs=1,
+            )
+            del score["fit_time"]
+            del score["score_time"]
+            score = {k: np.mean(v) for k, v in list(score.items())}
+            score["latency"] = latency
+            score["Classifier"] = name
+            scores.append(score)
+        else:
+            scores = cross_val_predict(
+                clf, data, target, cv=10, method="predict_proba", n_jobs=1
+            )            
+    if not predict:
+        return pd.DataFrame(scores)
+    else:
+        return scores
 
 
 def SVMCV(params):
@@ -942,14 +940,17 @@ def get_path(epoch, subject, session, cache=False):
     return filenames
 
 
-def submit_aggregates(cluster="uke"):
+def submit_aggregates(cluster="uke", only_glasser=False):
     from pymeg import parallel
     import time
 
-    for subject, epoch, session in product(range(1, 16), ["response"], range(4)):
+    for subject, epoch, session in product(
+            [1, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 3, 9], 
+            ["stimulus"], 
+            range(4)):
         parallel.pmap(
             aggregate,
-            [(subject, session, epoch)],
+            [(subject, session, epoch, only_glasser)],
             name="agg" + str(session) + epoch + str(subject),
             tasks=8,
             memory=60,
@@ -957,31 +958,99 @@ def submit_aggregates(cluster="uke"):
         )
 
 
-def aggregate(subject, session, epoch):
+def aggregate(subject, session, epoch, glasser=False):
+    """
+    Glasser implies aggregating only the glasser ROIs
+    """
     from conf_analysis.meg import srtfr
-    from pymeg import aggregate_sr as asr
+    from pymeg import aggregate_sr as asr, atlas_glasser as ag
     from os.path import join
 
-    stim = (
-        "/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-stimulus-*-chunk*-lcmv.hdf"
-        % (subject, session)
-    )
-    resp = (
-        "/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-response-*-chunk*-lcmv.hdf"
-        % (subject, session)
-    )
-
-    all_clusters = srtfr.get_clusters()
+    if not glasser:
+        stim = (
+            "/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-stimulus-*-chunk*-lcmv.hdf"
+            % (subject, session)
+        )
+        resp = (
+            "/home/nwilming/conf_meg/sr_labeled/S%i-SESS%i-response-*-chunk*-lcmv.hdf"
+            % (subject, session)
+        )
+        all_clusters = srtfr.get_clusters()
+        filename = join(
+            "/home/nwilming/conf_meg/sr_labeled/aggs/",
+            "S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
+        )
+    else:
+        stim = (
+            "/home/nwilming/conf_meg/sr_labeled/ogl/S%i-SESS%i-stimulus-*-chunk*-lcmv.hdf"
+            % (subject, session)
+        )
+        resp = (
+            "/home/nwilming/conf_meg/sr_labeled/ogl/S%i-SESS%i-response-*-chunk*-lcmv.hdf"
+            % (subject, session)
+        )
+        #all_clusters = ag.get_all_glasser_clusters()
+        all_clusters = srtfr.get_ogl_clusters()
+        all_clusters = {'5L': all_clusters['5L'], 'PSL':all_clusters['PSL'], 'SFL':all_clusters['SFL']}
+        filename = join(
+            "/home/nwilming/conf_meg/sr_labeled/aggs/ogl/",
+            "ms_ogl_S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
+        )
+    print('Will save agg as:', filename)
     if epoch == "stimulus":
         agg = asr.aggregate_files(stim, stim, (-0.25, 0), all_clusters=all_clusters)
     elif epoch == "response":
         agg = asr.aggregate_files(resp, stim, (-0.25, 0), all_clusters=all_clusters)
-
-    filename = join(
-        "/home/nwilming/conf_meg/sr_labeled/aggs/",
-        "S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
-    )
     asr.agg2hdf(agg, filename)
+
+
+def slimdown_aggs(source):
+    from glob import glob
+    from os.path import join, split
+    sources = glob(join(source, 'ogl*.hdf'))
+    for source in sources:
+        path, fname = split(source)
+        dest = join(path, 'slimdown', fname)
+        print(source, ' -> ', dest)
+        slimdown_agg(source, dest, 'Pair')
+
+
+def slimdown_agg(source, dest, group, even=True):
+    import h5py
+    with h5py.File(source, 'r') as s, h5py.File(dest, 'w') as d:
+        paths = get_all_paths(s[group])
+        for p in paths:
+            #print('Copying ', p)        
+            hdf_copydset(s, d, s[p], even=even)        
+
+def get_all_paths(source):
+    if 'ndim' in dir(source):
+        return [source.name]
+    else:
+        paths = []        
+        for value in source.values():
+            paths += get_all_paths(value)
+        return paths
+
+def hdf_copydset(source, dest, dataset, even=True):
+    try:
+        group = dest[dataset.parent.name]
+    except KeyError:
+        group = dest.create_group(dataset.parent.name)
+    if even:
+        idx = slice(None, None, 2)
+    else:
+        idx = slice(1, None, 2)    
+    ds = group.create_dataset(dataset.name, data=dataset[:, idx])
+    
+    for key, item in dataset.attrs.items():
+        if key.startswith('col'):
+            ds.attrs[key] = item[idx]
+        else:
+            ds.attrs[key] = item
+
+
+
 
 
 def ensure_iter(input):
