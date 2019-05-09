@@ -241,6 +241,17 @@ def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
     """
     import time
 
+    # Kick out trials that have choice_rt < 0.225
+    meta = meta.set_index('hash')
+    choice_rt = meta.choice_rt
+    valid_trials = choice_rt[choice_rt>=0.225].index.values    
+    trial_id = agg.index.get_level_values('trial')
+    agg = agg.loc[np.isin(trial_id, valid_trials)]
+
+    # How many kicked out?
+    n_out = np.isin(trial_id.unique(), valid_trials, invert=True, unique=True).sum()
+    print('Kicking out %i (%0.2f percent) trials due to RT'%(n_out, n_out/len(trial_id.unique())))
+
     start = time.time()
     if latencies is None:
         latencies = agg.columns.get_level_values("time").values
