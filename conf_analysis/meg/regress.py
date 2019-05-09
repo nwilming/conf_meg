@@ -13,8 +13,6 @@ def get_motor_prediction(subject, latency, cluster='JWG_M1'):
         meta, data, cluster, latency=0, splitmc=True, target_col="response", predict=True
     )        
     return scores
-            
-
 
 
 def submit_cross_area_decoding():

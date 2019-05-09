@@ -380,7 +380,9 @@ def plot_stream_figures(
     contrasts=["all", "choice", "stimulus"],
     flip_cbar=False,
     suffix="",
-    gs=None
+    gs=None,
+    aspect='auto',
+    title_palette={}
 ):
     import matplotlib
     from pymeg import contrast_tfr_plots
@@ -416,7 +418,7 @@ def plot_stream_figures(
             "xticklabels": ["0"],
             "yticks": [25, 50, 75, 100],
             "yticklabels": [25, 50, 75, 100],
-            "xlabel": "time",
+            "xlabel": "Time",
             "ylabel": "Freq",
         },
     )
@@ -441,7 +443,7 @@ def plot_stream_figures(
         Plot("V1", "vfcPrimary", [0, middle], True, True),
         Plot("V2-V4", "vfcEarly", [1, middle], False, True),
         # Dorsal
-        Plot("V3ab", "vfcV3ab", [2, top], False, False),
+        Plot("V3A/B", "vfcV3ab", [2, top], False, False),
         Plot("IPS0/1", "vfcIPS01", [3, top], False, False),
         Plot("IPS2/3", "vfcIPS23", [4, top], False, False),
         Plot("aIPS", "JWG_aIPS", [5, top], False, False),
@@ -453,7 +455,7 @@ def plot_stream_figures(
         Plot("PHC", "vfcPHC", [5, bottom], False, True),
         
         
-        Plot("IPS P-Cent", "JWG_IPS_PCeS", [6, middle], False, True),
+        Plot("IPS/PostCeS", "JWG_IPS_PCeS", [6, middle], False, True),
         Plot("M1 (hand)", "JWG_M1", [7, middle], False, True),
     ]
 
@@ -466,8 +468,11 @@ def plot_stream_figures(
         fig = contrast_tfr_plots.plot_tfr_selected_rois(
             contrast_name, df, layout, conf, cluster_correct=stats, 
             cmap=cmap,
-            gs=gs
+            gs=gs,
+            aspect=aspect,
+            title_palette=title_palette
             )
+    return fig
         #plt.suptitle(contrast_name)
         #plt.savefig("/Users/nwilming/Desktop/nsf_%s-%s.pdf" % (contrast_name, suffix))
         #plt.savefig("/Users/nwilming/Desktop/nsf_%s-%s.svg" % (contrast_name, suffix))
