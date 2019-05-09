@@ -35,7 +35,7 @@ from joblib import Memory
 
 if "TMPDIR" in os.environ.keys():
     memory = Memory(cachedir=os.environ["PYMEG_CACHE_DIR"])
-    inpath = "/nfs/nwilming/MEG/sr_labeled/aggs/ogl/"
+    inpath = "/nfs/nwilming/MEG/sr_labeled/aggs/"
     outpath = "/nfs/nwilming/MEG/sr_decoding/"
 elif "RRZ_LOCAL_TMPDIR" in os.environ.keys():
     tmpdir = os.environ["RRZ_LOCAL_TMPDIR"]
@@ -158,7 +158,7 @@ def augment_meta(meta):
 
 
 def run_decoder(
-    subject, decoder, epoch, ntasks=n_jobs, hemis=["Pair"] #"Lateralized", "Averaged", 
+    subject, decoder, epoch, ntasks=n_jobs, hemis=["Pair", "Lateralized", "Averaged"], 
 ):
     """
     Parallelize across areas and hemis.
@@ -170,13 +170,13 @@ def run_decoder(
     from pymeg import aggregate_sr as asr
     from conf_analysis.meg import srtfr
 
-    clusters = srtfr.get_ogl_clusters()
+    clusters = srtfr.get_clusters()
     areas = clusters.keys()
-    #areas = [x for x in areas if 'vfcLO' in x]
+    areas = [x for x in areas if 'vfcLO' in x]
     print("Areas:", areas)
 
-    filenames = glob(join(inpath, "ogl_S%i_*_%s_agg.hdf" % (subject, epoch)))
-
+    filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, epoch)))
+    print(filenames)
     meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))
     # meta = meta.dropna(subset=['contrast_probe'])
     args = []
@@ -201,7 +201,7 @@ def run_decoder(
         scores.extend(sc)
     print("Concat ", len(scores))
     scores = pd.concat(scores)
-    filename = outpath + "/concatogl_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
+    filename = outpath + "/concatLO_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
     scores.loc[:, "subject"] = subject
 
     print("Saving as ", filename)
