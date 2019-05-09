@@ -79,7 +79,7 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
             )
         except FileNotFoundError:
             df = pd.read_hdf(
-                "/net/store/users/nwilming/all_decoding_merged_w0415_20190423.hdf"
+                "/net/store/users/nwilming/all_decoding_merged_w0415_20190423.hdf")
     else:
         df = pd.read_hdf(
             "/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_20190424.hdf"

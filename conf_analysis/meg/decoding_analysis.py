@@ -991,10 +991,10 @@ def aggregate(subject, session, epoch, glasser=False):
         )
         #all_clusters = ag.get_all_glasser_clusters()
         all_clusters = srtfr.get_ogl_clusters()
-        all_clusters = {'5L': all_clusters['5L'], 'PSL':all_clusters['PSL'], 'SFL':all_clusters['SFL']}
+        #all_clusters = {'5L': all_clusters['5L'], 'PSL':all_clusters['PSL'], 'SFL':all_clusters['SFL']}
         filename = join(
             "/home/nwilming/conf_meg/sr_labeled/aggs/ogl/",
-            "ms_ogl_S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
+            "ogl_S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
         )
     print('Will save agg as:', filename)
     if epoch == "stimulus":
