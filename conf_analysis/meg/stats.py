@@ -24,15 +24,15 @@ def auc_get_sig_cluster_posterior(data):
     Get uncertainty around average mean by means of bayesian 
     inference. For AUC values, nothing else.
 
-    data is n_signals x n_areas x n_subjects
     """
     import pymc3 as pm
 
     data = data.T
     n_obs, n_clust, n_sig = data.shape
     s = (n_clust, n_sig)
-    # n_sig, n_clust, n_obs = data.shape
-    print(n_sig, n_clust, n_obs)
+    if np.isnan(data).sum()>0:
+        print('Missing values in data. Setting to MA / will be imputed')
+        data = np.ma.masked_invalid(data)
     with pm.Model() as model:
         mu_ind = pm.Normal("mu_ind", 0.5, 1, shape=s)
         std_ind = pm.Uniform("std_ind", lower=0, upper=5, shape=s)
@@ -44,14 +44,13 @@ def auc_get_sig_cluster_posterior(data):
         k = pm.sample(tune=1500, draws=1500)
     return k, model
 
+#sub = 7 cluster=17 sig=1
 
 @memory.cache
 def auc_get_sig_cluster_group_diff_posterior(dataA, dataB):
     """
     Get uncertainty around average mean by means of bayesian 
     inference. For AUC values, nothing else.
-
-    data is n_signals x n_areas x n_subjects
     """
     import pymc3 as pm
 
@@ -59,6 +58,12 @@ def auc_get_sig_cluster_group_diff_posterior(dataA, dataB):
     dataB = dataB.T
     n_obs, n_clust, n_sig = dataA.shape
     s = (n_clust, n_sig)        
+    if np.isnan(dataA).sum()>0:
+        print('Missing values in data. Setting to MA / will be imputed')
+        dataA = np.ma.masked_invalid(dataA)
+    if np.isnan(dataB).sum()>0:
+        print('Missing values in data. Setting to MA / will be imputed')
+        dataB = np.ma.masked_invalid(dataB)
     with pm.Model() as model:
         muA = pm.Normal("mu_diff", 0.5, 1, shape=s)
         stdA = pm.Uniform("stdA", lower=0, upper=5, shape=s)
