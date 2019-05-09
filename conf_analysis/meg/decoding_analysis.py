@@ -35,7 +35,8 @@ from joblib import Memory
 
 if "TMPDIR" in os.environ.keys():
     memory = Memory(cachedir=os.environ["PYMEG_CACHE_DIR"])
-    inpath = "/nfs/nwilming/MEG/sr_labeled/aggs/ogl/"
+    inpath = "/nfs/nwilming/MEG/sr_labeled/aggs/"
+    oglinpath = "/nfs/nwilming/MEG/sr_labeled/aggs/ogl"
     outpath = "/nfs/nwilming/MEG/sr_decoding/"
 elif "RRZ_LOCAL_TMPDIR" in os.environ.keys():
     tmpdir = os.environ["RRZ_LOCAL_TMPDIR"]
@@ -44,6 +45,7 @@ elif "RRZ_LOCAL_TMPDIR" in os.environ.keys():
     memory = Memory(cachedir=tmpdir)
 else:
     inpath = "/home/nwilming/conf_meg/sr_labeled/aggs"
+    oglinpath = "/home/nwilming/conf_meg/sr_labeled/aggs/ogl"
     outpath = "/home/nwilming/conf_meg/sr_decoding"
     memory = Memory(cachedir=metadata.cachedir)
 
@@ -98,7 +100,8 @@ def set_n_threads(n):
 
 
 def submit(
-    cluster="SLURM", subjects=range(1, 16), ssd=False, epochs=["stimulus", "response"]
+    cluster="SLURM", subjects=range(1, 16), ssd=False, epochs=["stimulus", "response"],
+    ogl=False
 ):
     from pymeg import parallel
 
@@ -131,7 +134,7 @@ def submit(
         )
 
     for subject, epoch, dcd in product(subjects, epochs, decoder):
-        filename = outpath + "/concatLO_S%i-%s-%s-decoding.hdf" % (subject, dcd, epoch)
+        filename = get_save_path(subject, decoder, epoch, ogl=ogl) 
         import os.path
 
         if os.path.isfile(filename):
@@ -144,9 +147,12 @@ def submit(
         )
 
 
-def get_save_path(subject, decoder, area, epoch):
-    filename = "S%i-%s-%s-%s-decoding.hdf" % (subject, decoder, epoch, area)
-    return join(outpath, filename)
+def get_save_path(subject, decoder, epoch, ogl=False):
+    if ogl:
+        filename = outpath + "/concatogl_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
+    else:    
+        filename = outpath + "/concat_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
+    return filename
 
 
 def augment_meta(meta):
@@ -158,7 +164,7 @@ def augment_meta(meta):
 
 
 def run_decoder(
-    subject, decoder, epoch, ntasks=n_jobs, hemis=["Pair"] #"Lateralized", "Averaged", 
+    subject, decoder, epoch, ntasks=n_jobs, hemis=["Pair", "Lateralized", "Averaged"], ogl=False 
 ):
     """
     Parallelize across areas and hemis.
@@ -169,13 +175,15 @@ def run_decoder(
 
     from pymeg import aggregate_sr as asr
     from conf_analysis.meg import srtfr
-
-    clusters = srtfr.get_ogl_clusters()
+    if ogl:
+        clusters = srtfr.get_ogl_clusters()
+        filenames = glob(join(oglinpath, "ogl_S%i_*_%s_agg.hdf" % (subject, epoch)))
+    else:
+        clusters = srtfr.get_clusters()
+        filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, epoch)))
     areas = clusters.keys()
     #areas = [x for x in areas if 'vfcLO' in x]
     print("Areas:", areas)
-
-    filenames = glob(join(inpath, "ogl_S%i_*_%s_agg.hdf" % (subject, epoch)))
 
     meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))
     # meta = meta.dropna(subset=['contrast_probe'])
@@ -201,12 +209,11 @@ def run_decoder(
         scores.extend(sc)
     print("Concat ", len(scores))
     scores = pd.concat(scores)
-    filename = outpath + "/concatogl_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
+    filename = get_save_path(subject, decoder, epoch, ogl=ogl) 
+    #outpath + "/concatogl_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
     scores.loc[:, "subject"] = subject
-
     print("Saving as ", filename)
     scores.to_hdf(filename, "decoding")
-
     p.terminate()
     return scores
 
@@ -249,7 +256,7 @@ def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
     agg = agg.loc[np.isin(trial_id, valid_trials)]
 
     # How many kicked out?
-    n_out = np.isin(trial_id.unique(), valid_trials, invert=True, unique=True).sum()
+    n_out = np.isin(trial_id.unique(), valid_trials, invert=True, assume_unique=True).sum()
     print('Kicking out %i (%0.2f percent) trials due to RT'%(n_out, n_out/len(trial_id.unique())))
 
     start = time.time()
