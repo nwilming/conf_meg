@@ -149,7 +149,7 @@ def get_block_meta(snum, session, block_in_raw, block_in_experiment):
     filename = metadata.get_raw_filename(snum, session)
     raw = mne.io.read_raw_ctf(filename, system_clock='ignore')
     trials = blocks(raw)
-    if not (block_in_raw in unique(trials['block'])):
+    if not (block_in_raw in np.unique(trials['block'])):
         err_msg = 'Error when processing %i, %i, %i, %i, data file = %s' % (
             snum, session, block_in_raw, block_in_experiment, filename)
         raise RuntimeError(err_msg)
