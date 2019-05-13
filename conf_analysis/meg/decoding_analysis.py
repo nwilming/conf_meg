@@ -182,9 +182,8 @@ def run_decoder(
         clusters = srtfr.get_clusters()
         filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, epoch)))
     areas = clusters.keys()
-    #areas = [x for x in areas if 'vfcLO' in x]
+    areas = [x for x in areas if 'vfcLO' in x]
     print("Areas:", areas)
-
     meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))
     # meta = meta.dropna(subset=['contrast_probe'])
     args = []
