@@ -75,7 +75,7 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
     if not ogl:
         try:
             df = pd.read_hdf(
-                "/Users/nwilming/u/conf_analysis/results/all_decoding_merged_w0415_20190423.hdf"
+                "/Users/nwilming/u/conf_analysis/results/all_decoding_20190513.hdf"
             )
         except FileNotFoundError:
             df = pd.read_hdf(
@@ -83,7 +83,7 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
             )
     else:
         df = pd.read_hdf(
-            "/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_20190424.hdf"
+            "/Users/nwilming/u/conf_analysis/results/obsolete_decoding/all_decoding_ogl_20190424.hdf"
         )
     df.loc[:, "latency"] = df.latency.round(3)
     idnan = np.isnan(df.subject)
@@ -128,11 +128,11 @@ def get_ssd_data(ssd_classifier="Ridge", restrict=True, ogl=False):
     try:
         if not ogl:
             df = pd.read_hdf(
-                "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
+                "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_20190513.hdf"
             )
         else:
             df = pd.read_hdf(
-                "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_ogl_20190424.hdf"
+                "/Users/nwilming/u/conf_analysis/results/obsolete_decoding/all_decoding_SSD_ogl_20190424.hdf"
             )
     except FileNotFoundError:
         if not ogl:
@@ -477,6 +477,7 @@ class StreamPlotter(object):
             i = 0
             col = color[0].lower()
             offsets = {"r": 0.2, "b": 0.19, "g": 0.18}
+
             ax.fill_between(
                 latency,
                 hdi[:, 0],
@@ -486,11 +487,14 @@ class StreamPlotter(object):
                 edgecolor=(0, 0, 0, 0),
                 lw=0,
             )
+
             ax.plot(latency, mu, color=col)
             tvals, pvals = cluster_test[key]
-            # print(hemi, cluster)
-            # if (hemi=="Lateralized") and (cluster=="JWG_M1"):
-            #    import pdb; pdb.set_trace()
+            if sum(pvals<0.05)>0:
+                lat = latency[pvals<0.05].min()
+                print('DCD, %s, %s, earliest significant: %f'%(cluster, signal, lat))            
+            else:
+                print('DCD, %s, %s, earliest significant: None'%(cluster, signal))            
             draw_sig(ax, latency, pvals < 0.05, offsets[col], col)
 
 
