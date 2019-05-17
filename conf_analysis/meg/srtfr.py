@@ -161,11 +161,20 @@ def get_ogl_clusters():
 
 @memory.cache(ignore=["scratch"])
 def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=False):
-    if subject < 8:
+    if subject <= 8:
         hemi = "rh_is_ipsi"
     else:
         hemi = "lh_is_ipsi"
     hemis = [hemi, "avg"]
+    
+
+    new_contrasts = {}
+    for key, value in contrasts.items():
+        new_contrasts[key+'lat'] = [value[0], value[1], hemi]
+        new_contrasts[key+'avg'] = [value[0], value[1], 'avg']
+    contrasts = new_contrasts
+    print(contrasts)
+
     from os.path import join
 
     stim, resp = [], []
@@ -204,7 +213,7 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=Fals
         try:
             contrast = compute_contrast(
                 contrasts,
-                hemis,
+                #hemis,
                 stim,
                 stim,
                 meta,
@@ -223,7 +232,7 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=Fals
         try:
             contrast = compute_contrast(
                 contrasts,
-                hemis,
+                #hemis,
                 resp,
                 stim,
                 meta,
@@ -316,7 +325,7 @@ def precompute_stats(contrast, epoch, hemi):
     from pymeg import atlas_glasser
 
     df = pd.read_hdf(
-        "/home/nwilming/conf_analysis/results/all_contrasts_confmeg-20190308.hdf"
+        "/home/nwilming/conf_analysis/results/all_contrasts_confmeg-20190516.hdf"
     )
     if epoch == "stimulus":
         time_cutoff = (-0.5, 1.35)
