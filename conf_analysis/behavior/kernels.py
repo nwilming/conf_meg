@@ -16,7 +16,7 @@ from sklearn.linear_model import LogisticRegression
 
 
 def get_decision_kernel(df):
-    fluct = (np.vstack(df.contrast_probe)  - (df.cbm * df.side)[:, np.newaxis])
+    fluct = (np.vstack(df.contrast_probe))#  - (df.cbm * df.side)[:, np.newaxis])
     resp = df.response
     idnan = np.isnan(resp)
     ks = kernel(fluct[~idnan, :], resp.values[~idnan])
@@ -29,7 +29,7 @@ def get_decision_kernel(df):
 def get_confidence_kernel(df):
     res = {}
     for resp_id, rd in df.groupby('response'):
-        fluct = (np.vstack(rd.contrast_probe)  - (rd.cbm * rd.side)[:, np.newaxis])
+        fluct = (np.vstack(rd.contrast_probe))#  - (rd.cbm * rd.side)[:, np.newaxis])
         resp = 2*(rd.confidence-1.5)
         idnan = np.isnan(resp)
         res[resp_id] = kernel(fluct[~idnan, :], resp.values[~idnan])[0]-0.5
@@ -137,7 +137,7 @@ def kernel_err(stim, d, error=False, Nboot=500):
 #    return kernel,area_total,PRI_total
 
 
-def kernel(stim, d, error=False, Nboot=500):
+def kernel(stim, d):
     '''
     Computes the kernel and the standard error with bootstrap.
     inputs:
@@ -150,36 +150,13 @@ def kernel(stim, d, error=False, Nboot=500):
     Nframe = len(stim[0])
     Nstim = len(stim)
     kernel = np.zeros(Nframe)
-    kernel_error = np.zeros(Nframe)
-    d = (-1) * d
-    if not error:
-        aux_kernel = np.zeros(Nframe)
-        for iframe in range(Nframe):
-            fpr, tpr, _ = roc_curve(d, stim[:, iframe])
-            aux_kernel[iframe] = auc(tpr, fpr)
-        kernel = aux_kernel
-    else:
-        #        if Nboot is not None:
-        #            Nboot=len(stim)
-
-        aux_kernel = np.zeros((Nframe, Nboot))
-        indexs = np.random.randint(0, Nstim, (Nboot, Nstim))
-#        print indexs[0]
-#        print d[indexs[0]]
-
-        for iboot in range(Nboot):
-            if iboot % 100 == 0:
-                print(iboot)
-            for iframe in range(Nframe):
-                fpr, tpr, _ = roc_curve(d[indexs[iboot]], stim[
-                                        indexs[iboot], iframe])
-                aux_kernel[iframe][iboot] = auc(tpr, fpr)
-
-        for iframe in range(Nframe):
-            kernel[iframe] = np.mean(aux_kernel[iframe])
-            kernel_error[iframe] = np.std(aux_kernel[iframe])
-
-    return kernel, kernel_error
+    d = (-1) * d    
+    aux_kernel = np.zeros(Nframe)
+    for iframe in range(Nframe):
+        fpr, tpr, _ = roc_curve(d, stim[:, iframe])
+        aux_kernel[iframe] = auc(tpr, fpr)
+    kernel = aux_kernel
+    return kernel, None
 
 
 def stim2frames(stim, Nframes):
