@@ -104,7 +104,10 @@ def submit(
     ogl=False
 ):
     from pymeg import parallel
-
+    if ogl:
+        hemis = ['Pair']
+    else:
+        hemis = ["Pair", "Lateralized", "Averaged"],
     decoder = decoders().keys()
     if ssd:
         decoder = [d for d in decoder if "SSD" in d]
@@ -142,7 +145,7 @@ def submit(
             continue
         pmap(
             run_decoder,
-            [(subject, dcd, epoch)],
+            [(subject, dcd, epoch, hemis, ogl)],
             name="DCD" + dcd + epoch + str(subject),
         )
 
@@ -164,7 +167,7 @@ def augment_meta(meta):
 
 
 def run_decoder(
-    subject, decoder, epoch, ntasks=n_jobs, hemis=["Pair", "Lateralized", "Averaged"], ogl=False 
+    subject, decoder, epoch, hemis=["Pair", "Lateralized", "Averaged"], ogl=False, ntasks=n_jobs, 
 ):
     """
     Parallelize across areas and hemis.
@@ -181,8 +184,9 @@ def run_decoder(
     else:
         clusters = srtfr.get_clusters()
         filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, epoch)))
+    print(filenames)
     areas = clusters.keys()
-    areas = [x for x in areas if 'vfcLO' in x]
+    areas = [x for x in areas if not x.startswith('NSWFRONT')]
     print("Areas:", areas)
     meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))
     # meta = meta.dropna(subset=['contrast_probe'])
@@ -248,15 +252,17 @@ def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
     import time
 
     # Kick out trials that have choice_rt < 0.225
+    print(meta.head())
     meta = meta.set_index('hash')
     choice_rt = meta.choice_rt
     valid_trials = choice_rt[choice_rt>=0.225].index.values    
     trial_id = agg.index.get_level_values('trial')
     agg = agg.loc[np.isin(trial_id, valid_trials)]
-
+    meta = meta.reset_index()
     # How many kicked out?
     n_out = np.isin(trial_id.unique(), valid_trials, invert=True, assume_unique=True).sum()
-    print('Kicking out %i (%0.2f percent) trials due to RT'%(n_out, n_out/len(trial_id.unique())))
+    n_all = len(trial_id.unique())
+    print('Kicking out %i/%i (%0.2f percent) trials due to RT'%(n_out, n_all, n_out/n_all))
 
     start = time.time()
     if latencies is None:
