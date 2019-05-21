@@ -94,12 +94,14 @@ def eval_stim_latency(
     weights = {}
     shuff_weights = {}
     iweights = {}
+    intweights = {}
     for j, i in enumerate(latency_stim):
         results[j][0].loc[:, "latency"] = i
         sc.append(results[j][0])
         weights[i] = results[j][1]
         shuff_weights[i] = results[j][2]
         iweights[i] = results[j][3]
+            
     scores = pd.concat(sc, 0)
     pickle.dump(
         {
@@ -134,9 +136,11 @@ def eval_all_subs(latency_motor=1.4, latency_stim=0.18, baseline_correct=False,
     weights = []
     sweights = []
     iweights = []
+    integrator_weights = []
+    integrator_scores = []
     print("test")
     for subject in range(1, 16):
-        s, w, ss, sw, si, iw = eval_coupling(
+        s, w, ss, sw, si, iw, sint, wint = eval_coupling(
             subject,
             latency_motor=latency_motor,
             latency_stim=latency_stim,
@@ -149,8 +153,11 @@ def eval_all_subs(latency_motor=1.4, latency_stim=0.18, baseline_correct=False,
         sweights.append(sw)
         iscores.append(si)
         iweights.append(iw)
+        integrator_scores.append(sint)
+        integrator_weights.append(wint)
     scores = pd.DataFrame(
-        {"corr": scores, "1smp_corr": iscores, "shuff_corr": shuffled_scores}
+        {"corr": scores, "1smp_corr": iscores, 'integrator_corr':integrator_scores, 
+        "shuff_corr": shuffled_scores}
     )
     scores.loc[:, "subject"] = np.arange(1, 16)
     scores.loc[:, 'motor_area'] = motor_area
@@ -177,7 +184,8 @@ def eval_coupling(
         latency_stim,
         add_contrast=False,
         zscore=True,
-        freq_bands=[0, 8, 39, 61, 100],
+        freq_bands=[45, 65],
+        #freq_bands=[0, 8, 39, 61, 100],
     )
     if baseline_correct:
         base, tpc, freqs = build_design_matrix(
@@ -187,7 +195,8 @@ def eval_coupling(
             0,
             add_contrast=False,
             zscore=True,
-            freq_bands=[0, 8, 39, 61, 100],
+            freq_bands=[45, 65],
+            #freq_bands=[0, 8, 39, 61, 100],
         )
         X = X - base
 
@@ -196,9 +205,11 @@ def eval_coupling(
         shuffle(lodds), X, n_iter=250, pcdist=sp_randint(5, 40)
     )
     inst_corr, iweights, _ = coupling(lodds, X[:, -2:], n_iter=250, pcdist=None)
+    integrator_corr, integrator_weights, _ = coupling(lodds, X.sum(1).reshape(-1, 1), n_iter=250, pcdist=None)
+
     return (score, weight_to_act(X, weights, intercept), 
         shuffled_score, weight_to_act(X, shuffled_weights, s_intercept), 
-        inst_corr, iweights)
+        inst_corr, iweights, integrator_corr, integrator_weights)
 
 
 @memory.cache()
@@ -341,15 +352,6 @@ def coupling(target, X, n_iter=50, pcdist=sp_randint(5, 40)):
         n_jobs=1,
     )
 
-    #coefs = np.stack(
-    #    [
-    #        np.dot(
-    #            o.best_estimator_.steps[-1][1].coef_,
-    #            o.best_estimator_.steps[-2][1].components_,
-    #        )
-    #        for o in scores["estimator"]
-    #    ]
-    #)
     coefs = np.stack(
         [            
             o.best_estimator_.steps[-1][1].coef_   
