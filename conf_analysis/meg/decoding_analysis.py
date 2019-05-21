@@ -20,7 +20,11 @@ from functools import partial
 from itertools import product
 
 from sklearn import linear_model, discriminant_analysis, svm
-from sklearn.model_selection import cross_validate, cross_val_predict,  RandomizedSearchCV
+from sklearn.model_selection import (
+    cross_validate,
+    cross_val_predict,
+    RandomizedSearchCV,
+)
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
@@ -45,11 +49,11 @@ elif "RRZ_LOCAL_TMPDIR" in os.environ.keys():
     memory = Memory(cachedir=tmpdir)
 else:
     inpath = "/home/nwilming/conf_meg/sr_labeled/aggs"
-    oglinpath = "/home/nwilming/conf_meg/sr_labeled/aggs/ogl"
+    oglinpath = "/home/nwilming/conf_meg/sr_labeled/aggs/ogl/slimdown"
     outpath = "/home/nwilming/conf_meg/sr_decoding"
     memory = Memory(cachedir=metadata.cachedir)
 
-n_jobs = 15
+n_jobs = 8
 
 n_trials = {
     1: {"stimulus": 1565, "response": 245},
@@ -85,9 +89,9 @@ def decoders():
         "CONF_unsigned": partial(
             midc_decoder, splitmc=False, target_col="unsigned_confidence"
         ),
-        "CONF_unsign_split": partial(
-            midc_decoder, splitmc=True, target_col="unsigned_confidence"
-        ),
+        # "CONF_unsign_split": partial(
+        #    midc_decoder, splitmc=True, target_col="unsigned_confidence"
+        # ),
     }
 
 
@@ -100,14 +104,18 @@ def set_n_threads(n):
 
 
 def submit(
-    cluster="SLURM", subjects=range(1, 16), ssd=False, epochs=["stimulus", "response"],
-    ogl=False
+    cluster="SLURM",
+    subjects=range(1, 16),
+    ssd=False,
+    epochs=["stimulus", "response"],
+    ogl=False,
 ):
     from pymeg import parallel
+
     if ogl:
-        hemis = ['Pair']
+        hemis = ["Pair"]
     else:
-        hemis = ["Pair", "Lateralized", "Averaged"],
+        hemis = (["Pair", "Lateralized", "Averaged"],)
     decoder = decoders().keys()
     if ssd:
         decoder = [d for d in decoder if "SSD" in d]
@@ -137,7 +145,7 @@ def submit(
         )
 
     for subject, epoch, dcd in product(subjects, epochs, decoder):
-        filename = get_save_path(subject, decoder, epoch, ogl=ogl) 
+        filename = get_save_path(subject, decoder, epoch, ogl=ogl)
         import os.path
 
         if os.path.isfile(filename):
@@ -152,9 +160,17 @@ def submit(
 
 def get_save_path(subject, decoder, epoch, ogl=False):
     if ogl:
-        filename = outpath + "/concatogl_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
-    else:    
-        filename = outpath + "/concat_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
+        filename = outpath + "/concatogl_S%i-%s-%s-decoding.hdf" % (
+            subject,
+            decoder,
+            epoch,
+        )
+    else:
+        filename = outpath + "/concat_S%i-%s-%s-decoding.hdf" % (
+            subject,
+            decoder,
+            epoch,
+        )
     return filename
 
 
@@ -167,7 +183,12 @@ def augment_meta(meta):
 
 
 def run_decoder(
-    subject, decoder, epoch, hemis=["Pair", "Lateralized", "Averaged"], ogl=False, ntasks=n_jobs, 
+    subject,
+    decoder,
+    epoch,
+    hemis=["Pair", "Lateralized", "Averaged"],
+    ogl=False,
+    ntasks=n_jobs,
 ):
     """
     Parallelize across areas and hemis.
@@ -178,6 +199,7 @@ def run_decoder(
 
     from pymeg import aggregate_sr as asr
     from conf_analysis.meg import srtfr
+
     if ogl:
         clusters = srtfr.get_ogl_clusters()
         filenames = glob(join(oglinpath, "ogl_S%i_*_%s_agg.hdf" % (subject, epoch)))
@@ -186,7 +208,7 @@ def run_decoder(
         filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, epoch)))
     print(filenames)
     areas = clusters.keys()
-    areas = [x for x in areas if not x.startswith('NSWFRONT')]
+    areas = [x for x in areas if not x.startswith("NSWFRONT")]
     print("Areas:", areas)
     meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))
     # meta = meta.dropna(subset=['contrast_probe'])
@@ -212,8 +234,8 @@ def run_decoder(
         scores.extend(sc)
     print("Concat ", len(scores))
     scores = pd.concat(scores)
-    filename = get_save_path(subject, decoder, epoch, ogl=ogl) 
-    #outpath + "/concatogl_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
+    filename = get_save_path(subject, decoder, epoch, ogl=ogl)
+    # outpath + "/concatogl_S%i-%s-%s-decoding.hdf" % (subject, decoder, epoch)
     scores.loc[:, "subject"] = subject
     print("Saving as ", filename)
     scores.to_hdf(filename, "decoding")
@@ -253,16 +275,21 @@ def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
 
     # Kick out trials that have choice_rt < 0.225
     print(meta.head())
-    meta = meta.set_index('hash')
+    meta = meta.set_index("hash")
     choice_rt = meta.choice_rt
-    valid_trials = choice_rt[choice_rt>=0.225].index.values    
-    trial_id = agg.index.get_level_values('trial')
+    valid_trials = choice_rt[choice_rt >= 0.225].index.values
+    trial_id = agg.index.get_level_values("trial")
     agg = agg.loc[np.isin(trial_id, valid_trials)]
     meta = meta.reset_index()
     # How many kicked out?
-    n_out = np.isin(trial_id.unique(), valid_trials, invert=True, assume_unique=True).sum()
+    n_out = np.isin(
+        trial_id.unique(), valid_trials, invert=True, assume_unique=True
+    ).sum()
     n_all = len(trial_id.unique())
-    print('Kicking out %i/%i (%0.2f percent) trials due to RT'%(n_out, n_all, n_out/n_all))
+    print(
+        "Kicking out %i/%i (%0.2f percent) trials due to RT"
+        % (n_out, n_all, n_out / n_all)
+    )
 
     start = time.time()
     if latencies is None:
@@ -444,24 +471,24 @@ def midc_decoder(
             sub_data = data.loc[sub_meta.index, :]
             sub_meta = sub_meta.loc[sub_data.index, :]
             # Buld target vector
-            target = (sub_meta.loc[sub_data.index, target_col]).astype(int)            
+            target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
             if not predict:
                 score = categorize(target, sub_data, target_time_point, predict=False)
                 score.loc[:, "mc<0.5"] = mc
             else:
                 score = categorize(target, sub_data, target_time_point, predict=True)
-                #score = score["SCVlin"]
+                # score = score["SCVlin"]
                 score = pd.DataFrame(score, index=sub_data.index)
             scores.append(score)
         scores = pd.concat(scores)
     else:
-        # Buld target vector        
-        target = (meta.loc[data.index, target_col]).astype(int)        
+        # Buld target vector
+        target = (meta.loc[data.index, target_col]).astype(int)
         if not predict:
             scores = categorize(target, data, target_time_point, predict=False)
         else:
             scores = categorize(target, data, target_time_point, predict=True)
-            #scores = scores["SCVlin"]
+            # scores = scores["SCVlin"]
             scores = pd.DataFrame(scores, index=data.index)
     scores.loc[:, "area"] = str(area)
     scores.loc[:, "latency"] = latency
@@ -534,7 +561,7 @@ def categorize(target, data, latency, predict=False):
         else:
             scores = cross_val_predict(
                 clf, data, target, cv=10, method="predict_proba", n_jobs=1
-            )            
+            )
     if not predict:
         return pd.DataFrame(scores)
     else:
@@ -968,9 +995,8 @@ def submit_aggregates(cluster="uke", only_glasser=False):
     import time
 
     for subject, epoch, session in product(
-            [1, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 3, 9], 
-            ["stimulus"], 
-            range(4)):
+        [1, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 3, 9], ["stimulus"], range(4)
+    ):
         parallel.pmap(
             aggregate,
             [(subject, session, epoch, only_glasser)],
@@ -1012,14 +1038,14 @@ def aggregate(subject, session, epoch, glasser=False):
             "/home/nwilming/conf_meg/sr_labeled/ogl/S%i-SESS%i-response-*-chunk*-lcmv.hdf"
             % (subject, session)
         )
-        #all_clusters = ag.get_all_glasser_clusters()
+        # all_clusters = ag.get_all_glasser_clusters()
         all_clusters = srtfr.get_ogl_clusters()
-        #all_clusters = {'5L': all_clusters['5L'], 'PSL':all_clusters['PSL'], 'SFL':all_clusters['SFL']}
+        # all_clusters = {'5L': all_clusters['5L'], 'PSL':all_clusters['PSL'], 'SFL':all_clusters['SFL']}
         filename = join(
             "/home/nwilming/conf_meg/sr_labeled/aggs/ogl/",
             "ogl_S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
         )
-    print('Will save agg as:', filename)
+    print("Will save agg as:", filename)
     if epoch == "stimulus":
         agg = asr.aggregate_files(stim, stim, (-0.25, 0), all_clusters=all_clusters)
     elif epoch == "response":
@@ -1030,30 +1056,34 @@ def aggregate(subject, session, epoch, glasser=False):
 def slimdown_aggs(source):
     from glob import glob
     from os.path import join, split
-    sources = glob(join(source, 'ogl*.hdf'))
+
+    sources = glob(join(source, "ogl*.hdf"))
     for source in sources:
         path, fname = split(source)
-        dest = join(path, 'slimdown', fname)
-        print(source, ' -> ', dest)
-        slimdown_agg(source, dest, 'Pair')
+        dest = join(path, "slimdown", fname)
+        print(source, " -> ", dest)
+        slimdown_agg(source, dest, "Pair")
 
 
 def slimdown_agg(source, dest, group, even=True):
     import h5py
-    with h5py.File(source, 'r') as s, h5py.File(dest, 'w') as d:
+
+    with h5py.File(source, "r") as s, h5py.File(dest, "w") as d:
         paths = get_all_paths(s[group])
         for p in paths:
-            #print('Copying ', p)        
-            hdf_copydset(s, d, s[p], even=even)        
+            # print('Copying ', p)
+            hdf_copydset(s, d, s[p], even=even)
+
 
 def get_all_paths(source):
-    if 'ndim' in dir(source):
+    if "ndim" in dir(source):
         return [source.name]
     else:
-        paths = []        
+        paths = []
         for value in source.values():
             paths += get_all_paths(value)
         return paths
+
 
 def hdf_copydset(source, dest, dataset, even=True):
     try:
@@ -1063,17 +1093,125 @@ def hdf_copydset(source, dest, dataset, even=True):
     if even:
         idx = slice(None, None, 2)
     else:
-        idx = slice(1, None, 2)    
+        idx = slice(1, None, 2)
     ds = group.create_dataset(dataset.name, data=dataset[:, idx])
-    
+
     for key, item in dataset.attrs.items():
-        if key.startswith('col'):
+        if key.startswith("col"):
             ds.attrs[key] = item[idx]
         else:
             ds.attrs[key] = item
 
 
+def get_all_ortho_IPS():
+    scores = []
+    for subject in range(1, 16):
+        scores.append(get_ortho_midc(subject))
+    return pd.concat(scores)
 
+
+def get_ortho_midc(subject):
+    """
+    Compute orthogonalized decoding values for IPS/PostCeS.
+    """
+    inpath = "/home/nwilming/conf_meg/sr_labeled/aggs"
+    cluster = "JWG_M1"
+    # First load low level averaged stimulus data
+    filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, "stimulus")))
+    data = asr.delayed_agg(
+        filenames, hemi="Lateralized", cluster=[cluster] + ["JWG_IPS_PCeS"]
+    )()
+    meta = da.augment_meta(da.preprocessing.get_meta_for_subject(subject, "stimulus"))
+    scores = ortho_midc_decoder(meta, data, "JWG_IPS_PCeS", "JWG_M1", latency=1.1)
+    scores.loc[:, "subject"] = subject
+    return scores
+
+
+def get_ortho_x(data, area, ortho_area, latency):
+    times = data.columns.get_level_values("time").values
+    target_time_point = times[np.argmin(abs(times - latency))]
+    data = data.loc[:, target_time_point]
+
+    # Turn data into (trial X Frequency)
+    X = []
+    for a in ensure_iter(area):
+        x = pd.pivot_table(
+            data.query('cluster=="%s"' % a),
+            index="trial",
+            columns="freq",
+            values=target_time_point,
+        )
+        X.append(x)
+
+        # Turn data into (trial X Frequency)
+    O = []
+    for a in ensure_iter(ortho_area):
+        x = pd.pivot_table(
+            data.query('cluster=="%s"' % a),
+            index="trial",
+            columns="freq",
+            values=target_time_point,
+        )
+        O.append(x)
+    ortho_data = pd.concat(O, 1)
+    data = pd.concat(X, 1)
+
+    for col in data.columns:
+        x = ortho_data.loc[:, col].values
+        y = data.loc[:, col].values
+        slope, i, _, _, _ = linregress(x, y)
+        data.loc[:, col] = y - slope * x + i
+    return data, ortho_data
+
+
+def ortho_midc_decoder(
+    meta,
+    data,
+    area,
+    ortho_area,
+    latency=0,
+    splitmc=True,
+    target_col="response",
+    predict=False,
+):
+    meta = meta.set_index("hash")
+    # Map to nearest time point in data
+    times = data.columns.get_level_values("time").values
+    target_time_point = times[np.argmin(abs(times - latency))]
+    data = data.loc[:, target_time_point]
+
+    # Turn data into (trial X Frequency)
+    data, ortho = get_ortho_x(data, area, ortho_area, latency)
+
+    meta = meta.loc[data.index, :]
+    scores = []
+    if splitmc:
+        for mc, sub_meta in meta.groupby(meta.mc < 0.5):
+            sub_data = data.loc[sub_meta.index, :]
+            sub_meta = sub_meta.loc[sub_data.index, :]
+            # Buld target vector
+            target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
+            if not predict:
+                score = categorize(target, sub_data, target_time_point, predict=False)
+                score.loc[:, "mc<0.5"] = mc
+            else:
+                score = categorize(target, sub_data, target_time_point, predict=True)
+                # score = score["SCVlin"]
+                score = pd.DataFrame(score, index=sub_data.index)
+            scores.append(score)
+        scores = pd.concat(scores)
+    else:
+        # Buld target vector
+        target = (meta.loc[data.index, target_col]).astype(int)
+        if not predict:
+            scores = categorize(target, data, target_time_point, predict=False)
+        else:
+            scores = categorize(target, data, target_time_point, predict=True)
+            # scores = scores["SCVlin"]
+            scores = pd.DataFrame(scores, index=data.index)
+    scores.loc[:, "area"] = str(area)
+    scores.loc[:, "latency"] = latency
+    return scores
 
 
 def ensure_iter(input):

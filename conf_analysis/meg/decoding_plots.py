@@ -72,6 +72,7 @@ def filter_latency(data, min, max):
 
 
 def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
+    print('OGL:', ogl)
     if not ogl:
         try:
             df = pd.read_hdf(
@@ -82,8 +83,9 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
                 "/net/store/users/nwilming/all_decoding_merged_w0415_20190423.hdf"
             )
     else:
+        print('Reading new ogl data')
         df = pd.read_hdf(
-            "/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_20190424.hdf"
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_20190521.hdf"
         )
     df.loc[:, "latency"] = df.latency.round(3)
     idnan = np.isnan(df.subject)
