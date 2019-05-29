@@ -93,6 +93,7 @@ def submit(only_glasser=False):
                 name="iDCD" + str(subject) + area,
                 ssh_to=None,
             )
+            
                 
 
 
@@ -137,9 +138,6 @@ def decode(
     mne.set_log_level("WARNING")
     pymeglcmv.logging.getLogger().setLevel(logging.INFO)
     set_n_threads(1)
-
-
-
     labels = get_labels(subject, only_glasser)
     labels = [x for x in labels if any([cl for cl in areas_to_labels[area] if cl in x.name])]
     print(labels)
@@ -164,12 +162,13 @@ def decode(
     else:
         raise RuntimeError("Did not recognize epoch")
 
+
     logging.info("Setting up source space and forward model")
 
     fwds = [get_leadfield(subject, session, BEM)[0] for session in range(4)]
 
-    # Now chunk Reconstruction into blocks of ~100 trials to save Memory
     fois = np.arange(10, 150, 5)
+    lfois = np.arange(1, 10, 1)
     tfr_params = {
         "F": {
             "foi": fois,
@@ -178,7 +177,15 @@ def decode(
             "n_jobs": 1,
             "est_val": fois,
             "est_key": "F",
-        }
+        },
+        "LF": {
+            "foi": lfois,
+            "cycles": lfois * 0.25,
+            "time_bandwidth": 2,
+            "n_jobs": 1,
+            "est_val": lfois,
+            "est_key": "LF",
+        },
     }
 
     events = [d[1].events[:, 2] for d in data]
@@ -189,14 +196,33 @@ def decode(
         )
     set_n_threads(1)
 
-    tfrdata, events, freq, times = decoding.get_lcmv(
+    F_tfrdata, events, F_freq, times = decoding.get_lcmv(
         tfr_params["F"], [d[1] for d in data], filters, njobs=6
     )
+    LF_tfrdata, events, LF_freq, times = decoding.get_lcmv(
+        tfr_params["LF"], [d[1] for d in data], filters, njobs=6
+    )
+
+    tfrdata = np.hstack([F_tfrdata, LF_tfrdata])
+    del LF_tfrdata, F_tfrdata
+    freq = np.concatenate([F_freq, LF_freq])
     meta = augment_meta(
         preprocessing.get_meta_for_subject(
             subject, epoch_type, sessions=range(4)
         ).set_index("hash")
     )
+
+    # Kick out trials with RT < 0.225    
+    choice_rt = meta.choice_rt
+    valid_trials = choice_rt[choice_rt>=0.225].index.values        
+    valid_trials = np.isin(events, valid_trials)
+    tfrdata = tfrdata[valid_trials]
+    events = events[valid_trials]
+    # How many kicked out?
+    n_out = (~valid_trials).sum()
+    n_all = len(events)    
+    print('Kicking out %i/%i (%0.2f percent) trials due to RT'%(n_out, n_all, n_out/n_all))
+
     all_s = []
     for target in ["response", "unsigned_confidence", "signed_confidence"]:
         fname = "/home/nwilming/S%i_trg%s_ROI_%s.hdf" % (subject, target, area)
@@ -206,7 +232,8 @@ def decode(
             target_vals = meta.loc[:, target]
             dcd = decoding.Decoder(target_vals)
             k = dcd.classify(
-                tfrdata, times, freq, events, area, average_vertices=False, use_phase=True
+                tfrdata, times, freq, events, area, 
+                average_vertices=False, use_phase=True
             )
             k.loc[:, "target"] = target
             k.to_hdf(fname, "df")

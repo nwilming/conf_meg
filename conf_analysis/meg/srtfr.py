@@ -148,7 +148,8 @@ def get_ogl_clusters():
              "IP0", "43", "OP1", "TE2a", "7Am", "6ma", "PFcm", "47s", "TPOJ3", "33pr",
              "FEF", "STSda", "MIP", "23d", "13l", "PHA1", "Ig", "24dv", "11l", "a32pr",
              "FST", "s32", "STV", "5mv", "9p", "TGd", "RSC", "POS1", "PFm", "IP2",
-             "EC", "POS2", "FOP3", "LBelt", "PSL", "SFL", "5L"]
+             "EC", "POS2", "FOP3", "LBelt", "PSL", "SFL", "5L", "7AL", "7PL", "9m"]
+    areas = ["7AL", "7PL", "9m", "8BL"]
     # fmt: on
 
     areas = {
@@ -161,11 +162,20 @@ def get_ogl_clusters():
 
 @memory.cache(ignore=["scratch"])
 def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=False):
-    if subject <=8:
+    if subject <= 8:
         hemi = "rh_is_ipsi"
     else:
         hemi = "lh_is_ipsi"
     hemis = [hemi, "avg"]
+    
+
+    new_contrasts = {}
+    for key, value in contrasts.items():
+        new_contrasts[key+'lat'] = [value[0], value[1], hemi]
+        new_contrasts[key+'avg'] = [value[0], value[1], 'avg']
+    contrasts = new_contrasts
+    print(contrasts)
+
     from os.path import join
 
     stim, resp = [], []
@@ -204,7 +214,7 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=Fals
         try:
             contrast = compute_contrast(
                 contrasts,
-                hemis,
+                #hemis,
                 stim,
                 stim,
                 meta,
@@ -223,7 +233,7 @@ def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=Fals
         try:
             contrast = compute_contrast(
                 contrasts,
-                hemis,
+                #hemis,
                 resp,
                 stim,
                 meta,

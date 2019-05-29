@@ -139,7 +139,9 @@ def get_meta_from_ds():
     for subject in range(1, 15):
         for session in range(4):
             for block_in_raw, block_in_experiment in block_map[subject][session].items():
-                metas.append(get_block_meta(subject, session, block_in_raw, block_in_experiment))
+                m = get_block_meta(subject, session, block_in_raw, block_in_experiment)
+                metas.append(m)
+                m.to_hdf('/home/nwilming/S%i_SESS%i_B%i_timing.hdf'%(subject, session, block_in_experiment), 'df')
     return metas
 
 

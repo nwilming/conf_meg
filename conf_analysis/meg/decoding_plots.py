@@ -72,6 +72,7 @@ def filter_latency(data, min, max):
 
 
 def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
+    print('OGL:', ogl)
     if not ogl:
         try:
             df = pd.read_hdf(
