@@ -149,6 +149,7 @@ def get_ogl_clusters():
              "FEF", "STSda", "MIP", "23d", "13l", "PHA1", "Ig", "24dv", "11l", "a32pr",
              "FST", "s32", "STV", "5mv", "9p", "TGd", "RSC", "POS1", "PFm", "IP2",
              "EC", "POS2", "FOP3", "LBelt", "PSL", "SFL", "5L", "7AL", "7PL", "9m"]
+    areas = ["7AL", "7PL", "9m", "8BL"]
     # fmt: on
 
     areas = {

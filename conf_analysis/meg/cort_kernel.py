@@ -47,7 +47,7 @@ def prepare_and_save_data(freq_band=[45, 65], n_jobs=4,
             subject,
             "Averaged",
             cluster,
-            0.18,
+            0.19,
             peakslope=peaks,
             freq_band=freq_band,
             ogl=True,
@@ -67,12 +67,12 @@ def prepare_and_save_data(freq_band=[45, 65], n_jobs=4,
     tasks = []
     for cluster, subject in product(clusters, np.arange(1, 16)):
         tasks.append(delayed(d_gck)(
-            subject, "Averaged", cluster, 0.18, freq_band=freq_band, ogl=False,
+            subject, "Averaged", cluster, 0.19, freq_band=freq_band, ogl=False,
             remove_contrast_induced_flucts=False
             )
         )
         tasks.append(delayed(d_gck)(
-            subject, "Averaged", cluster, 0.18, freq_band=freq_band, ogl=False, 
+            subject, "Averaged", cluster, 0.19, freq_band=freq_band, ogl=False, 
             remove_contrast_induced_flucts=True
             )
         )

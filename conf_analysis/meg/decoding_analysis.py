@@ -49,7 +49,7 @@ elif "RRZ_LOCAL_TMPDIR" in os.environ.keys():
     memory = Memory(cachedir=tmpdir)
 else:
     inpath = "/home/nwilming/conf_meg/sr_labeled/aggs"
-    oglinpath = "/home/nwilming/conf_meg/sr_labeled/aggs/ogl/slimdown"
+    oglinpath = "/home/nwilming/conf_meg/sr_labeled/aggs/ogl"
     outpath = "/home/nwilming/conf_meg/sr_decoding"
     memory = Memory(cachedir=metadata.cachedir)
 
@@ -80,15 +80,21 @@ def decoders():
         # "SSD_delta_contrast": partial(ssd_decoder, target_value="delta_contrast"),
         "SSD_acc_contrast": partial(ssd_decoder, target_value="acc_contrast"),
         # "SSD_acc_contrast_diff": partial(ssd_decoder, target_value="acc_contrast_diff"),
-        "MIDC_split": partial(midc_decoder, splitmc=True, target_col="response"),
+        #"MIDC_split": partial(midc_decoder, splitmc=True, target_col="response"),
         # "MIDC_nosplit": partial(midc_decoder, splitmc=False, target_col="response"),
         # "SIDE_nosplit": partial(midc_decoder, splitmc=False, target_col="side"),
-        "CONF_signed": partial(
-            midc_decoder, splitmc=False, target_col="signed_confidence"
+        # "CONF_signed": partial(
+        #    midc_decoder, splitmc=False, target_col="signed_confidence"
+        # ),
+        "CONF_signed_respsplit": partial(
+            midc_decoder,
+            splitmc=False,
+            split_resp=True,
+            target_col="unsigned_confidence",
         ),
-        "CONF_unsigned": partial(
-            midc_decoder, splitmc=False, target_col="unsigned_confidence"
-        ),
+        # "CONF_unsigned": partial(
+        #    midc_decoder, splitmc=False, target_col="unsigned_confidence"
+        # ),
         # "CONF_unsign_split": partial(
         #    midc_decoder, splitmc=True, target_col="unsigned_confidence"
         # ),
@@ -115,7 +121,7 @@ def submit(
     if ogl:
         hemis = ["Pair"]
     else:
-        hemis = (["Pair", "Lateralized", "Averaged"],)
+        hemis = ["Pair", "Lateralized", "Averaged"]
     decoder = decoders().keys()
     if ssd:
         decoder = [d for d in decoder if "SSD" in d]
@@ -137,7 +143,7 @@ def submit(
         pmap = partial(
             parallel.pmap,
             nodes=1,
-            tasks=n_jobs,
+            tasks=1,
             memory=61,
             ssh_to=None,
             walltime="72:00:00",
@@ -145,7 +151,7 @@ def submit(
         )
 
     for subject, epoch, dcd in product(subjects, epochs, decoder):
-        filename = get_save_path(subject, decoder, epoch, ogl=ogl)
+        filename = get_save_path(subject, dcd, epoch, ogl=ogl)
         import os.path
 
         if os.path.isfile(filename):
@@ -154,13 +160,13 @@ def submit(
         pmap(
             run_decoder,
             [(subject, dcd, epoch, hemis, ogl)],
-            name="DCD" + dcd + epoch + str(subject),
+            name="not_super_long" + dcd + epoch + str(subject),
         )
 
 
 def get_save_path(subject, decoder, epoch, ogl=False):
     if ogl:
-        filename = outpath + "/concatogl_S%i-%s-%s-decoding.hdf" % (
+        filename = outpath + "/concatoglmis_S%i-%s-%s-decoding.hdf" % (
             subject,
             decoder,
             epoch,
@@ -202,7 +208,9 @@ def run_decoder(
 
     if ogl:
         clusters = srtfr.get_ogl_clusters()
-        filenames = glob(join(oglinpath, "ogl_S%i_*_%s_agg.hdf" % (subject, epoch)))
+        filenames = glob(
+            join(oglinpath, "missing_ogl_S%i_*_%s_agg.hdf" % (subject, epoch))
+        )
     else:
         clusters = srtfr.get_clusters()
         filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, epoch)))
@@ -216,22 +224,20 @@ def run_decoder(
     for area, hemi in product(areas, hemis):
         if hemi == "Pair":
             area = [area + "_RH", area + "_LH"]
-
-        args.append(
-            (meta, asr.delayed_agg(filenames, hemi=hemi, cluster=area), decoder, hemi)
-        )
+        a = (meta, asr.delayed_agg(filenames, hemi=hemi, cluster=area), decoder, hemi)
+        print(a[1:])
+        args.append(a)
     print("Processing %i tasks" % (len(args)))
     from contextlib import closing
 
     scores = []
-
-    for arglist in range(0, len(args), ntasks):
-        with closing(Pool(ntasks, maxtasksperchild=1)) as p:
-            sc = p.starmap(
-                _par_apply_decode, args[arglist : arglist + ntasks]
-            )  # , chunksize=ntasks)
-            sc = [s for s in sc if s is not None]
-        scores.extend(sc)
+    # for arglist in range(0, len(args), ntasks):
+    with closing(Pool(ntasks, maxtasksperchild=1)) as p:
+        sc = p.starmap(
+            _par_apply_decode, args  # ,[arglist : arglist + ntasks]
+        )  # , chunksize=ntasks)
+        sc = [s for s in sc if s is not None]
+    scores.extend(sc)
     print("Concat ", len(scores))
     scores = pd.concat(scores)
     filename = get_save_path(subject, decoder, epoch, ogl=ogl)
@@ -244,6 +250,7 @@ def run_decoder(
 
 
 def _par_apply_decode(meta, delayed_agg, decoder, hemi=None):
+    print(delayed_agg)
     agg = delayed_agg()
     dt = np.diff(agg.columns.get_level_values("time"))[0]
     latencies = None
@@ -274,7 +281,6 @@ def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
     import time
 
     # Kick out trials that have choice_rt < 0.225
-    print(meta.head())
     meta = meta.set_index("hash")
     choice_rt = meta.choice_rt
     valid_trials = choice_rt[choice_rt >= 0.225].index.values
@@ -428,7 +434,14 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value="contrast"):
 
 
 def midc_decoder(
-    meta, data, area, latency=0, splitmc=True, target_col="response", predict=False
+    meta,
+    data,
+    area,
+    latency=0,
+    splitmc=True,
+    split_resp=True,
+    target_col="response",
+    predict=False,
 ):
     """
     This signal decodes choices of participants based on local
@@ -466,15 +479,21 @@ def midc_decoder(
     data = pd.concat(X, 1)
     meta = meta.loc[data.index, :]
     scores = []
-    if splitmc:
-        for mc, sub_meta in meta.groupby(meta.mc < 0.5):
+    if splitmc or split_resp:
+        if splitmc:
+            selector = meta.mc < 0.5
+            split_label = "mc<0.5"
+        elif split_resp:
+            selector = meta.response == 1
+            split_label = 'R1'
+        for mc, sub_meta in meta.groupby(selector):
             sub_data = data.loc[sub_meta.index, :]
             sub_meta = sub_meta.loc[sub_data.index, :]
             # Buld target vector
             target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
             if not predict:
                 score = categorize(target, sub_data, target_time_point, predict=False)
-                score.loc[:, "mc<0.5"] = mc
+                score.loc[:, split_label] = mc
             else:
                 score = categorize(target, sub_data, target_time_point, predict=True)
                 # score = score["SCVlin"]
@@ -1043,7 +1062,7 @@ def aggregate(subject, session, epoch, glasser=False):
         # all_clusters = {'5L': all_clusters['5L'], 'PSL':all_clusters['PSL'], 'SFL':all_clusters['SFL']}
         filename = join(
             "/home/nwilming/conf_meg/sr_labeled/aggs/ogl/",
-            "ogl_S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
+            "missing_ogl_S%i_SESS%i_%s_agg.hdf" % (subject, session, epoch),
         )
     print("Will save agg as:", filename)
     if epoch == "stimulus":
