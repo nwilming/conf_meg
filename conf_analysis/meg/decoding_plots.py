@@ -45,11 +45,11 @@ plot_config = PlotConfig(
 plot_config.configure_epoch(
     "stimulus",
     **{
-        "xticks": [0, 1],
-        "xticklabels": ["0", "1"],
+        "xticks": [0,1],
+        "xticklabels": ['0\n Stim.     \non ', '1\nStim.    \noff   '],            
         "yticks": [0.25, 0.5, 0.75],
         "yticklabels": [0.25, 0.50, 0.75],
-        "xlabel": "time",
+        "xlabel": "",
         "ylabel": "AUC",
     },
 )
@@ -57,10 +57,10 @@ plot_config.configure_epoch(
     "response",
     **{
         "xticks": [0],
-        "xticklabels": ["0"],
+        "xticklabels": ['0\n       Resp-\n      onse'],
         "yticks": [0.25, 0.5, 0.75],
         "yticklabels": [0.25, 0.50, 0.75],
-        "xlabel": "time",
+        "xlabel": "",
         "ylabel": "AUC",
     },
 )
@@ -78,12 +78,13 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
                 "/Users/nwilming/u/conf_analysis/results/all_decoding_20190513.hdf"
             )
         except FileNotFoundError:
-            df = pd.read_hdf(
-                "/net/store/users/nwilming/all_decoding_merged_w0415_20190423.hdf"
-            )
-    else:
+            pass
+            #df = pd.read_hdf(
+            #    "/net/store/users/nwilming/all_decoding_merged_w0415_20190423.hdf"
+            #)
+    else:        
         df = pd.read_hdf(
-            "/Users/nwilming/u/conf_analysis/results/obsolete_decoding/all_decoding_ogl_20190424.hdf"
+             "/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_merged_20190527.hdf"
         )
     df.loc[:, "latency"] = df.latency.round(3)
     idnan = np.isnan(df.subject)
@@ -125,24 +126,16 @@ def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
 
 def get_ssd_data(ssd_classifier="Ridge", restrict=True, ogl=False):
 
-    try:
-        if not ogl:
-            df = pd.read_hdf(
-                "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_20190513.hdf"
-            )
-        else:
-            df = pd.read_hdf(
-                "/Users/nwilming/u/conf_analysis/results/obsolete_decoding/all_decoding_SSD_ogl_20190424.hdf"
-            )
-    except FileNotFoundError:
-        if not ogl:
-            df = pd.read_hdf(
-                "/home/nwilming/conf_analysis/results/all_decoding_SSD_merged_w0415_20190423.hdf"
-            )
-        else:
-            df = pd.read_hdf(
-                "/home/nwilming/conf_analysis/results/all_decoding_SSD_ogl_20190424.hdf"
-            )
+
+    if not ogl:
+        df = pd.read_hdf(
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_SSD_20190513.hdf"
+        )
+    else:
+        df = pd.read_hdf(
+            "/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_ssd_merged_20190527.hdf"
+        )
+
     df = df.loc[~np.isnan(df.subject), :]
     df = df.query('Classifier=="%s"' % ssd_classifier)
     df.loc[:, "cluster"] = [
@@ -222,7 +215,7 @@ class StreamPlotter(object):
         # fmt: off
         self.layout = [
             Plot("V1", "vfcPrimary", [0, middle], True, True),
-            Plot("V2-V4", "vfcEarly", [1, middle], False, True),
+            Plot("V2-V4", "vfcEarly", [1, middle], False, False),
             # Dorsal
             Plot("V3A/B", "vfcV3ab", [2, top], False, False),
             Plot("IPS0/1", "vfcIPS01", [3, top], False, False),
@@ -230,13 +223,13 @@ class StreamPlotter(object):
             Plot("aIPS", "JWG_aIPS", [5, top], False, False),
             
             # Ventral
-            Plot("Lateral Occ", "vfcLO", [2, bottom], False, True),
-            Plot("MT+", "vfcTO", [3, bottom], False, True),
-            Plot("Ventral Occ", "vfcVO", [4, bottom], False, True),
-            Plot("PHC", "vfcPHC", [5, bottom], False, True),
+            Plot("Lateral Occ", "vfcLO", [2, bottom], False, False),
+            Plot("MT+", "vfcTO", [3, bottom], False, False),
+            Plot("Ventral Occ", "vfcVO", [4, bottom], False, False),
+            Plot("PHC", "vfcPHC", [5, bottom], False, False),
             
-            Plot("IPS/PostCeS", "JWG_IPS_PCeS", [6, middle], False, True),
-            Plot("M1 (hand)", "JWG_M1", [7, middle], False, True),
+            Plot("IPS/PostCeS", "JWG_IPS_PCeS", [6, middle], False, False),
+            Plot("M1 (hand)", "JWG_M1", [7, middle], False, False),
         ]
         # fmt: on
         self.configuration = conf
@@ -487,14 +480,14 @@ class StreamPlotter(object):
                 edgecolor=(0, 0, 0, 0),
                 lw=0,
             )
-
+            
             ax.plot(latency, mu, color=col)
             tvals, pvals = cluster_test[key]
             if sum(pvals<0.05)>0:
                 lat = latency[pvals<0.05].min()
                 print('DCD, %s, %s, earliest significant: %f'%(cluster, signal, lat))            
-            else:
-                print('DCD, %s, %s, earliest significant: None'%(cluster, signal))            
+            #else:
+            #    print('DCD, %s, %s, earliest significant: None'%(cluster, signal))            
             draw_sig(ax, latency, pvals < 0.05, offsets[col], col)
 
 
@@ -726,42 +719,53 @@ def plot_signals_hand(
 
 def table_performance(
     df,
-    t_stim=1.3,
+    t_stim=1.1,
     t_resp=0,
     areas=None,
     sortby="MIDC_split",
     signals=[
-        "MIDC_split",
-        "MIDC_nosplit",
+        "MIDC_split",        
         "CONF_signed",
-        "CONF_unsigned",
-        "CONF_unsign_split",
+        "CONF_unsigned",        
     ],
+    ignore_resp=True
 ):
     """
     Output a table of decoding performances, sorted by one signal.
     """
-    df_response = (
-        df.query("epoch=='response' & (latency==%f)" % t_resp)
-        .groupby("signal")
-        .mean()
-        .T.loc[:, signals]
-    )
-    df_response = df_response.sort_values(by=sortby, ascending=False)
-    df_response.columns = pd.MultiIndex.from_tuples(
-        [("response", x) for x in df_response.columns.values],
-        names=["Epoch", "Cluster"],
-    )
-    df_stim = (
-        df.query("epoch=='stimulus' & (latency==%f)" % t_stim)
-        .groupby("signal")
-        .mean()
-        .T.loc[df_response.index, signals]
-    )
+    if not ignore_resp:
+        df_response = (
+            df.query("epoch=='response' & (latency==%f)" % t_resp)
+            .groupby("signal")
+            .mean()
+            .T.loc[:, signals]
+        )
+        df_response = df_response.sort_values(by=sortby, ascending=False)
+        df_response.columns = pd.MultiIndex.from_tuples(
+            [("response", x) for x in df_response.columns.values],
+            names=["Epoch", "Cluster"],
+        )
+        df_stim = (
+            df.query("epoch=='stimulus' & (latency==%f)" % t_stim)
+            .groupby("signal")
+            .mean()
+            .T.loc[df_response.index, signals]
+        )
+    else:
+        df_stim = (
+            df.query("epoch=='stimulus' & (latency==%f)" % t_stim)
+            .groupby("signal")
+            .mean()
+            .T.loc[:, signals]
+        )
+        df_stim = df_stim.sort_values(by=sortby, ascending=False)
     df_stim.columns = pd.MultiIndex.from_tuples(
         [("stimulus", x) for x in df_stim.columns.values], names=["Epoch", "Cluster"]
     )
-    return pd.concat([df_response, df_stim], 1).round(2)
+    if not ignore_resp:
+        return pd.concat([df_response, df_stim], 1).round(2)
+    else:
+        return df_stim.round(2)
 
 
 def make_state_space_triplet(df):

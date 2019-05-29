@@ -161,7 +161,7 @@ def get_ogl_clusters():
 
 @memory.cache(ignore=["scratch"])
 def get_contrasts(contrasts, subject, baseline_per_condition=False, scratch=False):
-    if subject < 8:
+    if subject <=8:
         hemi = "rh_is_ipsi"
     else:
         hemi = "lh_is_ipsi"
@@ -316,7 +316,7 @@ def precompute_stats(contrast, epoch, hemi):
     from pymeg import atlas_glasser
 
     df = pd.read_hdf(
-        "/home/nwilming/conf_analysis/results/all_contrasts_confmeg-20190308.hdf"
+        "/home/nwilming/conf_analysis/results/all_contrasts_confmeg-20190516.hdf"
     )
     if epoch == "stimulus":
         time_cutoff = (-0.5, 1.35)
@@ -403,23 +403,23 @@ def plot_stream_figures(
     conf.configure_epoch(
         "stimulus",
         **{
-            "xticks": [0, 1],
-            "xticklabels": ["0", "1"],
+            "xticks": [0,1],
+            "xticklabels": ['0\n Stim.    \non  ', '1\nStim.    \noff   '],
             "yticks": [25, 50, 75, 100],
             "yticklabels": [25, 50, 75, 100],
-            "xlabel": "time",
-            "ylabel": "Freq",
+            "xlabel": "",
+            "ylabel": "Frequency [Hz]",
         },
     )
     conf.configure_epoch(
         "response",
         **{
             "xticks": [0],
-            "xticklabels": ["0"],
+            "xticklabels": ['0\n       Resp-\n      onse'],
             "yticks": [25, 50, 75, 100],
             "yticklabels": [25, 50, 75, 100],
-            "xlabel": "Time",
-            "ylabel": "Freq",
+            "xlabel": "",
+            "ylabel": "Frequency [Hz]",
         },
     )
     for key, values in {
@@ -441,7 +441,7 @@ def plot_stream_figures(
     # fmt: off
     layout = [
         Plot("V1", "vfcPrimary", [0, middle], True, True),
-        Plot("V2-V4", "vfcEarly", [1, middle], False, True),
+        Plot("V2-V4", "vfcEarly", [1, middle], False, False),
         # Dorsal
         Plot("V3A/B", "vfcV3ab", [2, top], False, False),
         Plot("IPS0/1", "vfcIPS01", [3, top], False, False),
@@ -449,14 +449,14 @@ def plot_stream_figures(
         Plot("aIPS", "JWG_aIPS", [5, top], False, False),
         
         # Ventral
-        Plot("Lateral Occ", "vfcLO", [2, bottom], False, True),
-        Plot("MT+", "vfcTO", [3, bottom], False, True),
-        Plot("Ventral Occ", "vfcVO", [4, bottom], False, True),
-        Plot("PHC", "vfcPHC", [5, bottom], False, True),
+        Plot("Lateral Occ", "vfcLO", [2, bottom], False, False),
+        Plot("MT+", "vfcTO", [3, bottom], False, False),
+        Plot("Ventral Occ", "vfcVO", [4, bottom], False, False),
+        Plot("PHC", "vfcPHC", [5, bottom], False, False),
         
         
-        Plot("IPS/PostCeS", "JWG_IPS_PCeS", [6, middle], False, True),
-        Plot("M1 (hand)", "JWG_M1", [7, middle], False, True),
+        Plot("IPS/PostCeS", "JWG_IPS_PCeS", [6, middle], False, False),
+        Plot("M1 (hand)", "JWG_M1", [7, middle], False, False),
     ]
 
     if flip_cbar:
