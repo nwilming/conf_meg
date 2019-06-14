@@ -146,7 +146,7 @@ def submit(
             tasks=1,
             memory=61,
             ssh_to=None,
-            walltime="72:00:00",
+            walltime="172:00:00",
             env="py36",
         )
 
