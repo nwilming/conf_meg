@@ -311,17 +311,12 @@ def fit_choice_logistic(df, summary=True):
         df.loc[:, 'C%i'%i] = cvals[:, i]
     df.loc[:, 'conf0'] = (df.confidence-1)
     df.loc[:, 'resp0'] = (df.response+1)/2
-    formula = 'resp0 ~ C0 + C1 + C2 + C3 + C4 + C5 + C6 + C7 + C8 + C9 + 1'
-    #formula = 'conf0 ~ np.abs(mc)'
-    #formula = 'conf0 ~ mc'
+    formula = 'resp0 ~ C0 + C1 + C2 + C3 + C4 + C5 + C6 + C7 + C8 + C9'
     y, X = patsy.dmatrices(formula, df, return_type='dataframe')
-    log_res = sm.GLM(y, X, family=sm.families.Binomial())
-    results = log_res.fit(disp=False)
-    if summary:
-        print(results.summary())
-    predict = results.predict(X)
-    accuracy = (np.mean((predict.values>0.5) == y.values.ravel()))
-    return accuracy #log_res, results, y, predict
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import cross_val_score    
+    accuracy = cross_val_score(LogisticRegression(fit_intercept=True, solver='lbfgs'), X, y.values.ravel(), cv=5)
+    return accuracy.mean() 
 
 def fit_conf_logistic(df, summary=True):
     cvals = (np.stack(df.contrast_probe)-0.5)
@@ -330,16 +325,19 @@ def fit_conf_logistic(df, summary=True):
     df.loc[:, 'conf0'] = (df.confidence-1)
     df.loc[:, 'resp0'] = (df.response+1)/2
     formula = 'conf0 ~ C0 + C1 + C2 + C3 + C4 + C5 + C6 + C7 + C8 + C9 + 1'
-    #formula = 'conf0 ~ np.abs(mc)'
-    #formula = 'conf0 ~ mc'
+    
     y, X = patsy.dmatrices(formula, df, return_type='dataframe')
-    log_res = sm.GLM(y, X, family=sm.families.Binomial())
-    results = log_res.fit(disp=False)
-    if summary:
-        print(results.summary())
-    predict = results.predict(X)
-    accuracy = (np.mean((predict.values>0.5) == y.values.ravel()))
-    return accuracy #log_res, results, y, predict
+    #log_res = sm.GLM(y, X, family=sm.families.Binomial())
+    #results = log_res.fit(disp=False)
+    #if summary:
+    #    print(results.summary())
+    #predict = results.predict(X)
+    #accuracy = (np.mean((predict.values>0.5) == y.values.ravel()))
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import cross_val_score    
+    accuracy = cross_val_score(LogisticRegression(fit_intercept=True, solver='lbfgs'), X, y.values.ravel(), cv=5)
+
+    return accuracy.mean()
 
 
 def fit_logistic(df, formula, summary=True):

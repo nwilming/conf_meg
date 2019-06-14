@@ -111,7 +111,7 @@ def get_kernels():
         .mean()
     )  # dp.extract_kernels(dz)
     C = (
-        d.groupby("snum")
+        d.groupby(["snum", "side"])
         .apply(kernels.get_confidence_kernel)
         .stack()
         .groupby("snum")
