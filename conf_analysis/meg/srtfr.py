@@ -459,14 +459,14 @@ def plot_stream_figures(
         Plot("aIPS", "JWG_aIPS", [5, top], False, False),
         
         # Ventral
-        Plot("Lateral Occ", "vfcLO", [2, bottom], False, False),
-        Plot("MT+", "vfcTO", [3, bottom], False, False),
-        Plot("Ventral Occ", "vfcVO", [4, bottom], False, False),
+        Plot("LO1/2", "vfcLO", [2, bottom], False, False),
+        Plot("MT/MST", "vfcTO", [3, bottom], False, False),
+        Plot("VO1/2", "vfcVO", [4, bottom], False, False),
         Plot("PHC", "vfcPHC", [5, bottom], False, False),
         
         
         Plot("IPS/PostCeS", "JWG_IPS_PCeS", [6, middle], False, False),
-        Plot("M1 (hand)", "JWG_M1", [7, middle], False, False),
+        Plot("M1-hand", "JWG_M1", [7, middle], False, False),
     ]
 
     if flip_cbar:

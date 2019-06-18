@@ -136,11 +136,11 @@ def figure0(gs=None):
 
         yticks = [
             (5, ""),  #'Reference\ncontrast'),
-            (4, "Delay"),
+            #(4, "Delay"),
             (5, "Contrast"),
-            (3, "Reaction time"),
-            (2, "Feedback delay"),
-            (1, "Audio feedback"),
+            (4, "Response (choice/confidence"),
+            #(2, "Feedback delay"),
+            (3, "Audio feedback"),
         ]
         time = np.linspace(-1.1, 2.1, 5000)
         ref_time = np.linspace(-1.1, -0.1, 5000)
@@ -149,11 +149,11 @@ def figure0(gs=None):
         ax.plot(ref_time, 5 + set(-0.8, -0.4, 0.5, x=ref_time), "k", zorder=5)
         ax.text(-0.35, 5.25, "0.4s", va="center")
         # Reference delay
-        ax.plot(time, 4 + set(-0.4, -0.0, 0.5, set_nan=True), ":k", zorder=5)
-        #ax.plot(time, 4 + set(-100, -200.0, 0.5, set_nan=False), "k", zorder=5)
-        ax.plot([time.min(), -0.4], [4, 4], "k", zorder=5)
-        ax.plot([0, time.max()], [4, 4], "k", zorder=5)
-        ax.text(0.05, 4.25, "1-1.5s", va="center")
+        #ax.plot(time, 4 + set(-0.4, -0.0, 0.5, set_nan=True), ":k", zorder=5)
+        # ax.plot(time, 4 + set(-100, -200.0, 0.5, set_nan=False), "k", zorder=5)
+        #ax.plot([time.min(), -0.4], [4, 4], "k", zorder=5)
+        #ax.plot([0, time.max()], [4, 4], "k", zorder=5)
+        #ax.text(0.05, 4.25, "1-1.5s", va="center")
         # Test stimulus
         cvals = array([0.71, 0.33, 0.53, 0.75, 0.59, 0.57, 0.55, 0.61, 0.45, 0.58])
         colors = sns.color_palette(n_colors=10)
@@ -182,30 +182,41 @@ def figure0(gs=None):
                 )
         ax.text(1.05, 5.25, "100ms/sample", va="center")
         # Response
-        ax.plot(time, 3 + set(1, 1.45, 0.5, set_nan=True), ":k", zorder=5)
-        ax.plot([time.min(), 1], [3, 3], "k", zorder=5)
-        ax.plot([1.45, time.max()], [3, 3], "k", zorder=5)
-        ax.text(1.5, 3.25, "0.45s avg", va="center")
+        ax.plot(time, 4 + set(1.449, 1.45, 0.5, set_nan=True), "k", zorder=5)
+        ax.plot([time.min(), time.max()], [4, 4], "k", zorder=5)
+        #ax.plot([1.45, time.max()], [3, 3], "k", zorder=5)
+        #Z2 = plt.imread('/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/resp.png')
+        #aspect = Z2.shape[1]/Z2.shape[0]
+        #print('IMG Aspect:', aspect)
+        #tt = 0.13
+        #axins = ax.inset_axes([0.85, 0.42, tt*aspect, tt], zorder=-1)
+        
+        #axins.imshow(np.flipud(Z2), extent=[aspect,0, 1, 0], interpolation="nearest",
+        #  origin="lower")
+        #axins.set_xticks([])
+        #axins.set_yticks([])
+        #sns.despine(ax=axins, left=True, bottom=True)
+        ax.text(1.5, 4.25, "0.45s avg", va="center")
         # Feedback delay
-        ax.plot(time, 2 + set(1.45, 1.65, 0.5), ":k", zorder=5)
-        #ax.plot(time, 2 + set(100.35, 100.55, 0.5), "k", zorder=5)
-        ax.text(1.7, 2.25, "0-1.5s", va="center")
-        ax.plot([time.min(), 1.45], [2, 2], "k", zorder=5)
-        ax.plot([1.65, time.max()], [2, 2], "k", zorder=5)
+        #ax.plot(time, 2 + set(1.45, 1.65, 0.5), ":k", zorder=5)
+        # ax.plot(time, 2 + set(100.35, 100.55, 0.5), "k", zorder=5)
+        #ax.text(1.7, 2.25, "0-1.5s", va="center")
+        #ax.plot([time.min(), 1.45], [2, 2], "k", zorder=5)
+        #ax.plot([1.65, time.max()], [2, 2], "k", zorder=5)
         # Feedback
-        ax.plot(time, 1 + set(1.65, 1.65 + 0.25, 0.5), "k", zorder=5)
-        ax.text(1.95, 1.25, "0.25s", va="center")
+        ax.plot(time, 3 + set(1.65, 1.65 + 0.25, 0.5), "k", zorder=5)
+        ax.text(1.925, 3.25, "0.25s", va="center")
 
         ax.set_yticks([])  # i[0] for i in yticks])
         # ax.set_yticklabels([i[1] for i in yticks], va='bottom')
         for y, t in yticks:
             ax.text(-1.1, y + 0.35, t, verticalalignment="center")
-        sns.despine(ax=ax, left=True, bottom=True)
+        
         ax.set_xticks([])
         ax.tick_params(axis=u"both", which=u"both", length=0)
         ax.set_xlim(-1.1, 2.1)
-        ax.set_ylim(0.5, 6.6)
-
+        ax.set_ylim(2.8, 6.6)
+        sns.despine(ax=ax, left=True, bottom=True)
         subax = subplot(gs[0, 0])
 
         height = 0.25
@@ -290,8 +301,68 @@ def figure0(gs=None):
     return img
 
 
+def invax(fig, gs):
+    ax = fig.add_subplot(gs, zorder=-10)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    sns.despine(ax=ax, left=True, bottom=True, right=True, top=True)
+    return ax
+
+def add_letter(fig, gs, label, x=-0.05, y=1.1):
+    ax = invax(fig, gs)
+    ax.text(x, y, label, transform=ax.transAxes,
+      fontsize=10, fontweight='bold', va='top', ha='right')
+    return ax
+
+def by_discrim(sd, abs=False):
+    cvals = np.stack(sd.contrast_probe)
+    threshold = (
+        (cvals[sd.side == 1].mean(1).mean() - 0.5)
+        - (cvals[sd.side == -1].mean(1).mean() - 0.5)
+    ) / 2
+    if not abs:
+        edges = np.linspace(
+            (0.5 + threshold) - 4 * threshold,
+            (0.5 + threshold) + (2 * threshold),
+            11,
+        )
+        centers = np.around(
+            ((edges[:-1] + np.diff(edges)[0] / 2) - (0.5 + threshold))
+            / threshold,
+            2,
+        )
+        d = (
+            sd.groupby([pd.cut(sd.mc.values, edges, labels=centers)])
+            .mean()
+            .loc[:, ["choice", "pconf", "mc", "correct"]]
+            .reset_index()
+        )
+    else:
+        edges = np.linspace(
+            (0.5 + threshold) - 1 * threshold,
+            (0.5 + threshold) + (2 * threshold),
+            7,
+        )
+        centers = np.around(
+            ((edges[:-1] + np.diff(edges)[0] / 2) - (0.5 + threshold))
+            / threshold,
+            2,
+        )
+        sd.loc[:, "mc"] = np.abs(sd.mc - 0.5) + 0.5
+        d = (
+            sd.groupby([pd.cut(sd.mc.values, edges, labels=centers)])
+            .mean()
+            .loc[:, ["choice", "pconf", "mc", "correct"]]
+            .reset_index()
+        )
+    d.columns = ["threshold_units", "choice", "pconf", "mc", "accuracy"]
+    k = d.threshold_units
+    d.loc[:, "threshold_units"] = d.loc[:, "threshold_units"].astype(float) + 1
+    return d
+
+
 def figure1(data=None):
-    from conf_analysis.behavior import empirical
+    from conf_analysis.behavior import empirical, kernels
     from conf_analysis import behavior
 
     color_palette = behavior.parse(behavior.colors)
@@ -300,61 +371,142 @@ def figure1(data=None):
     data.loc[:, "choice"] = (data.response + 1) / 2
     data.loc[:, "pconf"] = data.confidence - 1
 
-    figure(figsize=(7.5, 7))
-    gs = matplotlib.gridspec.GridSpec(2, 1, height_ratios=[1, 1.25], hspace=0.05)
+    fig=figure(figsize=(7.5, 7))
+    gs = matplotlib.gridspec.GridSpec(2, 1, height_ratios=[1, 1.25], hspace=0.15)
+
     figure0(gs[0, 0])
+    add_letter(fig, gs[0,0], 'A', x=-0.065, y=1.075)
+    #sns.despine(ax=plt.gca(), left=True, bottom=True)
+    
     with mpl.rc_context(rc={"font.size": 8.0, "lines.linewidth": 0.5}):
         gs = matplotlib.gridspec.GridSpecFromSubplotSpec(
-            2, 6, gs[1, 0], wspace=1.5, hspace=0.35
+            2, 6, gs[1, 0], wspace=1.5, hspace=0.15
         )
         # gs = matplotlib.gridspec.GridSpec(2, 6, wspace=1.5, hspace=0.5)
-        def by_discrim(sd, abs=False):
-            cvals = np.stack(sd.contrast_probe)
-            threshold = (
-                (cvals[sd.side == 1].mean(1).mean() - 0.5)
-                - (cvals[sd.side == -1].mean(1).mean() - 0.5)
-            ) / 2
-            if not abs:
-                edges = np.linspace(
-                    (0.5 + threshold) - 4 * threshold,
-                    (0.5 + threshold) + (2 * threshold),
-                    11,
-                )
-                centers = np.around(
-                    ((edges[:-1] + np.diff(edges)[0] / 2) - (0.5 + threshold))
-                    / threshold,
-                    2,
-                )
-                d = (
-                    sd.groupby([pd.cut(sd.mc.values, edges, labels=centers)])
-                    .mean()
-                    .loc[:, ["choice", "pconf", "mc", "correct"]]
-                    .reset_index()
-                )
-            else:
-                edges = np.linspace(
-                    (0.5 + threshold) - 1 * threshold,
-                    (0.5 + threshold) + (2 * threshold),
-                    7,
-                )
-                centers = np.around(
-                    ((edges[:-1] + np.diff(edges)[0] / 2) - (0.5 + threshold))
-                    / threshold,
-                    2,
-                )
-                sd.loc[:, "mc"] = np.abs(sd.mc - 0.5) + 0.5
-                d = (
-                    sd.groupby([pd.cut(sd.mc.values, edges, labels=centers)])
-                    .mean()
-                    .loc[:, ["choice", "pconf", "mc", "correct"]]
-                    .reset_index()
-                )
-            d.columns = ["threshold_units", "choice", "pconf", "mc", "accuracy"]
-            k = d.threshold_units
-            d.loc[:, "threshold_units"] = d.loc[:, "threshold_units"].astype(float) + 1
-            return d
 
-        subplot(gs[1, :2])
+        # This is the kernel panel
+        ax = subplot(gs[0, :2])
+
+        palette = {
+            r"$E_{N}^{High}$": color_palette["Secondary1"][0],
+            r"$E_{N}^{Low}$": color_palette["Secondary2"][1],
+            r"$E_{S}^{Low}$": color_palette["Secondary2"][1],
+            r"$E_{S}^{High}$": color_palette["Secondary1"][0],
+        }
+
+        """
+        k = empirical.get_confidence_kernels(data, contrast_mean=0.5)
+        for kernel, kdata in k.groupby("Kernel"):
+            kk = pd.pivot_table(
+                index="snum", columns="time", values="contrast", data=kdata
+            )
+            plotwerr(kk, color=palette[kernel], lw=2, label="Low confidence")
+         empirical.plot_kernel(k, palette, legend=False)
+
+        plt.ylabel(r"$\Delta$ Contrast")
+        plt.text(
+            -0.2,
+            0.003,
+            "ref.    test",
+            rotation=90,
+            horizontalalignment="center",
+            verticalalignment="center",
+        )
+        xlabel("Contrast sample")
+        # legend(frameon=False)
+        xticks(np.arange(10), np.arange(10) + 1)
+        ax.axhline(color="k", lw=1)
+        ax.set_ylim(-0.04, 0.04)
+        sns.despine(ax=ax)
+        """
+        kernels.get_decision_fluct(data)
+        add_letter(fig, gs[0,:2], 'B', x=-0.15)
+
+        ax = subplot(gs[0, 2:])
+        from conf_analysis.behavior import kernels
+        from conf_analysis.meg import cort_kernel as ck
+
+        dk, confidence_kernel = ck.get_kernels()
+        scrct, serr = [], []
+        for s in range(1, 16):
+            scrct.append(linregress(np.arange(10), dk.loc[s,])[0])
+            serr.append(linregress(np.arange(10), confidence_kernel.loc[s,])[0])
+        print(
+            "Slopes choice kernel (correct: mean, t, p, #>0):",
+            np.mean(scrct),
+            ttest_1samp(scrct, 0),
+            sum(np.array(scrct) > 0),
+        )
+        #print(
+        #    "Slopes for confidence kernel (error: mean, t, p, #<0):",
+        #    np.mean(serr),
+        #    ttest_1samp(serr, 0),
+        #    sum(np.array(serr) < 0),
+        #)
+
+        #---> Comment in for kernel:
+        """
+        plotwerr(dk, color="k", label="Decision kernel")
+        draw_sig(ax, dk, fdr=True, color="k", y=0.0)
+
+        #plotwerr(confidence_kernel, color=(0.5, 0.5, 0.5), label="Confidence kernel")
+        #draw_sig(ax, confidence_kernel, fdr=True, color=(0.5, 0.5, 0.5), y=0.005)
+        # plotwerr(confidence_assym+0.5, 'b--', label='Confidence assym.')
+
+        # axhline(0.5, color="k", lw=1)
+        ylim([0.49 - 0.5, 0.64 - 0.5])
+        ylabel("AUC-0.5")
+        xlabel("Contrast sample")
+        legend(frameon=False)
+        yticks(np.array([0.5, 0.55, 0.6]) - 0.5)
+        xticks(np.arange(10), np.arange(10) + 1)
+        sns.despine(ax=gca(), bottom=False)
+        """
+        kernels.plot_decision_kernel_values(data)
+        ylabel("Contrast")
+        xlabel("Contrast sample")
+        legend(frameon=False)
+        add_letter(fig, gs[0,2:], 'C', x=-0.125)
+
+        savefig(
+            "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/1_figure_1.pdf",
+            bbox_inches="tight",
+            dpi=1200,
+        )
+
+        p = data.groupby(["snum"]).apply(
+            lambda x: empirical.fit_choice_logistic(x, summary=False)
+        )
+        p = p.groupby("snum").mean()
+        print(
+            "Can predict choice above chance in %i/15 subjects. \nMean choice accuracy is %0.2f (%0.2f-%0.2f)"
+            % ((sum(p > 0.5)), np.around(np.mean(p), 2), np.around(p.min(), 2), np.around(p.max(), 2))
+        )
+
+        p = data.groupby(["snum", "response"]).apply(
+            lambda x: empirical.fit_conf_logistic(x, summary=False)
+        )
+        p = p.groupby("snum").mean()
+        print(
+            "Can predict confidence above chance in %i/15 subjects. \nMean confidence accuracy is %0.2f (%0.2f-%0.2f)"
+            % ((sum(p > 0.5)), np.around(np.mean(p), 2), np.around(p.min(), 2), np.around(p.max(), 2))
+        )
+    return ck
+
+
+def figureS1(data):
+    from conf_analysis.behavior import empirical
+    from conf_analysis import behavior
+    data.loc[:, "choice"] = (data.response + 1) / 2
+    data.loc[:, "pconf"] = data.confidence - 1
+    color_palette = behavior.parse(behavior.colors)
+    fig=figure(figsize=(7.5, 3.5))
+    with mpl.rc_context(rc={"font.size": 8.0, "lines.linewidth": 0.5}):
+        gs = matplotlib.gridspec.GridSpec(
+            2, 6, wspace=1.5, hspace=0.35
+        )
+            # This panel needs to go into supplements
+        subplot(gs[0, :2])
         # Make Panel A from Sanders 2016: Confidence x, vs. accuracy
         # Can't really do that: We don't have fine grained confidence judgements.
         # So have to group by high/low
@@ -381,7 +533,9 @@ def figure1(data=None):
 
         print("T-Test for accuracy by confidence:", ttest_rel(X.loc[:, 0], X.loc[:, 1]))
         sns.despine(ax=gca())
-        subplot(gs[1, 2:4])
+
+        add_letter(plt.gcf(), gs[0, :2], 'A', x=-0.25)
+        subplot(gs[0, 2:4])
 
         dz = (
             data.groupby(["snum", "correct"])
@@ -428,8 +582,9 @@ def figure1(data=None):
         ylabel("Confidence")
         yticks([0.2, 0.3, 0.4, 0.5, 0.6])
         sns.despine(ax=gca())
+        add_letter(plt.gcf(), gs[0, 2:4], 'B', x=-0.25)
 
-        subplot(gs[1, 4:])
+        subplot(gs[0, 4:])
         dz = (
             data.groupby(["snum", "confidence"])
             .apply(lambda x: by_discrim(x, abs=True))
@@ -488,99 +643,12 @@ def figure1(data=None):
         yticks([0.5, 0.75, 1], [50, 75, 100])
         sns.despine(ax=gca())
         # tight_layout()
-
-        ax = subplot(gs[0, :3])
-
-        palette = {
-            r"$E_{N}^{High}$": color_palette["Secondary1"][0],
-            r"$E_{N}^{Low}$": color_palette["Secondary2"][1],
-            r"$E_{S}^{Low}$": color_palette["Secondary2"][1],
-            r"$E_{S}^{High}$": color_palette["Secondary1"][0],
-        }
-
-        k = empirical.get_confidence_kernels(data, contrast_mean=0.5)
-        for kernel, kdata in k.groupby("Kernel"):
-            kk = pd.pivot_table(
-                index="snum", columns="time", values="contrast", data=kdata
-            )
-            plotwerr(kk, color=palette[kernel], lw=2, label="Low confidence")
-        # empirical.plot_kernel(k, palette, legend=False)
-        plt.ylabel(r"$\Delta$ Contrast")
-        plt.text(
-            -0.2,
-            0.003,
-            "ref.    test",
-            rotation=90,
-            horizontalalignment="center",
-            verticalalignment="center",
-        )
-        xlabel("Contrast sample")
-        # legend(frameon=False)
-        xticks(np.arange(10), np.arange(10) + 1)
-        ax.axhline(color="k", lw=1)
-        ax.set_ylim(-0.04, 0.04)
-        sns.despine(ax=ax)
-
-        ax = subplot(gs[0, 3:])
-        from conf_analysis.behavior import kernels
-        from conf_analysis.meg import cort_kernel as ck
-
-        dk, confidence_kernel = ck.get_kernels()
-        scrct, serr = [], []
-        for s in range(1, 16):
-            scrct.append(linregress(np.arange(10), dk.loc[s,])[0])
-            serr.append(linregress(np.arange(10), confidence_kernel.loc[s,])[0])
-        print(
-            "Slopes choice kernel (correct: mean, t, p, #>0):",
-            np.mean(scrct),
-            ttest_1samp(scrct, 0),
-            sum(np.array(scrct) > 0),
-        )
-        print(
-            "Slopes for confidence kernel (error: mean, t, p, #<0):",
-            np.mean(serr),
-            ttest_1samp(serr, 0),
-            sum(np.array(serr) < 0),
-        )
-
-        plotwerr(dk, color="k", label="Decision kernel")
-        draw_sig(ax, dk, fdr=True, color="k", y=0.0)
-        plotwerr(confidence_kernel, color=(0.5, 0.5, 0.5), label="Confidence kernel")
-        draw_sig(ax, confidence_kernel, fdr=True, color=(0.5, 0.5, 0.5), y=0.005)
-        # plotwerr(confidence_assym+0.5, 'b--', label='Confidence assym.')
-
-        # axhline(0.5, color="k", lw=1)
-        ylim([0.49 - 0.5, 0.64 - 0.5])
-        ylabel("AUC-0.5")
-        xlabel("Contrast sample")
-        legend(frameon=False)
-        yticks(np.array([0.5, 0.55, 0.6]) - 0.5)
-        xticks(np.arange(10), np.arange(10) + 1)
-        sns.despine(ax=gca(), bottom=False)
+        add_letter(plt.gcf(), gs[0, 4:], 'C', x=-0.3)
         savefig(
-            "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/1_figure_1.pdf",
+            "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/1_figure_S1.pdf",
             bbox_inches="tight",
             dpi=1200,
         )
-
-        p = data.groupby(["snum"]).apply(
-            lambda x: empirical.fit_choice_logistic(x, summary=False)
-        )
-        p = p.groupby("snum").mean()
-        print(
-            "Can predict choice above chance in %i/15 subjects. \nMean choice accuracy is %0.2f"
-            % ((sum(p > 0.5)), np.around(np.mean(p), 2))
-        )
-
-        p = data.groupby(["snum", "response"]).apply(
-            lambda x: empirical.fit_conf_logistic(x, summary=False)
-        )
-        p = p.groupby("snum").mean()
-        print(
-            "Can predict confidence above chance in %i/15 subjects. \nMean confidence accuracy is %0.2f"
-            % ((sum(p > 0.5)), np.around(np.mean(p), 2))
-        )
-    return ck
 
 
 def figure2(df=None, stats=False):
@@ -648,7 +716,7 @@ def figure2(df=None, stats=False):
     return img, df, stats
 
 
-def figure3(df=None, stats=False, dcd=None, aspect="auto"):  # 0.01883834992799947):
+def figure2_alt(df=None, stats=False, dcd=None, aspect='auto'):
     """
     Plot TFRs underneath each other.
     """
@@ -656,14 +724,14 @@ def figure3(df=None, stats=False, dcd=None, aspect="auto"):  # 0.018838349927999
         import gzip, pickle
 
         with gzip.open(
-            "/Users/nwilming/u/conf_analysis/results/all_contrasts_confmeg-20190308-stats.pickle.gzip",
+            "/Users/nwilming/u/conf_analysis/results/all_contrasts_stats_20190516.pickle",
             "rb",
         ) as f:
             stats = pickle.load(f)
 
     if df is None:
         df = pd.read_hdf(
-            "/Users/nwilming/u/conf_analysis/results/all_contrasts_confmeg-20190308.hdf"
+            "/Users/nwilming/u/conf_analysis/results/all_contrasts_confmeg-20190516.hdf"
         )
 
     if dcd is None:
@@ -671,14 +739,14 @@ def figure3(df=None, stats=False, dcd=None, aspect="auto"):  # 0.018838349927999
     palette = _stream_palette()
 
     with mpl.rc_context(rc={"font.size": 8.0, "lines.linewidth": 0.5}):
-        fig = figure(figsize=(8, 7))
+        fig = figure(figsize=(7.5, 5.5))
         from conf_analysis.meg import srtfr
 
-        gs = matplotlib.gridspec.GridSpec(2, 1)
+        gs = matplotlib.gridspec.GridSpec(3, 1, height_ratios=[1,1,0.1])
 
         srtfr.plot_stream_figures(
-            df.query('~(hemi=="avg")'),
-            contrasts=["choice"],
+            df.query('(hemi=="avg")'),
+            contrasts=["all"],
             flip_cbar=True,
             gs=gs[0, 0],
             stats=stats,
@@ -687,24 +755,34 @@ def figure3(df=None, stats=False, dcd=None, aspect="auto"):  # 0.018838349927999
         )
 
         cmap = matplotlib.cm.ScalarMappable(
-            norm=matplotlib.colors.Normalize(-25, 25), cmap=plt.get_cmap("RdBu_r")
+            norm=matplotlib.colors.Normalize(-50, 50), cmap=plt.get_cmap("RdBu_r")
         )
         cmap.set_array([])
-        cax = fig.add_axes([0.74, 0.57, 0.1, 0.0125 / 2])
+        cax = fig.add_axes([0.74, 0.6, 0.1, 0.0125 / 2])
         cb = colorbar(
             cmap,
             cax=cax,
             shrink=0.5,
-            ticks=[-25, 0, 25],
+            ticks=[-50, 0, 50],
             drawedges=False,
             orientation="horizontal",
             label="% change",
         )
+        lax = add_letter(plt.gcf(), gs[0,0], 'A', x=-0.08, y=1.25)
         cb.outline.set_visible(False)
+        view_one = dict(azimuth=-40, elevation=100, distance=350)
+        view_two = dict(azimuth=-145, elevation=70, distance=350)
+        img = _get_palette(palette, views=[view_two, view_one])
+        iax = fig.add_axes([0.09, 0.8, 0.19, 0.19])
+        iax.imshow(img)
+        iax.set_xticks([])
+        iax.set_yticks([])
+        sns.despine(ax=iax, left=True, bottom=True)
+        sns.despine(ax=lax, left=True, bottom=True)
 
         plotter = dp.StreamPlotter(
             dp.plot_config,
-            {"MIDC_split": "Reds", "CONF_unsigned": "Greens", "CONF_signed": "Blues"},
+            {"MIDC_split": "Reds"},#, "CONF_unsigned": "Greens", "CONF_signed": "Blues"},
             {
                 # "Averaged": df.test_roc_auc.Averaged,
                 "Lateralized": dcd.test_roc_auc.Lateralized
@@ -714,7 +792,128 @@ def figure3(df=None, stats=False, dcd=None, aspect="auto"):  # 0.018838349927999
         )
         plotter.plot(aspect="auto")
 
-        cax = fig.add_axes([0.81, 0.21, 0.1, 0.0125 / 2])
+        cax = fig.add_axes([0.81, 0.27, 0.1, 0.0125 / 2])
+        cax.plot([-10, -1], [0, 0], "r", label="Choice decoding")
+        #cax.plot([-10, -1], [0, 0], "b", label="Signed confidence")
+        #cax.plot([-10, -1], [0, 0], "g", label="Unigned confidence")
+        cax.set_xlim([0, 1])
+        cax.set_xticks([])
+        cax.set_yticks([])
+        cax.legend(frameon=False)
+        sns.despine(ax=cax, left=True, bottom=True)
+        sns.despine(ax=iax, left=True, bottom=True)
+        sns.despine(ax=lax, left=True, bottom=True)
+        add_letter(plt.gcf(), gs[1,0], 'B', x=-0.08, y=1.1)
+
+        ax = subplot(gs[2,0])
+        ax.set_xlim([0,1])
+        ax.set_xticks([])
+        ax.set_yticks([])
+        plt.text(0.5, 0.5, 'Association\ncortex', 
+            horizontalalignment='center', 
+            verticalalignment='center', 
+            color=(0.75, 0.75, 0.75))
+        plt.text(0.075, 0.5, 'Sensory\ncortex', 
+            horizontalalignment='center', 
+            verticalalignment='center',
+            color=(0.75, 0.75, 0.75))
+        plt.text(1-0.075, 0.5, 'Motor\ncortex', 
+            horizontalalignment='center', 
+            verticalalignment='center',
+            color=(0.75, 0.75, 0.75))
+        plt.arrow( 0.4, 0.5, -0.2, 0, fc=(0.75, 0.75, 0.75), ec=(0.75, 0.75, 0.75),
+             head_width=0.5, head_length=0.01 )
+        plt.arrow( 0.6, 0.5, 0.2, 0, fc=(0.75, 0.75, 0.75), ec=(0.75, 0.75, 0.75),
+             head_width=0.5, head_length=0.01 )
+        sns.despine(ax=ax, left=True, bottom=True)
+    # plt.tight_layout()
+    savefig(
+        "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/2_figure_2_alt.pdf",
+        dpi=1200
+    )
+    return df, stats, dcd
+
+
+def figure3(df=None, stats=False, dcd=None, aspect="auto"):  # 0.01883834992799947):
+    """
+    Plot TFRs underneath each other.
+    """
+    if not stats:
+        import gzip, pickle
+
+        with gzip.open(
+            "/Users/nwilming/u/conf_analysis/results/all_contrasts_stats_20190516.pickle",
+            "rb",
+        ) as f:
+            stats = pickle.load(f)
+
+    if df is None:
+        df = pd.read_hdf(
+            "/Users/nwilming/u/conf_analysis/results/all_contrasts_confmeg-20190516.hdf"
+        )
+
+    if dcd is None:
+        dcd = dp.get_decoding_data()
+    palette = _stream_palette()
+
+    with mpl.rc_context(rc={"font.size": 8.0, "lines.linewidth": 0.5}):
+        fig = figure(figsize=(7.5, 10))
+        from conf_analysis.meg import srtfr
+
+        gs = matplotlib.gridspec.GridSpec(3, 1)
+
+        srtfr.plot_stream_figures(
+            df.query('~(hemi=="avg")'),
+            contrasts=["choice"],
+            flip_cbar=True,
+            gs=gs[1, 0],
+            stats=stats,
+            aspect=aspect,
+            title_palette=palette,
+        )
+
+        cmap = matplotlib.cm.ScalarMappable(
+            norm=matplotlib.colors.Normalize(-25, 25), cmap=plt.get_cmap("RdBu_r")
+        )
+        cmap.set_array([])
+        cax = fig.add_axes([0.74, 0.67, 0.1, 0.0125 / 2])
+        cb = colorbar(
+            cmap,
+            cax=cax,
+            shrink=0.5,
+            ticks=[-25, 0, 25],
+            drawedges=False,
+            orientation="horizontal",
+            label="% power change",
+        )
+        cb.outline.set_visible(False)
+        
+
+        srtfr.plot_stream_figures(
+            df.query('(hemi=="avg")'),
+            contrasts=["stimulus"],
+            flip_cbar=False,
+            gs=gs[0, 0],
+            stats=stats,
+            aspect=aspect,
+            title_palette=palette,
+        )
+
+
+
+        plotter = dp.StreamPlotter(
+            dp.plot_config,
+            {"MIDC_split": "Reds", "CONF_unsigned": "Greens", "CONF_signed": "Blues"},
+            {
+                # "Averaged": df.test_roc_auc.Averaged,
+                "Lateralized": dcd.test_roc_auc.Lateralized
+            },
+            gs=gs[2, 0],
+            title_palette=palette,
+        )
+        plotter.plot(aspect="auto")
+
+        cax = fig.add_axes([0.81, 0.15, 0.1, 0.0125 / 2])
         cax.plot([-10, -1], [0, 0], "r", label="Choice")
         cax.plot([-10, -1], [0, 0], "b", label="Signed confidence")
         cax.plot([-10, -1], [0, 0], "g", label="Unigned confidence")
@@ -726,7 +925,7 @@ def figure3(df=None, stats=False, dcd=None, aspect="auto"):  # 0.018838349927999
 
     # plt.tight_layout()
     savefig(
-        "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/3_figure_3.pdf"
+        "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/supp_2_figure_2.pdf"
     )
     return df, stats, dcd
 
@@ -844,7 +1043,7 @@ def figure3_supplement(df=None, stats=None):
 
     # fig.colorbar(im, cax=cax)
     savefig(
-        "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/3_figure_3_supplement.pdf",
+        "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/supp_2B_figure_2B.pdf",
         dpi=1200,
         bbox_inches="tight",
     )
@@ -863,7 +1062,7 @@ def figure4(ogldcd=None, pdcd=None):
     _figure4A(ogldcd, gs=gs[0, 0])
     tight_layout()
     savefig(
-        "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/4_figure_4.pdf",
+        "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/supp_3_figure_3.pdf",
         dpi=1200,
         bbox_inches="tight",
     )
@@ -879,7 +1078,7 @@ def figure4(ogldcd=None, pdcd=None):
     return ogldcd, pdcd
 
 
-fig_4_interesting_rois = {"3b": "M1", "V1": "V1", "2": "IPS/PostCeS", "7PC": "aIPS"}
+fig_4_interesting_rois = {"4": "M1", "V1": "V1", "2": "IPS/PostCeS", "7PC": "aIPS"}
 fig_4B_interesting_rois = {
     "JWG_M1": "M1",
     "vfcPrimary": "V1",
@@ -968,16 +1167,21 @@ def _figure4A(data=None, t=1.083, gs=None):
                 values=0,
                 data=sdata.stack().reset_index(),
             )
-
+            
+            print('Subsetting latencies to remove NANs. Check this if decoding is redone')
+            X = X.loc[:, ::2]
+            
             txts = []
             idx = np.argsort(X.loc[:, t])
             sorting = X.index.values[idx]
             norm = matplotlib.colors.Normalize(vmin=low, vmax=high)
             cm = matplotlib.cm.get_cmap(colormaps[signal])
             max_roi = X.loc[:, 1.417].idxmax()
+
             for j, roi in enumerate(sorting):
                 val, color = X.loc[roi, t], cm(norm(X.loc[roi, t]))
                 plt.plot(X.columns.values, X.loc[roi, :], color=color)
+                
                 if any([roi == x for x in fig_4_interesting_rois.keys()]) or (
                     roi == max_roi
                 ):
@@ -989,6 +1193,7 @@ def _figure4A(data=None, t=1.083, gs=None):
             y = np.linspace(0.475, 0.75, 200)
             x = y * 0 - 0.225
             plt.scatter(x, y, c=cm(norm(y)), marker=0)
+
             plt.title(titles[signal])
             plt.xlim([-0.25, 1.4])
             plt.ylim([0.475, 0.75])
@@ -1224,6 +1429,12 @@ def figure5(
             plt.gca(), ssd.test_slope.Averaged, "vfcPrimary", "V1", integration_slice
         )
         legend([], frameon=False)
+        xl = plt.xlim()
+        norm = matplotlib.colors.Normalize(vmin=-0.05, vmax=0.05)
+        cm = matplotlib.cm.get_cmap('RdBu_r')
+        y = np.linspace(0, 0.05, 250)
+        #plt.scatter(-0.15+0*y, y, c=cm(norm(y)), marker=0)
+        plt.xlim(xl)
         ax = subplot(gs[0, 1])
         plot_per_sample_resp(
             plt.gca(),
@@ -1233,41 +1444,50 @@ def figure5(
             integration_slice,
             [-0.005, 0.065],
         )
+        norm = matplotlib.colors.Normalize(vmin=-0.05, vmax=0.05)
+        cm = matplotlib.cm.get_cmap('RdBu_r')        
+        #plt.scatter(-0.15+0*y, y, c=cm(norm(y)), marker=0)
+        plt.xlim(xl)
         ax.set_ylabel("")
         legend([], frameon=False)
-
+        add_letter(plt.gcf(), gs[0,0], 'A', x=-0.18, y=1.2)
         ax = subplot(gs[0, 2])
         plot_per_sample_resp(
             plt.gca(),
             ssd.test_slope.Lateralized,
             "JWG_M1",
-            "M1 (hand)",
+            "M1-hand",
             integration_slice,
             [-0.005, 0.065],
         )
+        y = np.linspace(0, 0.025, 100)
+        norm = matplotlib.colors.Normalize(vmin=-0.025, vmax=0.025)
+        cm = matplotlib.cm.get_cmap('RdBu_r')
+        #plt.scatter(-0.15+0*y, y, c=cm(norm(y)), marker=0, zorder=1)
+        #plt.scatter(-0.115+0*y, y, c=cm(norm(-y)), marker=0, zorder=0)
+        plt.xlim(xl)
         ax.set_ylabel("")
 
         legend(frameon=False)
         sns.despine()
 
         _figure5A(oglssd, oglidx, gs[2, :])
-        _figure6A(gs=gs[4, :])
-        _figure6B(gs=gs[6, :])
+        add_letter(plt.gcf(), gs[2,:], 'B', y=1.3)
         # _figure5C(ssd.test_slope.Averaged, oglssd.test_slope.Pair, gs=gs[3,:])
         savefig(
-            "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/5_figure_5.pdf",
+            "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/3_figure_3.pdf",
             dpi=1200,
             bbox_inches="tight",
         )
 
-        plt.figure(figsize=(7.5, 1.5))
-        gs = matplotlib.gridspec.GridSpec(1, 3, hspace=0.0)
-        _figure5B(gs=gs[:, :])
-        savefig(
-            "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/supp_5_figure_5.pdf",
-            dpi=1200,
-            bbox_inches="tight",
-        )
+        #plt.figure(figsize=(7.5, 1.5))
+        #gs = matplotlib.gridspec.GridSpec(1, 3, hspace=0.0)
+        #_figure5B(gs=gs[:, :])
+        #savefig(
+        #    "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/supp_2_figure_5.pdf",
+        #    dpi=1200,
+        #    bbox_inches="tight",
+        #)
     return ssd, idx, brain
 
 
@@ -1275,38 +1495,70 @@ def _figure5A(ssd, idx, gs, integration_slice=def_ig):
     import seaborn as sns
     import matplotlib
 
-    gs = matplotlib.gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs)
+    gs = matplotlib.gridspec.GridSpecFromSubplotSpec(2, 3, subplot_spec=gs, height_ratios=[1, 0.075])
     with mpl.rc_context(rc={"font.size": 8.0, "lines.linewidth": 0.5}):
         dv = 10
-        ax = plt.subplot(gs[0, 0])
+        ax = plt.subplot(gs[0, 0])        
         m = idx.groupby("cluster").mean()
         palette = {k: dv + vals.SSD for k, vals in m.iterrows()}
         img = _get_img(palette, low=dv + -0.05, high=dv + 0.05, views=["lat", "med"])
-        plt.imshow(img, aspect="equal")
+        plt.imshow(img, aspect="equal")        
         plt.xticks([])
         plt.yticks([])
         plt.title("Contrast encoding", fontsize=8)
         sns.despine(ax=ax, left=True, right=True, bottom=True)
+
+        cax = plt.subplot(gs[1, 0])
+        norm = mpl.colors.Normalize(vmin=0,vmax=0.05)
+        sm = plt.cm.ScalarMappable(
+            cmap=truncate_colormap(plt.get_cmap("RdBu_r"), 0.5, 1),
+            norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, cax=cax, orientation='horizontal',
+            ticks=[0, 0.025, 0.05], drawedges=False)
+
         ax = plt.subplot(gs[0, 1])
         m = idx.groupby("cluster").mean()
         palette = {k: dv + vals.SSD_acc_contrast for k, vals in m.iterrows()}
         img = _get_img(palette, low=dv + -0.05, high=dv + 0.05, views=["lat", "med"])
         plt.imshow(img, aspect="equal")
+
+        #plt.colorbar(sm)        
         plt.xticks([])
         plt.yticks([])
         plt.title("Accumulated contrast", fontsize=8)
         sns.despine(ax=ax, left=True, right=True, bottom=True)
+
+        cax = plt.subplot(gs[1, 1])
+        norm = mpl.colors.Normalize(vmin=0,vmax=0.05)
+        sm = plt.cm.ScalarMappable(
+            cmap=truncate_colormap(plt.get_cmap("RdBu_r"), 0.5, 1),
+            norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, cax=cax, orientation='horizontal',
+            ticks=[0, 0.025, 0.05], drawedges=False)
         ax = plt.subplot(gs[0, 2])
 
         m = idx.groupby("cluster").mean()
         palette = {k: dv + vals.SSDvsACC for k, vals in m.iterrows()}
         img = _get_img(palette, low=dv + -0.025, high=dv + 0.025, views=["lat", "med"])
         plt.imshow(img, aspect="equal")
+        norm = mpl.colors.Normalize(vmin=-0.025,vmax=0.025)
+        sm = plt.cm.ScalarMappable(cmap='RdBu_r', norm=norm)
+        sm.set_array([])
+        #plt.colorbar(sm, orientation='horizontal')
         plt.xticks([])
         plt.yticks([])
         plt.title("Difference", fontsize=8)
         sns.despine(ax=ax, left=True, right=True, bottom=True)
-
+        cax = plt.subplot(gs[1, 2])
+        norm = mpl.colors.Normalize(vmin=-0.025,vmax=0.025)
+        sm = plt.cm.ScalarMappable(
+            cmap="RdBu_r",
+            norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, cax=cax, orientation='horizontal',
+            ticks=[-0.025, 0, 0.025], drawedges=False)
     return ssd, idx
 
 
@@ -1347,7 +1599,7 @@ def _figure5B(xscores=None, gs=None):
         gs = matplotlib.gridspec.GridSpecFromSubplotSpec(
             1, 5, subplot_spec=gs, width_ratios=[1, 0.35, 1, 1, 1]
         )
-    area_names = ["aIPS", "IPS/PostCeS", "M1 (hand)"]
+    area_names = ["aIPS", "IPS/PostCeS", "M1-hand"]
     area_colors = _stream_palette()
     for i, signal in enumerate(["JWG_aIPS", "JWG_IPS_PCeS", "JWG_M1"]):
         sd = xscores.query('motor_area=="%s" & (0<=latency<=0.2)' % signal)
@@ -1564,7 +1816,277 @@ figure_6colors = {
 }
 
 
-def _figure6B(cluster="vfcPrimary", gs=None):
+def figure6():
+    plt.figure(figsize=(8, 4.5))
+    gs = matplotlib.gridspec.GridSpec(2, 3, height_ratios=[1, 0.8])
+    with mpl.rc_context(rc={"font.size": 8.0, "lines.linewidth": 1}):
+        subplot(gs[0,:], zorder=10)
+        _figure6_comics(N=10000000)
+        add_letter(gcf(), gs[0,:], 'A', y=0.95)
+        _figure6A(gs=gs[1, :])
+        #_figure6B(gs=gs[2, :])
+        add_letter(plt.gcf(), gs[1,:], 'B')
+        savefig(
+            "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/4_figure_4.pdf",
+            dpi=1200,
+            bbox_inches="tight",
+        )
+
+
+def _figure6_comics(N=1000):        
+    with mpl.rc_context(rc={"font.size": 8.0, "lines.linewidth": 1.5}):
+        ax = cp_sim(N=N)
+        text(
+            9.5,
+            0.77,
+            "No sensory adaptation",
+            horizontalalignment="center",
+            verticalalignment="center",
+        )
+        text(4.5, 0.71, "Perfect accumulation", horizontalalignment="center")
+        text(
+            14.5, 0.71, "Bounded adaptation", horizontalalignment="center"
+        )
+        #plot([4.5, 4.5], [0.75, 0.7725], 'k', lw=1)
+        #plot([4.5, 6], [0.7725, 0.7725], 'k', lw=1)
+        #plot([13, 14.5], [0.7725, 0.7725], 'k', lw=1)
+        #plot([14.5, 14.5], [0.75, 0.7725], 'k', lw=1)
+        
+        text(
+            29.5,
+            0.77,
+            "With sensory adaptation",
+            horizontalalignment="center",
+            verticalalignment="center",
+        )
+        text(24.5, 0.71, "Perfect accumulation", horizontalalignment="center")
+        text(
+            34.5, 0.71, "Bounded accumulation", horizontalalignment="center"
+        )   
+        shift = 20
+        #plot([4.5+shift, 4.5+shift], [0.75, 0.7725], 'k', lw=1)
+        #plot([4.5+shift, 5.7+shift], [0.7725, 0.7725], 'k', lw=1)
+        #plot([13.3+shift, 14.5+shift], [0.7725, 0.7725], 'k', lw=1)
+        #plot([14.5+shift, 14.5+shift], [0.75, 0.7725], 'k', lw=1)
+        
+        ax.legend(frameon=False, bbox_to_anchor=(1.07, -.15), loc=0)     
+        ax.set_xlim([0, 40])
+
+@memory.cache()
+def _get_response(
+    fluct, bounded=False, early_noise=0.4, late_noise=0, weights=np.array([1] * 10)
+):
+    N = fluct.shape[0]
+    from conf_analysis.behavior import kernels
+    def bounded_acc(fluct, bound=0.95):
+
+        responses = fluct[:, 0] * np.nan
+        cumsums = fluct.cumsum(1)
+        for col in np.arange(fluct.shape[1]):
+            id_pos = (cumsums[:, col] > bound) & np.isnan(responses)
+            id_neg = (cumsums[:, col] < -bound) & np.isnan(responses)
+            responses[id_pos] = 1
+            responses[id_neg] = -1
+        id_pos = (cumsums[:, col] > 0) & np.isnan(responses)
+        id_neg = (cumsums[:, col] < 0) & np.isnan(responses)
+        responses[id_pos] = 1
+        responses[id_neg] = -1
+        return responses
+
+    early_noise = early_noise * (np.random.normal(size=(N, 10)))
+    late_noise = early_noise * (np.random.normal(size=(N, 10)))
+    correct = fluct.mean(1) > 0
+
+    internal_flucts = (fluct + early_noise) * weights
+    if bounded:
+        print('Bounded acc')
+        resp = bounded_acc(internal_flucts + late_noise)
+    else:
+        resp = ((internal_flucts + late_noise).mean(1) > 0).astype(int)
+        resp[resp == 0] = -1
+    accuracy = np.mean((resp == 1) == correct)
+    behavioral_kernel = kernels.kernel(fluct, resp.astype(int))[0]
+    cp = kernels.kernel(internal_flucts, resp.astype(int))[0]
+    contrast = weights-weights.mean()
+    return accuracy, behavioral_kernel, cp, contrast.ravel()
+
+
+@memory.cache()
+def _get_fluct(t, N):
+    return 0.1 * (np.random.normal(size=(N, 10))) + t
+
+def cp_sim(t=0.1, noise_mag=0.43, N=15000):
+    fluct = _get_fluct(t, N)
+    yl = [0.5, 0.8]
+    
+    const = np.linspace(1, 0, 10)[np.newaxis, :] * 0 + 1
+    weights = np.linspace(1, 0.1, 10)[np.newaxis, :]
+    ax = gca()
+    for i, (bound, weights, enfudge) in enumerate(
+        zip([False, True, False, True], 
+            [const, const, weights, weights], 
+            [0.43, 0.385, 0.286, 0.295])
+    ):
+        x = np.arange(10)+i*10
+        
+        accuracy, behavioral_kernel, cp, contrast = _get_response(
+            fluct, bounded=bound, weights=weights, early_noise=enfudge
+        )
+        print(accuracy)
+        if i==0:
+            plot(x, behavioral_kernel+0.05, color="k", label="Behavioral kernel")
+            #plot(x, cp, color=figure_6colors["AFcorr"], label="V1 (gamma band) kernel")
+            if contrast[-1] < 0:
+                plot(x, 0.1*contrast+0.6, color=figure_6colors["DCD"], label="V1 contrast")
+            else:
+                plot(x, contrast+0.6, color=figure_6colors["DCD"], label="V1 contrast")
+        else:
+            plot(x, behavioral_kernel+0.05, color="k")
+            #plot(x, cp, color=figure_6colors["AFcorr"])
+            if contrast[-1] < 0:
+                plot(x, 0.1*contrast+0.6, color=figure_6colors["DCD"])
+            else:
+                plot(x, contrast+0.6, color=figure_6colors["DCD"])
+        ylim(yl)
+        text(0+i*10+0.5, 0.509, 'Accuracy=%0.3f'%np.around(accuracy, 3))
+        yticks([])
+    xticks([0, 9, 10, 19, 20, 29, 30, 39], [0, 1, 0, 1, 0, 1, 0, 1])
+    sns.despine(ax=ax, left=True, bottom=True)
+    ylabel('AUC /      \nEncoding strength      ')
+    plot([0, 0], [0.5, 0.725], 'k')
+    plot([0, 9], [0.5, 0.5], 'k')
+    plot([10, 19], [0.5, 0.5], 'k')
+    plot([20, 29], [0.5, 0.5], 'k')
+    plot([30, 39], [0.5, 0.5], 'k')
+    return ax
+
+
+def _figure6A(cluster="vfcPrimary", freq="gamma", lowfreq=10, gs=None, label=True):
+    import matplotlib
+    import seaborn as sns
+    import pickle
+
+    fs = {
+        "gamma": "/Users/nwilming/u/conf_analysis/results/cort_kernel.results.pickle",
+        "alpha": "/Users/nwilming/u/conf_analysis/results/cort_kernel_f0-10.results.pickle",
+        "beta": "/Users/nwilming/u/conf_analysis/results/cort_kernel_f13-30.results.pickle",
+    }
+    try:
+        a = pickle.load(open(fs[freq], "rb"))
+    except KeyError:
+        fname = (
+            "/Users/nwilming/u/conf_analysis/results/cort_kernel_f%i.results.pickle"
+            % freq
+        )
+        a = pickle.load(open(fname, "rb"))
+    ccs, K, kernels, peaks = a["ccs"], a["K"], a["kernels"], a["v1decoding"]
+    clpeaks = get_cl_decoding_peaks()
+    v1decoding = clpeaks["vfcPrimary"]
+    M1decoding = clpeaks["vfcPrimary"]
+
+    v1dcdslopes = v1decoding.apply(lambda x: linregress(np.arange(10), x)[0])
+    print(
+        "V1 decoding slopes (mean, p, t):",
+        np.around(np.mean(v1dcdslopes), 3),
+        ttest_1samp(v1dcdslopes, 0),
+    )
+
+    fname = (
+        "/Users/nwilming/u/conf_analysis/results/cort_kernel_f%i.results.pickle"
+        % lowfreq
+    )
+    b = pickle.load(open(fname, "rb"))
+    low_kernels = b["kernels"]
+
+    colors = figure_6colors
+
+    # plt.figure(figsize=(12.5, 5.5))
+    if gs is None:
+        figure(figsize=(10.5, 3))
+        gs = matplotlib.gridspec.GridSpec(
+            1, 2, width_ratios=[1, 1]
+        )
+    else:
+        gs = matplotlib.gridspec.GridSpecFromSubplotSpec(
+            1, 2, subplot_spec=gs, width_ratios=[1, 1], wspace=0.35
+        )
+    # gs = matplotlib.gridspec.GridSpec(1, 4)
+    ax = plt.subplot(gs[0, 0])
+    kernels.set_index(["cluster", "rmcif", "subject"], inplace=True)
+    KK = np.stack(kernels.kernel)
+    kernels = pd.DataFrame(KK, index=kernels.index).query('cluster=="%s"' % cluster)
+    rems = pd.pivot_table(data=kernels.query("rmcif==True"), index="subject")
+    alls = pd.pivot_table(data=kernels.query("rmcif==False"), index="subject")
+
+    low_kernels.set_index(["cluster", "rmcif", "subject"], inplace=True)
+    low_KK = np.stack(low_kernels.kernel)
+    low_kernels = pd.DataFrame(low_KK, index=low_kernels.index).query(
+        'cluster=="%s"' % cluster
+    )
+    low_rems = pd.pivot_table(data=low_kernels.query("rmcif==True"), index="subject")
+    low_alls = pd.pivot_table(data=low_kernels.query("rmcif==False"), index="subject")
+
+    plotwerr(K, color="k", label="Behavioral kernel", lw=1)
+    draw_sig(ax, K, y=-0.001, color="k")
+    sns.despine(ax=ax, bottom=False, right=True)
+    plt.ylabel("AUC")
+    plt.xticks(np.arange(10), ["0"] + [""] * 8 + ["1"])
+    plt.xlabel("Time")
+    plt.yticks([0, 0.04, 0.08, 0.12])
+    plt.ylim([-0.003, 0.13])
+
+    ax = plt.subplot(gs[0, 1])
+    plotwerr(v1decoding.T, label="V1 contrast", color=colors["DCD"], lw=1)
+    draw_sig(ax, K, y=-0.001, color=colors["DCD"])
+    plt.yticks([0, 0.04, 0.08, 0.12])
+    plt.xticks(np.arange(10), ["0"] + [""] * 8 + ["1"])
+    plt.xlabel("Time")
+    plt.ylabel("Encoding strength")
+    plt.ylim([-0.003, 0.13])
+    # plt.axhline(0, color='k', lw=1)
+    #plt.legend(
+    #    frameon=False, ncol=1, loc="center left", bbox_to_anchor=[0.2, 1], fontsize=8
+    #)
+    sns.despine(ax=ax, bottom=False, right=True)
+
+    """
+    ax = plt.subplot(gs[0, 2], zorder=1)
+    plotwerr(alls, label="V1 kernel (gamma band)", color=colors["AFcorr"])
+    #plotwerr(rems, label="Contrast fluctu-\nations removed", color=colors["AF-CIFcorr"])    
+    draw_sig(ax, alls, fdr=False, y=-0.0025, color=colors["AFcorr"])
+    #draw_sig(ax, rems, y=-0.01125, color=colors["AF-CIFcorr"])
+    #draw_sig(ax, alls - rems, y=-0.0125, color="k")
+
+    # plt.xticks(np.arange(10), np.arange(10)+1)
+    plt.xticks(np.arange(10), ["0"] + [""] * 8 + ["1"])
+    plt.xlabel("Time")
+    plt.ylabel("AUC")
+    plt.yticks([0, 0.01, 0.02, 0.03])
+    plt.ylim(-0.003, 0.03)
+    #yl = plt.ylim()
+    # plt.axhline(0, color='k', lw=1)
+    #plt.legend(
+    #    frameon=False, ncol=1, loc="center left", bbox_to_anchor=[0.15, 0.8], fontsize=8
+    #)
+    sns.despine(ax=ax, bottom=False, right=True)
+    #plt.title("Gamma", fontsize=8)
+    """
+
+
+def figure7():
+    plt.figure(figsize=(8, 4.5))
+    gs = matplotlib.gridspec.GridSpec(2, 3, height_ratios=[1, 0.8], hspace=0.4)
+    with mpl.rc_context(rc={"font.size": 8.0, "lines.linewidth": 1}):                
+        _figure7A(gs=gs[0, :])
+        _figure7B(gs=gs[1, :])
+        savefig(
+            "/Users/nwilming/Dropbox/UKE/confidence_study/manuscript/figures/5_figure_5.pdf",
+            dpi=1200,
+            bbox_inches="tight",
+        )
+
+
+def _figure7B(cluster="vfcPrimary", gs=None):
     import pickle
     from scipy.stats import linregress, ttest_1samp
 
@@ -1678,6 +2200,9 @@ def _figure6B(cluster="vfcPrimary", gs=None):
     ylabel("Kernel sum")
     yticks([-0.005, 0, 0.005, 0.01])
     sns.despine(ax=ax)
+
+    add_letter(plt.gcf(), gs[0,0], 'C', x=-0.35)
+
     ax = plt.subplot(gs[0, 2])
     diff = pd.pivot_table(
         data=res.query('comparison=="slope"'),
@@ -1696,6 +2221,8 @@ def _figure6B(cluster="vfcPrimary", gs=None):
     ylabel("Slope of\nV1 kernel")
     yticks([-0.002, 0, 0.002])
     sns.despine(ax=ax)
+    add_letter(plt.gcf(), gs[0,2], 'D', x=-0.4)
+
     ax = plt.subplot(gs[0, -1])
     alpha_M1 = pd.pivot_table(
         rescorr.query("10<=freq<=16"),
@@ -1725,10 +2252,11 @@ def _figure6B(cluster="vfcPrimary", gs=None):
     xticks([-2, 0, 2], ["-2\nV1 leads", 0, "2\nM1 leads"])
 
     sns.despine(ax=ax)
+    add_letter(plt.gcf(), gs[0,-1], 'E', x=-0.8)
     return res, rescorr
 
 
-def _figure6A(cluster="vfcPrimary", freq="gamma", lowfreq=10, gs=None, label=True):
+def _figure7A(cluster="vfcPrimary", freq="gamma", lowfreq=10, gs=None, label=True):
     import matplotlib
     import seaborn as sns
     import pickle
@@ -1778,7 +2306,7 @@ def _figure6A(cluster="vfcPrimary", freq="gamma", lowfreq=10, gs=None, label=Tru
             1, 8, subplot_spec=gs, width_ratios=[1, 0.75, 0.25, 1, 1, 0.55, 0.5, 0.5]
         )
     # gs = matplotlib.gridspec.GridSpec(1, 4)
-    ax = plt.subplot(gs[0, 0])
+    #ax = plt.subplot(gs[0, 0])
     kernels.set_index(["cluster", "rmcif", "subject"], inplace=True)
     KK = np.stack(kernels.kernel)
     kernels = pd.DataFrame(KK, index=kernels.index).query('cluster=="%s"' % cluster)
@@ -1793,23 +2321,25 @@ def _figure6A(cluster="vfcPrimary", freq="gamma", lowfreq=10, gs=None, label=Tru
     low_rems = pd.pivot_table(data=low_kernels.query("rmcif==True"), index="subject")
     low_alls = pd.pivot_table(data=low_kernels.query("rmcif==False"), index="subject")
 
-    plotwerr(K, color="k", label="Behavioral kernel", lw=1)
-    draw_sig(ax, K, color="k")
-    plotwerr(v1decoding.T, label="V1 contrast", color=colors["DCD"], lw=1)
-    draw_sig(ax, K, y=0.005, color=colors["DCD"])
-    plt.yticks([0, 0.04, 0.08, 0.12])
-    plt.xticks(np.arange(10), ["1"] + [""] * 8 + ["10"])
-    plt.xlabel("Sample")
-    plt.ylabel("AUC / Encoding strength")
+    #plotwerr(K, color="k", label="Behavioral kernel", lw=1)
+    #draw_sig(ax, K, color="k")
+    #plotwerr(v1decoding.T, label="V1 contrast", color=colors["DCD"], lw=1)
+    #draw_sig(ax, K, y=0.005, color=colors["DCD"])
+    #plt.yticks([0, 0.04, 0.08, 0.12])
+    #plt.xticks(np.arange(10), ["1"] + [""] * 8 + ["10"])
+    #plt.xlabel("Sample")
+    #plt.ylabel("AUC / Encoding strength")
     # plt.axhline(0, color='k', lw=1)
-    plt.legend(
-        frameon=False, ncol=1, loc="center left", bbox_to_anchor=[0.2, 1], fontsize=8
-    )
-    sns.despine(ax=ax, bottom=False, right=True)
+    #plt.legend(
+    #    frameon=False, ncol=1, loc="center left", bbox_to_anchor=[0.2, 1], fontsize=8
+    #)
+    #sns.despine(ax=ax, bottom=False, right=True)
 
-    ax = plt.subplot(gs[0, -5], zorder=1)
+    ax = plt.subplot(gs[0, :3], zorder=2)
     plotwerr(alls, label="V1 kernel", color=colors["AFcorr"])
     plotwerr(rems, label="Contrast fluctu-\nations removed", color=colors["AF-CIFcorr"])
+    gamma_k_slopes = alls.T.apply(lambda x: linregress(np.arange(0, 1, 0.1), x)[0])
+    print('Mean Gamma kernel slope:', gamma_k_slopes.mean(), ttest_1samp(gamma_k_slopes, 0))
     draw_sig(ax, alls, y=-0.01, color=colors["AFcorr"])
     draw_sig(ax, rems, y=-0.01125, color=colors["AF-CIFcorr"])
     draw_sig(ax, alls - rems, y=-0.0125, color="k")
@@ -1825,7 +2355,10 @@ def _figure6A(cluster="vfcPrimary", freq="gamma", lowfreq=10, gs=None, label=Tru
     )
     sns.despine(ax=ax, bottom=False, right=True)
     plt.title("Gamma", fontsize=8)
-    ax = plt.subplot(gs[0, -4], zorder=0)
+
+    add_letter(plt.gcf(), gs[0,:3], 'A', x=-0.3)
+
+    ax = plt.subplot(gs[0, 3:5], zorder=1)
 
     plotwerr(low_alls, ls=":", color=colors["AFcorr"])  # label='V1 kernel',
     plotwerr(low_rems, ls=":", color=colors["AF-CIFcorr"])
@@ -1936,6 +2469,8 @@ def _figure6A(cluster="vfcPrimary", freq="gamma", lowfreq=10, gs=None, label=Tru
     yl = plt.ylim()
     sns.despine(ax=ax, bottom=True)
 
+    add_letter(plt.gcf(), gs[0,-2], 'B', x=-1.2)
+
     ax = plt.subplot(gs[0, -1])
     sns.stripplot(
         data=rs,
@@ -2005,22 +2540,22 @@ def _figure6A(cluster="vfcPrimary", freq="gamma", lowfreq=10, gs=None, label=Tru
     plt.xlabel("")
     sns.despine(ax=ax, bottom=True, left=True)
 
-    ax = plt.subplot(gs[0, 1], zorder=-1)
-    pal = {}
-    for cluster in peaks.columns.get_level_values("cluster").unique():
-        r = []
-        for i in range(15):
-            r.append(np.corrcoef(peaks[cluster].T.loc[i + 1], K.loc[i + 1, :])[0, 1])
-        pal[cluster] = np.mean(r)
-
+    #ax = plt.subplot(gs[0, 1], zorder=-1)
+    #pal = {}
+    #for cluster in peaks.columns.get_level_values("cluster").unique():
+    #    r = []
+    #    for i in range(15):
+    #       r.append(np.corrcoef(peaks[cluster].T.loc[i + 1], K.loc[i + 1, :])[0, 1])
+    #    pal[cluster] = np.mean(r)
+    #
     # pal = dict(ccs.groupby('cluster').mean().loc[:, 'AFcorr'])
-    img = _get_lbl_annot_img(
-        {k: v + 1 for k, v in pal.items()}, low=1 + -1, high=1 + 1, thresh=-1
-    )
-    ax.imshow(img)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    sns.despine(ax=ax, left=True, bottom=True)
+    #img = _get_lbl_annot_img(
+    #    {k: v + 1 for k, v in pal.items()}, low=1 + -1, high=1 + 1, thresh=-1
+    #)
+    #ax.imshow(img)
+    #ax.set_xticks([])
+    #ax.set_yticks([])
+    #sns.despine(ax=ax, left=True, bottom=True)
     return rescorr
 
 
@@ -2522,3 +3057,55 @@ def print_timings(timings=None):
         print("{:>2s}".format(str(sub)), pp)
 
     return timings
+
+
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=-1):
+    import matplotlib.colors as mcolors
+    if n == -1:
+        n = cmap.N
+    new_cmap = mcolors.LinearSegmentedColormap.from_list(
+         'trunc({name},{a:.2f},{b:.2f})'.format(name=cmap.name, a=minval, b=maxval),
+         cmap(np.linspace(minval, maxval, n)))
+    return new_cmap
+
+
+def plot_auc_sanity(aucs=None, cluster='JWG_IPS_PCeS'):
+    if aucs is None:
+        aucs = pd.read_hdf('/Users/nwilming/u/conf_analysis/results/auc_sanity_check.hdf')
+    auc = (aucs.query('cluster=="%s"'%cluster)
+        .groupby(['confidence', 'response'], sort=False)
+        .mean())
+    aucv = auc# np.triu(auc)
+    print(aucv)
+    #aucv[aucv==0] = np.nan
+    #print(auc)
+    #print(np.tril(auc, -1))
+    pcolormesh([0, 0.25, 0.5, 0.75,1], [0, 0.25, 0.5, 0.75,1][::-1], aucv, 
+        cmap='RdBu_r', vmin=.35, vmax=0.65) 
+        #aspect='equal') #extent=[0,1,0,1]
+    plot([0, 0.5], [1, 1], 'b', lw=4, label='Resp: Reference')
+    plot([.5, 1], [1, 1], 'g', lw=4, label='Resp: Test stim.')
+
+    dy=0.0225
+    plot([0, 0.25], [1.+dy, 1.+dy], 'k', lw=4, label='High confidence')
+    plot([0.25, 0.5], [1+dy, 1+dy], color=(0.5, 0.5, 0.5), lw=4, label='Low confidence')
+    plot([0.5, 0.75], [1+dy, 1+dy], color=(0.5, 0.5, 0.5), lw=4)
+    plot([0.75, 1], [1+dy, 1+dy], 'k', lw=4)
+    #plot([0, 0.5], [0, 0], 'r', lw=4)
+    #plot([.5, 1], [0, 0], 'g', lw=4)
+    plot([1, 1], [0, 0.5],  'g', lw=4)
+    plot([1, 1], [.5, 1], 'b', lw=4)
+
+    dy=0.015
+    plot([1.+dy, 1.+dy],[0, 0.25], 'k', lw=4)
+    plot([1+dy, 1+dy], [0.25, 0.5],  color=(0.5, 0.5, 0.5), lw=4)
+    plot([1+dy, 1+dy], [0.5, 0.75], color=(0.5, 0.5, 0.5), lw=4)
+    plot([1+dy, 1+dy], [0.75, 1], 'k', lw=4)
+    #plot([0, 0], [0, 0.5],  'g', lw=4)
+    #plot([0, 0], [.5, 1], 'r', lw=4)
+    ylim([-.1,1.1])
+    xlim([-.1,1.1])
+    xticks([])
+    yticks([])
+    sns.despine(left=True, bottom=True)
+

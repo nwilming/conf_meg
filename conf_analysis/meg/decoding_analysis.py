@@ -1133,6 +1133,7 @@ def get_ortho_midc(subject):
     """
     Compute orthogonalized decoding values for IPS/PostCeS.
     """
+    from glob import glob
     inpath = "/home/nwilming/conf_meg/sr_labeled/aggs"
     cluster = "JWG_M1"
     # First load low level averaged stimulus data
