@@ -146,7 +146,7 @@ def submit(
             tasks=1,
             memory=61,
             ssh_to=None,
-            walltime="72:00:00",
+            walltime="172:00:00",
             env="py36",
         )
 
@@ -439,7 +439,7 @@ def midc_decoder(
     area,
     latency=0,
     splitmc=True,
-    split_resp=True,
+    split_resp=False,
     target_col="response",
     predict=False,
 ):
@@ -1133,6 +1133,7 @@ def get_ortho_midc(subject):
     """
     Compute orthogonalized decoding values for IPS/PostCeS.
     """
+    from pymeg import aggregate_sr as asr
     from glob import glob
     inpath = "/home/nwilming/conf_meg/sr_labeled/aggs"
     cluster = "JWG_M1"
@@ -1141,13 +1142,14 @@ def get_ortho_midc(subject):
     data = asr.delayed_agg(
         filenames, hemi="Lateralized", cluster=[cluster] + ["JWG_IPS_PCeS"]
     )()
-    meta = da.augment_meta(da.preprocessing.get_meta_for_subject(subject, "stimulus"))
+    meta = augment_meta(preprocessing.get_meta_for_subject(subject, "stimulus"))
     scores = ortho_midc_decoder(meta, data, "JWG_IPS_PCeS", "JWG_M1", latency=1.1)
     scores.loc[:, "subject"] = subject
     return scores
 
 
 def get_ortho_x(data, area, ortho_area, latency):
+    from scipy.stats import linregress
     times = data.columns.get_level_values("time").values
     target_time_point = times[np.argmin(abs(times - latency))]
     data = data.loc[:, target_time_point]
@@ -1232,6 +1234,84 @@ def ortho_midc_decoder(
     scores.loc[:, "area"] = str(area)
     scores.loc[:, "latency"] = latency
     return scores
+
+
+
+@memory.cache()
+def build_auc_design_matrix(
+    subject, cluster, latency, hemi="Lateralized", freq_bands=None, ogl=False
+):
+    from glob import glob
+    from pymeg import aggregate_sr as asr
+    if not ogl:
+        filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, "stimulus")))
+        data = asr.delayed_agg(filenames, hemi=hemi, cluster=cluster)()
+    else:
+        filenames = glob(
+            join(inpath, "ogl/slimdown/ogl_S%i_*_%s_agg.hdf" % (subject, "stimulus"))
+        )
+        data = asr.delayed_agg(
+            filenames, hemi="Pair", cluster=["%s_LH" % cluster, "%s_RH" % cluster]
+        )().copy()
+
+        data = data.groupby(["hemi", "trial", "freq"]).mean()
+        data.head()
+        hemi = np.asarray(data.index.get_level_values("hemi")).astype("str")
+        trial = np.asarray(data.index.get_level_values("trial")).astype(int)
+        freq = np.asarray(data.index.get_level_values("freq")).astype(int)
+        # cl = hemi.copy()
+        cl = [cluster] * len(hemi)
+        index = pd.MultiIndex.from_arrays(
+            [hemi, cl, trial, freq], names=["hemi", "cluster", "trial", "freq"]
+        )
+        data.index = index
+        data.head()
+
+    data = pd.pivot_table(data, values=latency, index='trial', columns='freq')
+    if freq_bands is not None:
+        data = data.loc[:, freq_bands[0]:freq_bands[1]].mean(1)
+    trial_index = data.index.get_level_values("trial").unique()
+
+    meta = preprocessing.get_meta_for_subject(subject, "stimulus")
+    meta.set_index("hash", inplace=True)
+    meta = meta.loc[trial_index]    
+    return data, meta
+
+
+def get_all_sanity_auc():
+    AUCS = []
+    for subject in range(1, 16):
+        for cluster in ['JWG_M1', 'JWG_IPS_PCeS']:
+            print(cluster)
+            data, meta = build_auc_design_matrix(subject, cluster, 1.1, freq_bands=[15, 35])
+            auc = sanity_check_auc(meta, data)
+            if subject>=8:
+                auc = 1-auc
+            auc.loc[:, 'subject']=subject
+            auc.loc[:, 'cluster']=cluster
+            auc.set_index(['subject', 'cluster'], append=True, inplace=True)
+            auc = auc.reorder_levels(['subject', 'cluster', 'confidence', 'response'])
+            AUCS.append(auc)
+    return AUCS
+
+
+def sanity_check_auc(meta, X):
+    import pandas as pd
+    from sklearn.metrics import roc_auc_score
+    vals = np.ones((4,4))*np.nan
+    combinations = [(2, -1), (1, -1), (1, 1), (2, 1)]
+    for i, c1 in enumerate(combinations):
+        for j, c2 in enumerate(combinations):
+            c1idx = (meta.confidence==c1[0]) & (meta.response==c1[1])
+            c2idx = (meta.confidence==c2[0]) & (meta.response==c2[1])
+            values = np.concatenate([X[c1idx], X[c2idx]])
+            #print(values.shape, sum(c1idx), sum(c2idx))
+            labels = values*0
+            labels[:sum(c1idx)] = 1
+            vals[i,j] = roc_auc_score(labels, values)
+    index = pd.MultiIndex.from_tuples(combinations, names=['confidence', 'response'])
+    vals = pd.DataFrame(vals, index=index, columns=index)    
+    return vals
 
 
 def ensure_iter(input):
