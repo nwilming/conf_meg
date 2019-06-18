@@ -1,13 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-Decoding analyses for conf_meg data.
-
-4.  Signed confidence and choice decoder: Same as MIDC and MDDC but with
-    confidence folded into the responses (-2, -1, 1, 2)
-5.  Unsigned confidence decoder: Same as MIDC and MDDC but decode
-    confidence only.
-"""
 
 import logging
 import os
@@ -57,22 +49,72 @@ n_jobs = 1
 def shuffle(data):
     return data[np.random.permutation(np.arange(len(data)))]
 
-def eval_areas(cache_key, motor_latency=1.2, latency_stim=np.arange(-0.1, 0.35, 1 / 60.0)):
+
+def eval_areas(
+    cache_key, motor_latency=1.2, latency_stim=np.arange(-0.1, 0.35, 1 / 60.0)
+):
     scores = []
-    for area in ['JWG_M1', 'JWG_IPS_PCeS', 'JWG_aIPS', 'vfcFEF']:
-        sc, _, _, _ = eval_stim_latency(area, motor_latency=motor_latency, latency_stim=latency_stim, 
-            motor_area=area)
+    for area in ["JWG_M1", "JWG_IPS_PCeS", "JWG_aIPS", "vfcFEF"]:
+        sc, _, _, _ = eval_stim_latency(
+            area,
+            motor_latency=motor_latency,
+            latency_stim=latency_stim,
+            motor_area=area,
+        )
         scores.append(sc)
     scores = pd.concat(scores, 0)
     pickle.dump(
-        {
-            "scores": scores,           
-        },
+        {"scores": scores},
         open(
-            "/home/nwilming/conf_analysis/results/%s_Xarea_stim_latency.pickle" % cache_key,
+            "/home/nwilming/conf_analysis/results/%s_Xarea_stim_latency.pickle"
+            % cache_key,
             "wb",
         ),
     )
+
+
+def eval_all(cache_key):
+    """
+    Perform coupling analysis for samples up to a specific sample
+    with specific stim latency.
+
+    Evaluate copuling for all motor latencies and a range of stim latencies
+
+    """
+    # fmt: off
+    motor_latencies = np.array(
+      [0.   , 0.017, 0.033, 0.05 , 0.067, 0.083, 0.1  , 0.117, 0.133,
+       0.15 , 0.167, 0.183, 0.2  , 0.217, 0.233, 0.25 , 0.267, 0.283,
+       0.3  , 0.317, 0.333, 0.35 , 0.367, 0.383, 0.4  , 0.417, 0.433,
+       0.45 , 0.467, 0.483, 0.5  , 0.517, 0.533, 0.55 , 0.567, 0.583,
+       0.6  , 0.617, 0.633, 0.65 , 0.667, 0.683, 0.7  , 0.717, 0.733,
+       0.75 , 0.767, 0.783, 0.8  , 0.817, 0.833, 0.85 , 0.867, 0.883,
+       0.9  , 0.917, 0.933, 0.95 , 0.967, 0.983, 1.   , 1.017, 1.033,
+       1.05 , 1.067, 1.083, 1.1  ])
+    # fmt: on
+    latency_stim = np.arange(-0.1, 0.35, 1 / 60.0)
+    scores = []
+    try:
+        for motor_latency in motor_latencies:
+            for area in ["JWG_M1", "JWG_IPS_PCeS", "JWG_aIPS", "vfcFEF"]:
+                sc, _, _, _ = eval_stim_latency(
+                    area,
+                    motor_latency=motor_latency,
+                    latency_stim=latency_stim,
+                    motor_area=area,
+                )
+                scores.append(sc)
+    finally:
+        scores = pd.concat(scores, 0)
+        pickle.dump(
+            {"scores": scores},
+            open(
+                "/home/nwilming/conf_analysis/results/%s_Xarea_stim_latency.pickle"
+                % cache_key,
+                "wb",
+            ),
+        )
+    return scores
 
 
 def eval_stim_latency(
@@ -81,15 +123,16 @@ def eval_stim_latency(
     baseline=False,
     latency_stim=np.arange(-0.1, 0.4, 1 / 60.0),
     n_jobs=12,
-    motor_area='JWG_M1',
+    motor_area="JWG_M1",
 ):
     from joblib import Parallel, delayed
     import pickle
 
     args = list(
-        delayed(eval_all_subs)(motor_latency, i, baseline, motor_area) for i in latency_stim
+        delayed(eval_all_subs)(motor_latency, i, baseline, motor_area)
+        for i in latency_stim
     )
-    results = Parallel(n_jobs=8)(args)
+    results = Parallel(n_jobs=n_jobs)(args)
     sc = []
     weights = {}
     shuff_weights = {}
@@ -101,7 +144,7 @@ def eval_stim_latency(
         weights[i] = results[j][1]
         shuff_weights[i] = results[j][2]
         iweights[i] = results[j][3]
-            
+
     scores = pd.concat(sc, 0)
     pickle.dump(
         {
@@ -128,8 +171,9 @@ def get_cache_key(cache_key):
     return o["scores"], o["weights"], o["shuffled_weights"], o["1smp_weights"]
 
 
-def eval_all_subs(latency_motor=1.4, latency_stim=0.18, baseline_correct=False, 
-    motor_area='JWG_M1'):
+def eval_all_subs(
+    latency_motor=1.4, latency_stim=0.18, baseline_correct=False, motor_area="JWG_M1"
+):
     scores = []
     shuffled_scores = []
     iscores = []
@@ -138,7 +182,6 @@ def eval_all_subs(latency_motor=1.4, latency_stim=0.18, baseline_correct=False,
     iweights = []
     integrator_weights = []
     integrator_scores = []
-    print("test")
     for subject in range(1, 16):
         s, w, ss, sw, si, iw, sint, wint = eval_coupling(
             subject,
@@ -156,23 +199,31 @@ def eval_all_subs(latency_motor=1.4, latency_stim=0.18, baseline_correct=False,
         integrator_scores.append(sint)
         integrator_weights.append(wint)
     scores = pd.DataFrame(
-        {"corr": scores, "1smp_corr": iscores, 'integrator_corr':integrator_scores, 
-        "shuff_corr": shuffled_scores}
+        {
+            "corr": scores,
+            "1smp_corr": iscores,
+            "integrator_corr": integrator_scores,
+            "shuff_corr": shuffled_scores,
+        }
     )
     scores.loc[:, "subject"] = np.arange(1, 16)
-    scores.loc[:, 'motor_area'] = motor_area
+    scores.loc[:, "motor_area"] = motor_area
     return scores, weights, sweights, iweights
 
 
 def weight_to_act(X, w, i):
     w = np.concatenate((w, [i]))
     SXn = np.cov(X.T)
-    #w = w[:, np.newaxis]
+    # w = w[:, np.newaxis]
     return np.dot(SXn, w)
 
+
 def eval_coupling(
-    subject, latency_motor=1.4, latency_stim=0.18, baseline_correct=False,
-    motor_area='JWG_M1'
+    subject,
+    latency_motor=1.4,
+    latency_stim=0.18,
+    baseline_correct=False,
+    motor_area="JWG_M1",
 ):
     motor, evals = get_motor_prediction(subject, latency_motor, cluster=motor_area)
     print("S %i AUC:" % subject, evals["test_roc_auc"])
@@ -185,7 +236,7 @@ def eval_coupling(
         add_contrast=False,
         zscore=True,
         freq_bands=[45, 65],
-        #freq_bands=[0, 8, 39, 61, 100],
+        # freq_bands=[0, 8, 39, 61, 100],
     )
     if baseline_correct:
         base, tpc, freqs = build_design_matrix(
@@ -196,20 +247,36 @@ def eval_coupling(
             add_contrast=False,
             zscore=True,
             freq_bands=[45, 65],
-            #freq_bands=[0, 8, 39, 61, 100],
+            # freq_bands=[0, 8, 39, 61, 100],
         )
         X = X - base
-
+    tpc = np.array(tpc)
+    freqs = np.array(freqs)
+    # Make sure there are no samples in the future
+    idcol = np.array(list(tpc < latency_motor) + [True])
+    print("Kicking out %s columns" % sum(~idcol))
+    X = X[:, idcol]
+    tpc = tpc[idcol[:-1]]
+    freqs = freqs[idcol[:-1]]
     score, weights, intercept = coupling(lodds, X, n_iter=250, pcdist=sp_randint(5, 40))
     shuffled_score, shuffled_weights, s_intercept = coupling(
         shuffle(lodds), X, n_iter=250, pcdist=sp_randint(5, 40)
     )
     inst_corr, iweights, _ = coupling(lodds, X[:, -2:], n_iter=250, pcdist=None)
-    integrator_corr, integrator_weights, _ = coupling(lodds, X.sum(1).reshape(-1, 1), n_iter=250, pcdist=None)
+    integrator_corr, integrator_weights, _ = coupling(
+        lodds, X.sum(1).reshape(-1, 1), n_iter=250, pcdist=None
+    )
 
-    return (score, weight_to_act(X, weights, intercept), 
-        shuffled_score, weight_to_act(X, shuffled_weights, s_intercept), 
-        inst_corr, iweights, integrator_corr, integrator_weights)
+    return (
+        score,
+        weight_to_act(X, weights, intercept),
+        shuffled_score,
+        weight_to_act(X, shuffled_weights, s_intercept),
+        inst_corr,
+        iweights,
+        integrator_corr,
+        integrator_weights,
+    )
 
 
 @memory.cache()
@@ -238,6 +305,82 @@ def get_motor_prediction(subject, latency, cluster="JWG_M1"):
     )
     return scores, eval_scores
 
+
+
+def coupling_all_subjects_all_t():
+    couplings = []
+    for subject in np.arange(1, 16):
+        motor_predictions = get_all_motor_prediction(subject)
+        coupling = get_all_coupling(subject, motor_predictions)
+        couplings.append(coupling)
+        cps = pd.concat(couplings)
+        cps.to_hdf('/home/nwilming/all_couplings.hdf', 'df')
+
+
+
+@memory.cache()
+def get_all_motor_prediction(
+    subject, 
+    latencies=np.arange(0, 1.2, 1 / 60), 
+    cluster="JWG_M1",
+    n_jobs=10
+):
+    from joblib import Parallel, delayed
+    # First load low level averaged stimulus data
+    filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, "stimulus")))
+    data = asr.delayed_agg(filenames, hemi="Lateralized", cluster=cluster)()
+    meta = da.augment_meta(da.preprocessing.get_meta_for_subject(subject, "stimulus"))
+    eval_scores = {}, 
+
+    args = list(
+        delayed(da.midc_decoder)(meta, data, cluster, latency, False, False, 'response', True)
+        for latency in latencies   
+    )
+    results = Parallel(n_jobs=n_jobs)(args)
+    results = pd.concat(results)
+    results.loc[:, 'subject'] = subject
+    return results
+
+
+def get_all_coupling(subject, motor_predictions, cluster='vfcPrimary', n_jobs=10):
+    from joblib import Parallel, delayed
+    filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, "stimulus")))
+    data = asr.delayed_agg(filenames, hemi="Averaged", cluster=cluster)()
+    data = data.query('45<=freq & freq<=65')
+    X = pd.pivot_table(data.loc[:, 0:1.4], index='trial')
+    X = (X - X.mean(0)) / X.std(0)
+    tasks = []
+    temp_idx = np.arange(0, 1, .10)
+    cache = {}
+    for motor_latency, motor_data in motor_predictions.groupby('latency'):
+        target =  np.log(motor_data.loc[:, 0] / motor_data.loc[:, 1])
+        for readout_latency in np.arange(0, 0.21, 1/60):
+            temp_selector = temp_idx + readout_latency
+            temp_selector = temp_selector[temp_selector<motor_latency]
+            if len(temp_selector) == 0:
+                continue        
+            times = X.columns.get_level_values('time').values   
+            temp_selector = [times[np.argmin(np.abs(times-t))] for t in temp_selector]
+            Xb = X.loc[:, temp_selector]
+            tasks.append(delayed(get_one_coupling)(subject, motor_latency, readout_latency, Xb, target))
+            
+    print('Prepared %i tasks'%len(tasks))
+    results = Parallel(n_jobs=n_jobs)(tasks)
+    return pd.DataFrame(results)
+
+
+def get_one_coupling(subject, motor_latency, readout_latency, Xb, target):
+    score, _, _ = coupling(target, Xb.values, n_iter=150, pcdist=sp_randint(5, 40))        
+    integrator, _, _ = coupling(target, Xb.values.sum(1).reshape(-1, 1), n_iter=150, pcdist=sp_randint(5, 40))
+    last_samp, _, _ = coupling(target, Xb.values[:, -1].reshape(-1, 1), n_iter=150, pcdist=sp_randint(5, 40))                        
+    return {
+        'subject':subject,
+        'motor_latency':motor_latency,
+        'readout_latency':readout_latency,
+        'weighted_score':score,
+        'integrator_score': integrator,
+        'last_sample': last_samp,
+       }
 
 @memory.cache()
 def build_design_matrix(
@@ -290,7 +433,7 @@ def prep_low_level_data(areas, data, peak, latency, trial_index, freq_bands=None
                         pd.cut(
                             x.T.index,
                             freq_bands,
-                            labels=np.array(freq_bands)[:-1] + np.diff(freq_bands)/2,
+                            labels=np.array(freq_bands)[:-1] + np.diff(freq_bands) / 2,
                         )
                     )
                     .mean()
@@ -320,16 +463,16 @@ def coupling(target, X, n_iter=50, pcdist=sp_randint(5, 40)):
     classifier = Pipeline(
         [
             # ("Scaling", StandardScaler()),
-            #("PCA", PCA(n_components=0.3, svd_solver="full")),
-            ("linear_regression", Ridge(fit_intercept=False)),
+            # ("PCA", PCA(n_components=0.3, svd_solver="full")),
+            ("linear_regression", Ridge(fit_intercept=False))
         ]
     )
     if pcdist is not None:
         classifier = RandomizedSearchCV(
             classifier,
             param_distributions={
-                #"PCA__n_components": pcdist,
-                "linear_regression__alpha": sp_randint(1, 100000),
+                # "PCA__n_components": pcdist,
+                "linear_regression__alpha": sp_randint(1, 100000)
             },
             n_iter=n_iter,
             cv=3,
@@ -353,10 +496,7 @@ def coupling(target, X, n_iter=50, pcdist=sp_randint(5, 40)):
     )
 
     coefs = np.stack(
-        [            
-            o.best_estimator_.steps[-1][1].coef_   
-               for o in scores["estimator"]
-        ]
+        [o.best_estimator_.steps[-1][1].coef_ for o in scores["estimator"]]
     )
     coefs = coefs.mean(0)
     return scores["test_score"].mean(), coefs[:-1], coefs[-1]
