@@ -1,8 +1,7 @@
-subs = {'S04', 'S05', 'S06', 'S07',...
-    'S08', 'S09', 'S10', 'S11', 'S12', 'S13', 'S14', 'S15'}
+subs = {'S1', 'S5', 'S6', 'S7', 'S8', 'S9', 'S11', 'S12', 'S14', 'S16', 'S17' }
 
-make_mesh('S03', '/home/nwilming/fs_subject_dir')
 
-%for ii = 1:14
-%    make_mesh(subs{ii}, '/home/nwilming/fs_subject_dir');
-%end
+
+for ii = 1:14
+    make_mesh(subs{ii}, '/Users/nwilming/cluster_home/fs_subject_dir');
+end

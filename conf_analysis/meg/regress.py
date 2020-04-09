@@ -326,7 +326,7 @@ def coupling_all_subjects_all_t():
         coupling = get_all_coupling(subject, motor_predictions)
         couplings.append(coupling)
         cps = pd.concat(couplings)
-        cps.to_hdf('/home/nwilming/all_couplings_new_par.hdf', 'df')
+        cps.to_hdf('/home/nwilming/all_couplings_M1_new.hdf', 'df')
 
 
 
@@ -373,7 +373,7 @@ def get_all_coupling(subject, motor_predictions, cluster='vfcPrimary', n_jobs=10
                 continue        
             times = X.columns.get_level_values('time').values   
             temp_selector = [times[np.argmin(np.abs(times-t))] for t in temp_selector]
-            Xb = X.loc[:, temp_selector]
+            Xb = X.loc[:, temp_selector]            
             tasks.append(delayed(get_one_coupling)(subject, motor_latency, readout_latency, Xb, target))
             
     print('Prepared %i tasks'%len(tasks))
@@ -382,9 +382,12 @@ def get_all_coupling(subject, motor_predictions, cluster='vfcPrimary', n_jobs=10
 
 
 def get_one_coupling(subject, motor_latency, readout_latency, Xb, target):
-    score, _, _ = coupling(target, Xb.values, n_iter=150, pcdist=sp_randint(5, 40))        
-    integrator, _, _ = coupling(target, Xb.values.sum(1).reshape(-1, 1), n_iter=150, pcdist=sp_randint(5, 40))
-    last_samp, _, _ = coupling(target, Xb.values[:, -1].reshape(-1, 1), n_iter=150, pcdist=sp_randint(5, 40))                        
+    Xb_offset = np.concatenate([Xb.values, Xb.values[:,0]*0+1])
+    Xb_integrate_offset = np.concatenate([Xb.values.sum(1), Xb.values[:,0]*0+1])
+    Xb_last_samp = np.concatenate([Xb.values[:, -1], Xb.values[:,0]*0+1])
+    score, _, _ = coupling(target, Xb_offset, n_iter=150, pcdist=sp_randint(5, 40))        
+    integrator, _, _ = coupling(target, Xb_integrate_offset, n_iter=150, pcdist=sp_randint(5, 40))
+    last_samp, _, _ = coupling(target, Xb_last_samp, n_iter=150, pcdist=sp_randint(5, 40))                        
     return {
         'subject':subject,
         'motor_latency':motor_latency,
@@ -454,6 +457,63 @@ def prep_low_level_data(areas, data, peak, latency, trial_index, freq_bands=None
             lld.append(x.loc[trial_index])
             time_per_col.extend([s] * x.shape[1])
     return pd.concat(lld, 1), time_per_col
+
+
+
+@memory.cache()
+def trial_time_design_matrix(
+    subject, cluster, latency, hemi="Averaged", zscore=True, freq_bands=None, ogl=False
+):
+    if not ogl:
+        filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, "stimulus")))
+        data = asr.delayed_agg(filenames, hemi=hemi, cluster=cluster)()
+    else:
+        filenames = glob(
+            join(inpath, "ogl/slimdown/ogl_S%i_*_%s_agg.hdf" % (subject, "stimulus"))
+        )
+        data = asr.delayed_agg(
+            filenames, hemi="Pair", cluster=["%s_LH" % cluster, "%s_RH" % cluster]
+        )().copy()
+
+        data = data.groupby(["hemi", "trial", "freq"]).mean()
+        data.head()
+        hemi = np.asarray(data.index.get_level_values("hemi")).astype("str")
+        trial = np.asarray(data.index.get_level_values("trial")).astype(int)
+        freq = np.asarray(data.index.get_level_values("freq")).astype(int)
+        # cl = hemi.copy()
+        cl = [cluster] * len(hemi)
+        index = pd.MultiIndex.from_arrays(
+            [hemi, cl, trial, freq], names=["hemi", "cluster", "trial", "freq"]
+        )
+        data.index = index
+        data.head()
+
+    trial_index = data.index.get_level_values("trial").unique()
+
+    X, time_per_col = regress.prep_low_level_data(
+        cluster, data, 0, latency, trial_index, freq_bands=freq_bands
+    )    
+    cols = X.columns.values
+    index = X.index.values
+    X = X.values
+    meta = da.preprocessing.get_meta_for_subject(subject, "stimulus")
+    meta.set_index("hash", inplace=True)
+    meta = meta.loc[trial_index]
+    if zscore:
+        X = (X - X.mean(0)) / X.std(0)
+
+    return X, time_per_col, cols, meta
+
+
+def trial_time_data_prep(area, data, peak, trial_index, freq_band=(0, 150)):
+    lld = []
+    times = data.columns.get_level_values("time").values
+    data = data.query('cluster=="%s"' % a).groupby(['trial']).mean()
+    data = pd.pivot_table(
+                data,
+                index="trial",                                
+            )
+    return data, data.columns.values
 
 
 def coupling(target, X, n_iter=50, pcdist=sp_randint(5, 40)):

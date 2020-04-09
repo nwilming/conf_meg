@@ -1,8 +1,8 @@
 function make_mesh(subject, fs_path)
 % subject = 'S01';
 % fs_path = '/home/nwilming/fs_subject_dir';
-addpath('/home/nwilming/spm12/')
-addpath('/home/nwilming/fieldtrip-20170914/')
+addpath('/Users/nwilming/u/spm12')
+addpath('/Users/nwilming/u/fieldtrip-20161117/')
 ft_defaults
 mri_path = fullfile(fs_path, subject, 'mri/T1.mgz');
 mri = ft_read_mri(mri_path);

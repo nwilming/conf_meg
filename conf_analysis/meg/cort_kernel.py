@@ -100,7 +100,7 @@ def get_kernel(subject):
     return K.loc[subject, :], C.loc[subject, :]
 
 
-#@memory.cache()
+@memory.cache()
 def get_kernels(d=None):
     print(".")
     if d is None:
