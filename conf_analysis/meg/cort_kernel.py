@@ -100,16 +100,18 @@ def get_kernel(subject):
     return K.loc[subject, :], C.loc[subject, :]
 
 
-@memory.cache()
-def get_kernels():
+#@memory.cache()
+def get_kernels(d=None):
     print(".")
-    d = empirical.load_data()
+    if d is None:
+        d = empirical.load_data()
     K = (
         d.groupby(["snum", "side"])
         .apply(kernels.get_decision_kernel)
         .groupby("snum")
         .mean()
     )  # dp.extract_kernels(dz)
+    """
     C = (
         d.groupby(["snum", "side"])
         .apply(kernels.get_confidence_kernel)
@@ -117,8 +119,18 @@ def get_kernels():
         .groupby("snum")
         .mean()
     )  # dp.extract_kernels(dz)
-    return K, C
+    """
+    return K, None
 
+def kernel_by_RT(data, edges):
+    from conf_analysis.meg import figures
+    P = []
+    for rt, d in data.groupby(pd.cut(data.choice_rt, edges)):
+        K, _= get_kernels(d=d)
+        figures.plotwerr(K, label=rt.mid)
+        K.loc[:, 'rt'] = rt.mid
+        P.append(K.set_index('rt', append=True))
+    return pd.concat(P)
 
 def _par_get_cortical_kernel(*args, **kwargs):
     return get_cortical_kernel(*args, **kwargs)

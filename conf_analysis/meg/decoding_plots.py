@@ -71,58 +71,63 @@ def filter_latency(data, min, max):
     return data.loc[(min < lat) & (lat < max), :]
 
 
-def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):
-    print('OGL:', ogl)
-    if not ogl:
-        try:
-            df = pd.read_hdf(
-                "/Users/nwilming/u/conf_analysis/results/all_decoding_20190513.hdf"
-            )
-        except FileNotFoundError:
-            pass
-            #df = pd.read_hdf(
-            #    "/net/store/users/nwilming/all_decoding_merged_w0415_20190423.hdf"
-            #)
-    else:        
-        df = pd.read_hdf(
-             "/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_merged_20190527.hdf"
+def get_decoding_data(decoding_classifier="SCVlin", restrict=True, ogl=False):   
+    def _get_decoding_data(file, restrict): 
+        df = pd.read_hdf(file)
+        df.loc[:, "latency"] = df.latency.round(3)
+        idnan = np.isnan(df.subject)
+        df.loc[idnan, "subject"] = df.loc[idnan, "sub"]
+        df = df.loc[~np.isnan(df.subject), :]
+        df = df.query('Classifier=="%s"' % decoding_classifier)
+        df.loc[:, "cluster"] = [
+            (c.split(" ")[0].replace("_LH", "").replace("_RH", ""))
+            for c in df.loc[:, "cluster"].values
+        ]
+        if restrict:
+            clusters = ag.areas.values()
+            idx = [True if c in clusters else False for c in df.loc[:, "cluster"]]
+            df = df.loc[idx, :]
+        #for field in ["hemi", "cluster", "Classifier", "epoch"]:
+        #    df.loc[:, field] = df.loc[:, field].astype("category")
+        if 'mc<0.5' in df.columns:
+            df.loc[:, "split"] = df.loc[:, "mc<0.5"].astype(str)
+            del df['mc<0.5']
+        elif 'R1' in df.columns:
+            df.loc[:, "split"] = df.loc[:, "R1"].astype(str)
+            del df['R1']
+
+        df.set_index(
+            [
+                "Classifier",
+                "signal",
+                "subject",
+                "epoch",
+                "latency",
+                "split",
+                "hemi",
+                "cluster",
+            ],
+            inplace=True,
         )
-    df.loc[:, "latency"] = df.latency.round(3)
-    idnan = np.isnan(df.subject)
-    df.loc[idnan, "subject"] = df.loc[idnan, "sub"]
-    df = df.loc[~np.isnan(df.subject), :]
-    df = df.query('Classifier=="%s"' % decoding_classifier)
-    df.loc[:, "cluster"] = [
-        (c.split(" ")[0].replace("_LH", "").replace("_RH", ""))
-        for c in df.loc[:, "cluster"].values
-    ]
-    if restrict:
-        clusters = ag.areas.values()
-        idx = [True if c in clusters else False for c in df.loc[:, "cluster"]]
-        df = df.loc[idx, :]
-    for field in ["signal", "hemi", "cluster", "Classifier", "epoch"]:
-        df.loc[:, field] = df.loc[:, field].astype("category")
-    df.loc[:, "mc<0.5"] = df.loc[:, "mc<0.5"].astype(str)
-    df.set_index(
-        [
-            "Classifier",
-            "signal",
-            "subject",
-            "epoch",
-            "latency",
-            "mc<0.5",
-            "hemi",
-            "cluster",
-        ],
-        inplace=True,
-    )
-    df = df.loc[~df.index.duplicated()]
-    df = df.unstack(["hemi", "cluster"])
-    if not ogl:
-        idt = df.test_accuracy.index.get_level_values("signal") == "CONF_signed"
-        df.loc[idt, "test_accuracy"] = (df.loc[idt, "test_accuracy"] - 0.25).values
-        df.loc[~idt, "test_accuracy"] = (df.loc[~idt, "test_accuracy"] - 0.5).values
+        df = df.loc[~df.index.duplicated()]
+        df = df.unstack(["hemi", "cluster"])
+        if not ogl:
+            idt = df.test_accuracy.index.get_level_values("signal") == "CONF_signed"
+            df.loc[idt, "test_accuracy"] = (df.loc[idt, "test_accuracy"] - 0.25).values
+            df.loc[~idt, "test_accuracy"] = (df.loc[~idt, "test_accuracy"] - 0.5).values
+        return df
+
+
+    if not ogl:        
+        df = _get_decoding_data("/Users/nwilming/u/conf_analysis/results/all_decoding_20190513.hdf", restrict)
+        df2 = _get_decoding_data("/Users/nwilming/u/conf_analysis/results/all_decoding_conf_resp_split.hdf", restrict)
+        df = pd.concat([df, df2])#, ignore_index=True).set_index(["signal", "subject", "epoch","latency", "split","hemi","cluster"])
+    else:        
+        df = _get_decoding_data("/Users/nwilming/u/conf_analysis/results/all_decoding_ogl_merged_20190527.hdf", restrict)
+    #df.loc[:, 'signal'] = df.loc[:, 'signal'].astype("category")
     return df
+    
+
 
 
 def get_ssd_data(ssd_classifier="Ridge", restrict=True, ogl=False):
@@ -170,6 +175,7 @@ def get_ssd_data(ssd_classifier="Ridge", restrict=True, ogl=False):
     df.index = pd.MultiIndex.from_frame(o)
     return df
 
+split_label = "split"
 
 
 @memory.cache()
@@ -192,11 +198,11 @@ def _get_data(df, signal, hemi, cluster, epoch, split=None):
         return {"nosplit": (values, base)}
     else:
         res = {}
-        for split, ds in dclust.groupby("mc<0.5"):
+        for split, ds in dclust.groupby(split_label):
             values = pd.pivot_table(
                 data=ds, index="subject", columns="latency", values=cluster
             )
-            idx = dbase.index.get_level_values("mc<0.5") == split
+            idx = dbase.index.get_level_values(split_label) == split
             base = pd.pivot_table(
                 data=dbase.loc[idx], index="subject", columns="latency", values=cluster
             )
@@ -225,13 +231,13 @@ class StreamPlotter(object):
             Plot("aIPS", "JWG_aIPS", [5, top], False, False),
             
             # Ventral
-            Plot("Lateral Occ", "vfcLO", [2, bottom], False, False),
-            Plot("MT+", "vfcTO", [3, bottom], False, False),
-            Plot("Ventral Occ", "vfcVO", [4, bottom], False, False),
+            Plot("LO1/2", "vfcLO", [2, bottom], False, False),
+            Plot("MT/MST", "vfcTO", [3, bottom], False, False),
+            Plot("VO1/2", "vfcVO", [4, bottom], False, False),
             Plot("PHC", "vfcPHC", [5, bottom], False, False),
             
             Plot("IPS/PostCeS", "JWG_IPS_PCeS", [6, middle], False, False),
-            Plot("M1 (hand)", "JWG_M1", [7, middle], False, False),
+            Plot("M1-hand", "JWG_M1", [7, middle], False, False),
         ]
         # fmt: on
         self.configuration = conf
@@ -650,8 +656,8 @@ def plot_signals_hand(
         d = data.query('epoch=="%s" & signal=="%s"' % (epoch, signal))
 
         cvals = {}
-        d = d.groupby(["subject", "latency", "mc<0.5"]).mean()
-        for split, ds in d.groupby("mc<0.5"):
+        d = d.groupby(["subject", "latency", split_label]).mean()
+        for split, ds in d.groupby(split_label):
             for column in col_order:
                 try:
                     values = pd.pivot_table(
@@ -727,14 +733,13 @@ def table_performance(
     sortby="MIDC_split",
     signals=[
         "MIDC_split",        
-        "CONF_signed",
-        "CONF_unsigned",        
     ],
     ignore_resp=True
 ):
     """
     Output a table of decoding performances, sorted by one signal.
     """
+    df = df.query('signal=="MIDC_split"')
     if not ignore_resp:
         df_response = (
             df.query("epoch=='response' & (latency==%f)" % t_resp)
@@ -759,6 +764,12 @@ def table_performance(
             .groupby("signal")
             .mean()
             .T.loc[:, signals]
+        )
+        df_stim.loc[:, 'STD'] = (
+            df.query("epoch=='stimulus' & (latency==%f)" % t_stim)
+            .groupby("signal")
+            .std()
+            .T.loc[:, signals]/(15**.5)
         )
         df_stim = df_stim.sort_values(by=sortby, ascending=False)
     df_stim.columns = pd.MultiIndex.from_tuples(
