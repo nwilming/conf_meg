@@ -117,6 +117,9 @@ def eval_all(cache_key):
     return scores
 
 
+def preheat_get_motor_prediction(subject, latency_motor, cluster):
+    return get_motor_prediction(subject, latency_motor, cluster=cluster)
+
 def eval_stim_latency(
     cache_key,
     motor_latency=1.4,
@@ -127,6 +130,15 @@ def eval_stim_latency(
 ):
     from joblib import Parallel, delayed
     import pickle
+    #motor, evals = get_motor_prediction(subject, latency_motor, cluster=motor_area)
+
+    args = list(
+        delayed(preheat_get_motor_prediction)(i, motor_latency, motor_area)
+        for i in range(1, 16)
+    )
+    print(args)
+    results = Parallel(n_jobs=n_jobs)(args)
+
 
     args = list(
         delayed(eval_all_subs)(motor_latency, i, baseline, motor_area)
@@ -310,11 +322,11 @@ def get_motor_prediction(subject, latency, cluster="JWG_M1"):
 def coupling_all_subjects_all_t():
     couplings = []
     for subject in np.arange(1, 16):
-        motor_predictions = get_all_motor_prediction(subject)
+        motor_predictions = get_all_motor_prediction(subject, cluster='JWG_M1')
         coupling = get_all_coupling(subject, motor_predictions)
         couplings.append(coupling)
         cps = pd.concat(couplings)
-        cps.to_hdf('/home/nwilming/all_couplings.hdf', 'df')
+        cps.to_hdf('/home/nwilming/all_couplings_new_par.hdf', 'df')
 
 
 
@@ -346,7 +358,7 @@ def get_all_coupling(subject, motor_predictions, cluster='vfcPrimary', n_jobs=10
     from joblib import Parallel, delayed
     filenames = glob(join(inpath, "S%i_*_%s_agg.hdf" % (subject, "stimulus")))
     data = asr.delayed_agg(filenames, hemi="Averaged", cluster=cluster)()
-    data = data.query('45<=freq & freq<=65')
+    data = data.query('45<=freq & freq<65')
     X = pd.pivot_table(data.loc[:, 0:1.4], index='trial')
     X = (X - X.mean(0)) / X.std(0)
     tasks = []
@@ -354,7 +366,7 @@ def get_all_coupling(subject, motor_predictions, cluster='vfcPrimary', n_jobs=10
     cache = {}
     for motor_latency, motor_data in motor_predictions.groupby('latency'):
         target =  np.log(motor_data.loc[:, 0] / motor_data.loc[:, 1])
-        for readout_latency in np.arange(0, 0.21, 1/60):
+        for readout_latency in np.arange(-0.2, 0.21, 1/60):
             temp_selector = temp_idx + readout_latency
             temp_selector = temp_selector[temp_selector<motor_latency]
             if len(temp_selector) == 0:

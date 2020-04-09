@@ -171,6 +171,7 @@ def get_ssd_data(ssd_classifier="Ridge", restrict=True, ogl=False):
     return df
 
 
+
 @memory.cache()
 def _get_data(df, signal, hemi, cluster, epoch, split=None):
     dclust = (
@@ -2032,3 +2033,38 @@ def get_many_posterior_diff_one_group(data):
         k = pm.sample(tune=1500, draws=1500)
     mud = k.get_values("mud")
     return pm.stats.hpd(mud)
+
+
+
+def combine_and_save_var_SSD_signals():
+    from itertools import product
+    signals = ['SSD_acc_contrast', 'SSD']
+    epochs = ['response', 'stimulus']
+    df = pd.concat([
+        combine_signals(signal, epoch) for signal, epoch in product(signals, epochs)
+        ])
+    df.to_hdf('/home/nwilming/conf_analysis/results/ssd_decoding_by_var_extra_analysis_20191203.hdf', 'df')
+    return df
+
+def combine_signals(signal, epoch):
+    import glob
+    globstr = '/mnt/homes/home028/nwilming/conf_meg/sr_decoding/concat_S*-%s_var*%s-decoding.hdf'%(signal, epoch)
+    print(globstr)
+    files = glob.glob(globstr)
+    frames = []
+    for f in files:
+        df = pd.read_hdf(f)
+        cluster = [x.replace('[','').replace(']', '').replace("'","") for x in df.cluster.values]
+        df.loc[:, 'cluster'] = cluster
+        df.loc[:, 'signal'] = signal
+        df.loc[:, 'epoch'] = epoch
+        if 'varlow' in f:
+            df.loc[:, 'variance'] = 'low'            
+        elif 'varhigh' in f:
+            df.loc[:, 'variance'] = 'high'
+        elif 'varmed' in f:
+            df.loc[:, 'variance'] = 'medium'
+
+        #df.loc[:, 'subject'] = df.loc[:, 'sub']
+        frames.append(df)
+    return pd.concat(frames)
