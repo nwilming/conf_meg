@@ -175,6 +175,49 @@ def get_ssd_data(ssd_classifier="Ridge", restrict=True, ogl=False):
     df.index = pd.MultiIndex.from_frame(o)
     return df
 
+
+
+def get_ssd_var_data(ssd_classifier="Ridge", restrict=True):
+    df = pd.read_hdf(
+            "/Users/nwilming/u/conf_analysis/results/ssd_decoding_by_var_extra_analysis_20191203.hdf"
+        )
+    
+
+    df = df.loc[~np.isnan(df.subject), :]
+    df = df.query('Classifier=="%s"' % ssd_classifier)
+    df.loc[:, "cluster"] = [
+        c.split(" ")[0].replace("_LH", "").replace("_RH", "")
+        for c in df.loc[:, "cluster"].values
+    ]
+    if restrict:
+        clusters = ag.areas.values()
+        idx = [True if c in clusters else False for c in df.loc[:, "cluster"]]
+        df = df.loc[idx, :]
+    for field in ["signal", "hemi", "cluster", "Classifier", "epoch"]:
+        df.loc[:, field] = df.loc[:, field].astype("category")
+    df.set_index(
+        [
+            "Classifier",
+            "signal",
+            "subject",
+            "epoch",
+            "latency",
+            "sample",
+            "hemi",
+            "cluster",
+            "variance",
+        ],
+        inplace=True,
+    )
+    df = df.loc[~df.index.duplicated()]
+    df = df.unstack(["hemi", "cluster"])
+    # Round latency to 3 digits to make them comparable
+    o = df.index.to_frame()
+    o.loc[:, "latency"] = o.latency.round(3)
+    df.index = pd.MultiIndex.from_frame(o)
+    return df
+
+
 split_label = "split"
 
 @memory.cache()
@@ -365,6 +408,7 @@ class StreamPlotter(object):
             )
 
             for signal, color in self.signals.items():
+                print(signal, color)
                 self.plot_decoding_selected_rois(
                     signal,
                     name,
@@ -394,7 +438,7 @@ class StreamPlotter(object):
             palette = {P.cluster: color for P in layout}
 
         fig = None
-
+        print(palette)
         for P in layout:
             cluster = P.cluster
 
@@ -438,13 +482,15 @@ class StreamPlotter(object):
                     ax.set_xlabel("")
                 if j == 0:
                     if cluster in self.title_palette:
-                        plt.title(cluster_name, {"fontsize": 8, 'color':self.title_palette[cluster]})
+                        plt.title(cluster_name, 
+                            {"fontsize": 7, 'color':self.title_palette[cluster]},
+                            y=0.93, x=1.015,)
                     else:
-                        plt.title(cluster_name, {"fontsize": 8})
+                        plt.title(cluster_name, {"fontsize": 7})
                 else:
                     plt.title("", {"fontsize": 8})
 
-        sns.despine()
+                sns.despine(ax=ax)
         return gs
 
     def plot_one_signal(
@@ -476,7 +522,7 @@ class StreamPlotter(object):
 
             i = 0
             col = color[0].lower()
-            offsets = {"r": 0.2, "b": 0.19, "g": 0.18}
+            offsets = {"k":0.2, "r": 0.2, "b": 0.19, "g": 0.18}
 
             ax.fill_between(
                 latency,
@@ -488,14 +534,17 @@ class StreamPlotter(object):
                 lw=0,
             )
             
-            ax.plot(latency, mu, color=col)
+            if key == "False":
+                ax.plot(latency, mu, color=col)
+            else:
+                ax.plot(latency, mu, ':', color=col)
             tvals, pvals = cluster_test[key]
             if sum(pvals<0.05)>0:
                 lat = latency[pvals<0.05].min()
                 print('DCD, %s, %s, earliest significant: %f'%(cluster, signal, lat))            
             #else:
             #    print('DCD, %s, %s, earliest significant: None'%(cluster, signal))            
-            draw_sig(ax, latency, pvals < 0.05, offsets[col], col)
+            draw_sig(ax, latency, pvals < 0.05, offsets[col], (0.5,0.5,0.5))
 
 
 def draw_sig(ax, x, id_sig, offset, color):
@@ -1672,6 +1721,7 @@ def extract_latency_peak_slope(ssd):
 
 def extract_peak_slope(ssd, latency=0.18, dt=0.01, peak_latencies=None):
     if peak_latencies is None:
+        print('Single latency:', latency)
         ssd = ssd.query(
             'epoch=="stimulus" & %f<=latency & %f<=latency & Classifier=="Ridge"'
             % (latency - dt, latency + dt)
@@ -2043,3 +2093,20 @@ def get_many_posterior_diff_one_group(data):
         k = pm.sample(tune=1500, draws=1500)
     mud = k.get_values("mud")
     return pm.stats.hpd(mud)
+
+
+def combine_signals(signal, epoch):
+    import glob
+    globstr = '/mnt/homes/home028/nwilming/conf_meg/sr_decoding/concat_S*-%s_*var*%s-decoding.hdf'%(signal, epoch)
+    print(globstr)
+    files = glob.glob(globstr)
+    frames = []
+    for f in files:
+        df = pd.read_hdf(f)
+        cluster = [x.replace('[','').replace(']', '').replace("'","") for x in df.cluster.values]
+        df.loc[:, 'cluster'] = cluster
+        df.loc[:, 'signal'] = signal
+        df.loc[:, 'epoch'] = epoch
+        df.loc[:, 'subject'] = df.sub
+        frames.append(df)
+    return pd.concat(frames)
