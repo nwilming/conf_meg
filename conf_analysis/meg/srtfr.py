@@ -488,7 +488,114 @@ def plot_stream_figures(
         #plt.savefig("/Users/nwilming/Desktop/nsf_%s-%s.svg" % (contrast_name, suffix))
 
  
+def plot_baseline_only_stream_figures(
+    df,
+    stats=False,
+    contrasts=["all", "choice", "stimulus"],
+    flip_cbar=False,
+    suffix="",
+    gs=None,
+    aspect='auto',
+    title_palette={}
+):
+    import matplotlib
+    from pymeg import contrast_tfr_plots
+    import pylab as plt
+    conf = contrast_tfr_plots.PlotConfig(
+        {"stimulus": (-0.35, 0.1), 'response':(-0.1, 0)},  # Time windows for epochs
+        [
+            "all",
+            "choice",
+            "confidence",
+            "confidence_asym",
+            "hand",
+            "stimulus",
+        ],  # Contrast names
+        stat_windows={"stimulus": (-0.35, 0.1),'response':(-0.1, 0)},
+    )
 
+    conf.configure_epoch(
+        "stimulus",
+        **{
+            "xticks": [-0.25,0],
+            "xticklabels": ['-0.25\n         Time [s]\n         (Baseline)', '0'],
+            "yticks": [25, 50, 75, 100],
+            "yticklabels": [25, 50, 75, 100],
+            "xlabel": "",
+            "ylabel": "Frequency [Hz]",
+        },
+    )
+
+    conf.configure_epoch(
+        "response",
+        **{
+            "xticks": [0],
+            "xticklabels": ['0\n       Resp-\n      onse'],
+            "yticks": [25, 50, 75, 100],
+            "yticklabels": [25, 50, 75, 100],
+            "xlabel": "",
+            "ylabel": "Frequency [Hz]",
+        },
+    )
+    for key, values in {
+        "all": {"vmin": -25, "vmax": 25},
+        "choice": {"vmin": -25, "vmax": 25},
+        "confidence": {"vmin": -25, "vmax": 25},
+        "confidence_asym": {"vmin": -25, "vmax": 25},
+        "hand": {"vmin": -25, "vmax": 25},
+        "stimulus": {"vmin": -25, "vmax": 25},
+    }.items():
+        conf.configure_contrast(key, **values)
+    
+    from collections import namedtuple
+
+    Plot = namedtuple(
+        "Plot", ["name", "cluster", "location", "annot_y", "annot_x"]
+    )
+
+    top, middle, bottom = slice(0, 2), slice(1, 3), slice(2, 4)
+    # fmt: off
+    layout = [
+        Plot("V1", "vfcPrimary", [0, middle], True, True),
+        Plot("V2-V4", "vfcEarly", [1, middle], False, False),
+        # Dorsal
+        Plot("V3A/B", "vfcV3ab", [2, top], False, False),
+        Plot("IPS0/1", "vfcIPS01", [3, top], False, False),
+        Plot("IPS2/3", "vfcIPS23", [4, top], False, False),
+        Plot("aIPS", "JWG_aIPS", [5, top], False, False),
+        
+        # Ventral
+        Plot("LO1/2", "vfcLO", [2, bottom], False, False),
+        Plot("MT/MST", "vfcTO", [3, bottom], False, False),
+        Plot("VO1/2", "vfcVO", [4, bottom], False, False),
+        Plot("PHC", "vfcPHC", [5, bottom], False, False),
+        
+        
+        Plot("IPS/PostCeS", "JWG_IPS_PCeS", [6, middle], False, False),
+        Plot("M1-hand", "JWG_M1", [7, middle], False, False),
+    ]
+
+    if flip_cbar:
+        cmap = "RdBu"
+    else:
+        cmap = "RdBu_r"            
+    for i, contrast_name in enumerate(contrasts):        
+
+        fig = contrast_tfr_plots.plot_tfr_selected_rois(
+            contrast_name, df, layout, conf, cluster_correct=stats, 
+            cmap=cmap,
+            gs=gs,
+            aspect=aspect,
+            title_palette=title_palette,
+            ignore_response=True,
+            axvlines=[-0.25],
+            )
+    return fig
+        #plt.suptitle(contrast_name)
+        #plt.savefig("/Users/nwilming/Desktop/nsf_%s-%s.pdf" % (contrast_name, suffix))
+        #plt.savefig("/Users/nwilming/Desktop/nsf_%s-%s.svg" % (contrast_name, suffix))
+
+ 
 # Ignore following for now
 
 

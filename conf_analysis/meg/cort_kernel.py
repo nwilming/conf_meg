@@ -73,10 +73,10 @@ def prepare_and_save_data(freq_band=[45, 65], n_jobs=4,
         )
         tasks.append(delayed(d_gck)(
             subject, "Averaged", cluster, 0.19, freq_band=freq_band, ogl=False, 
-            remove_contrast_induced_flucts=True
+            remove_contrast_induced_flucts=True, split_by_mc=False,
             )
         )
-    results = Parallel(n_jobs=4)(tasks)
+    results = Parallel(n_jobs=n_jobs)(tasks)
     
    
     K, C = get_kernels()
@@ -97,12 +97,13 @@ def to_fluct(Xs, side):
 
 def get_kernel(subject):
     K, C = get_kernels()
+    
     return K.loc[subject, :], C.loc[subject, :]
 
 
 @memory.cache()
 def get_kernels(d=None):
-    print(".")
+    
     if d is None:
         d = empirical.load_data()
     K = (
@@ -111,7 +112,7 @@ def get_kernels(d=None):
         .groupby("snum")
         .mean()
     )  # dp.extract_kernels(dz)
-    """
+    
     C = (
         d.groupby(["snum", "side"])
         .apply(kernels.get_confidence_kernel)
@@ -119,8 +120,8 @@ def get_kernels(d=None):
         .groupby("snum")
         .mean()
     )  # dp.extract_kernels(dz)
-    """
-    return K, None
+    print(C)
+    return K, C
 
 def kernel_by_RT(data, edges):
     from conf_analysis.meg import figures

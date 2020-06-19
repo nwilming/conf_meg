@@ -403,7 +403,7 @@ class StreamPlotter(object):
                 (nr_cols * 3),
                 width_ratios=wr,
                 subplot_spec=self.gs[i, 0],
-                wspace=0.05,
+                wspace=0.3,
                 hspace=0.5,
             )
 
@@ -533,21 +533,24 @@ class StreamPlotter(object):
                 edgecolor=(0, 0, 0, 0),
                 lw=0,
             )
-            
+            tvals, pvals = cluster_test[key]
             if key == "False":
                 ax.plot(latency, mu, color=col)
+                draw_sig(ax, latency, pvals < 0.05, offsets[col]+0.015, (0.5,0.5,0.5))
             else:
                 ax.plot(latency, mu, ':', color=col)
-            tvals, pvals = cluster_test[key]
+                draw_sig(ax, latency, pvals < 0.05, offsets[col], (0.5,0.5,0.5), linestyle='-', zorder=-1)
+                draw_sig(ax, latency, pvals < 0.05, offsets[col], (0.25,0.25,0.25), linestyle=':')
+            
             if sum(pvals<0.05)>0:
                 lat = latency[pvals<0.05].min()
                 print('DCD, %s, %s, earliest significant: %f'%(cluster, signal, lat))            
             #else:
             #    print('DCD, %s, %s, earliest significant: None'%(cluster, signal))            
-            draw_sig(ax, latency, pvals < 0.05, offsets[col], (0.5,0.5,0.5))
+            
 
 
-def draw_sig(ax, x, id_sig, offset, color):
+def draw_sig(ax, x, id_sig, offset, color, linestyle='-', zorder=0):
     dt = np.diff(x)[0]
     # print(dt)
     id_sig = np.array([0] + list(id_sig.astype(float)) + [0])
@@ -555,7 +558,7 @@ def draw_sig(ax, x, id_sig, offset, color):
     d = np.where(np.diff(id_sig) != 0)[0]
     # print(d)
     for low, high in zip(d[0::2], d[1::2]):
-        ax.plot([x[low], x[high]], [offset, offset], color=color, lw=0.5)
+        ax.plot([x[low], x[high]], [offset, offset], linestyle=linestyle, color=color, lw=0.5, zorder=zorder)
 
 
 def multicolor_line(ax, x, y, colorval, cmin, cmax, cmap="Reds"):

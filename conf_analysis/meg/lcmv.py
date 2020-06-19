@@ -268,6 +268,7 @@ def extract(
     events = epochs.events[:, 2]
     data = []
     filters = pymeglcmv.setup_filters(epochs.info, forward, data_cov, None, labels)
+    
     set_n_threads(1)
 
     for i in range(0, len(events), chunks):
@@ -299,3 +300,78 @@ def extract(
             )
         M.to_hdf(filename, "epochs", mode="w")
     set_n_threads(njobs)
+
+
+def get_filter(
+    subject,
+    session,
+    epoch_type="stimulus",    
+    only_glasser=False,
+    BEM="three_layer",    
+):
+    mne.set_log_level("WARNING")
+    pymeglcmv.logging.getLogger().setLevel(logging.INFO)
+    set_n_threads(1)
+
+    logging.info("Reading stimulus data")
+    if epoch_type == "stimulus":
+        data_cov, epochs = get_stim_epoch(subject, session)
+    elif epoch_type == "response":
+        data_cov, epochs = get_response_epoch(subject, session)
+    else:
+        raise RuntimeError("Did not recognize epoch")
+
+    logging.info("Setting up source space and forward model")
+
+    forward, bem, source = get_leadfield(subject, session, BEM)
+
+    if not only_glasser:
+        labels = pymegsr.get_labels(
+            subject="S%02i" % subject,
+            filters=["*wang*.label", "*JWDG*.label"],
+            annotations=["HCPMMP1"],
+        )
+        labels = pymegsr.labels_exclude(
+            labels=labels,
+            exclude_filters=[
+                "wang2015atlas.IPS4",
+                "wang2015atlas.IPS5",
+                "wang2015atlas.SPL",
+                "JWDG_lat_Unknown",
+            ],
+        )
+        labels = pymegsr.labels_remove_overlap(
+            labels=labels, priority_filters=["wang", "JWDG"]
+        )
+    else:
+        labels = pymegsr.get_labels(
+            subject="S%02i" % subject,
+            filters=["select_nothing"],
+            annotations=["HCPMMP1"],
+        )
+    # Now chunk Reconstruction into blocks of ~100 trials to save Memory
+    fois = np.arange(10, 150, 5)
+    lfois = np.arange(1, 10, 1)
+    tfr_params = {
+        "F": {
+            "foi": fois,
+            "cycles": fois * 0.1,
+            "time_bandwidth": 2,
+            "n_jobs": 1,
+            "est_val": fois,
+            "est_key": "F",
+        },
+        "LF": {
+            "foi": lfois,
+            "cycles": lfois * 0.25,
+            "time_bandwidth": 2,
+            "n_jobs": 1,
+            "est_val": lfois,
+            "est_key": "LF",
+        },
+    }
+
+    events = epochs.events[:, 2]
+    data = []
+    filters = pymeglcmv.setup_filters(epochs.info, forward, data_cov, None, labels)
+    return filters
