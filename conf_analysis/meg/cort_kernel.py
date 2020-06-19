@@ -36,8 +36,8 @@ else:
     memory = Memory(cachedir=metadata.cachedir)
 
 
-def prepare_and_save_data(freq_band=[45, 65], n_jobs=4, 
-    outpath='/home/nwilming/conf_analysis/results/cort_kernel.results.pickle'):
+def prepare_and_save_data(freq_band=[45, 65], n_jobs=4, filtervar=None,
+    outpath='/home/nwilming/conf_analysis/results/cort_kernel.results.pickle',):
     from joblib import Parallel, delayed
     from conf_analysis.meg import srtfr
     peaks = get_decoding_peaks()
@@ -68,12 +68,12 @@ def prepare_and_save_data(freq_band=[45, 65], n_jobs=4,
     for cluster, subject in product(clusters, np.arange(1, 16)):
         tasks.append(delayed(d_gck)(
             subject, "Averaged", cluster, 0.19, freq_band=freq_band, ogl=False,
-            remove_contrast_induced_flucts=False
+            remove_contrast_induced_flucts=False, filtervar=filtervar,
             )
         )
         tasks.append(delayed(d_gck)(
             subject, "Averaged", cluster, 0.19, freq_band=freq_band, ogl=False, 
-            remove_contrast_induced_flucts=True, split_by_mc=False,
+            remove_contrast_induced_flucts=True, filtervar=filtervar,
             )
         )
     results = Parallel(n_jobs=n_jobs)(tasks)
@@ -145,21 +145,24 @@ def d_gck(subject,
     use_only_contrast_induced_flucts=False,
     freq_band=[45, 65],
     ogl=True,
-    split_by_mc=True):
+    split_by_mc=True,
+    filtervar=None):
     
     kernel = get_cortical_kernel(subject, hemi, cluster, latency,
         remove_contrast_induced_flucts=remove_contrast_induced_flucts,
         use_only_contrast_induced_flucts=use_only_contrast_induced_flucts,
         freq_band=freq_band,
         ogl=ogl,
-        split_by_mc=split_by_mc)
+        split_by_mc=split_by_mc,
+        filtervar=filtervar)
 
     return {
         'cluster': cluster,
         'subject': subject,
         'kernel': kernel,
         'freq': freq_band,
-        'rmcif': remove_contrast_induced_flucts
+        'rmcif': remove_contrast_induced_flucts,
+        'filtervar': filtervar
     }
 
 
@@ -174,6 +177,7 @@ def get_cortical_kernel(
     freq_band=[45, 65],
     ogl=True,
     split_by_mc=True,
+    filtervar=None,
 ):
     """
     Computes how well fluctuations can separate responses for
@@ -184,6 +188,12 @@ def get_cortical_kernel(
     X, tpc, freq, meta = build_design_matrix(
         subject, cluster, latency, hemi, freq_bands=freq_band, ogl=ogl
     )
+    if filtervar is not None:
+        print('FILTERING to ', filtervar)
+        idvar = meta.loc[:, "noise_sigma"] == filtervar
+        X = X[idvar]
+        meta = meta.loc[idvar]
+        print(meta.shape)
 
     if remove_contrast_induced_flucts:
         contrast = np.stack(meta.contrast_probe)

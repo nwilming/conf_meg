@@ -53,7 +53,7 @@ else:
     outpath = "/home/nwilming/conf_meg/sr_decoding"
     memory = Memory(cachedir=metadata.cachedir)
 
-n_jobs = 8
+n_jobs = 1
 
 n_trials = {
     1: {"stimulus": 1565, "response": 245},
@@ -76,22 +76,32 @@ n_trials = {
 
 def decoders():
     return {
-        "SSD": ssd_decoder,
+        #"SSD": ssd_decoder,
         # "SSD_delta_contrast": partial(ssd_decoder, target_value="delta_contrast"),
-        "SSD_acc_contrast": partial(ssd_decoder, target_value="acc_contrast"),
+        #"SSD_acc_contrast": partial(ssd_decoder, target_value="acc_contrast"),
+        #"SSD_varlow": partial(ssd_decoder, filter_var=0.05),
+        #"SSD_varmed": partial(ssd_decoder, filter_var=0.1),
+        #"SSD_varhigh": partial(ssd_decoder, filter_var=0.15),
+        #"SSD_acc_contrast_varlow": partial(ssd_decoder, target_value="acc_contrast", filter_var=0.05),
+        #"SSD_acc_contrast_varmed": partial(ssd_decoder, target_value="acc_contrast", filter_var=0.1),
+        #"SSD_acc_contrast_varhigh": partial(ssd_decoder, target_value="acc_contrast", filter_var=0.15),
         # "SSD_acc_contrast_diff": partial(ssd_decoder, target_value="acc_contrast_diff"),
-        #"MIDC_split": partial(midc_decoder, splitmc=True, target_col="response"),
+        # "MIDC_split": partial(midc_decoder, splitmc=True, target_col="response"),
+        "MIDC_split_conf_split_mc": 
+            partial(midc_decoder_split_confidence, splitmc=True, target_col="response"),
+        "MIDC_split_conf": 
+            partial(midc_decoder_split_confidence, splitmc=False, target_col="response"),
         # "MIDC_nosplit": partial(midc_decoder, splitmc=False, target_col="response"),
         # "SIDE_nosplit": partial(midc_decoder, splitmc=False, target_col="side"),
         # "CONF_signed": partial(
         #    midc_decoder, splitmc=False, target_col="signed_confidence"
         # ),
-        "CONF_signed_respsplit": partial(
-            midc_decoder,
-            splitmc=False,
-            split_resp=True,
-            target_col="unsigned_confidence",
-        ),
+        #"CONF_signed_respsplit": partial(
+        #    midc_decoder,
+        #    splitmc=False,
+        #    split_resp=True,
+        #    target_col="unsigned_confidence",
+        #),
         # "CONF_unsigned": partial(
         #    midc_decoder, splitmc=False, target_col="unsigned_confidence"
         # ),
@@ -110,7 +120,7 @@ def set_n_threads(n):
 
 
 def submit(
-    cluster="SLURM",
+    cluster="UKE",
     subjects=range(1, 16),
     ssd=False,
     epochs=["stimulus", "response"],
@@ -225,7 +235,6 @@ def run_decoder(
         if hemi == "Pair":
             area = [area + "_RH", area + "_LH"]
         a = (meta, asr.delayed_agg(filenames, hemi=hemi, cluster=area), decoder, hemi)
-        print(a[1:])
         args.append(a)
     print("Processing %i tasks" % (len(args)))
     from contextlib import closing
@@ -327,7 +336,7 @@ def apply_decoder(meta, agg, decoder, latencies=None, hemi=None):
     return res
 
 
-def ssd_decoder(meta, data, area, latency=0.18, target_value="contrast"):
+def ssd_decoder(meta, data, area, latency=0.18, target_value="contrast", filter_var=None):
     """
     Sensory signal decoder (SSD).
 
@@ -353,6 +362,9 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value="contrast"):
     corr_scorer = make_scorer(lambda x, y: np.corrcoef(x, y)[0, 1])
     meta = meta.set_index("hash")
     sample_scores = []
+    if filter_var is not None:
+        meta = meta.query('noise_sigma==%f'%filter_var)
+        data = data.loc[np.isin(data.index.get_level_values('trial'), meta.index)]
 
     for sample_num, sample in enumerate(np.arange(0, 1, 0.1)):
         # Map sample times to existing time points in data
@@ -426,6 +438,8 @@ def ssd_decoder(meta, data, area, latency=0.18, target_value="contrast"):
             score["latency"] = latency
             score["Classifier"] = name
             score["sample"] = sample_num
+            if filter_var is not None:
+                score['noise_sigma'] = filter_var
             # score['coefs'] = fit.coef_.astype(object)
             sample_scores.append(score)
         del sample_data
@@ -509,6 +523,71 @@ def midc_decoder(
             scores = categorize(target, data, target_time_point, predict=True)
             # scores = scores["SCVlin"]
             scores = pd.DataFrame(scores, index=data.index)
+    scores.loc[:, "area"] = str(area)
+    scores.loc[:, "latency"] = latency
+    return scores
+
+
+
+def midc_decoder_split_confidence(
+    meta,
+    data,
+    area,
+    latency=0,
+    splitmc=True,
+    split_confidence=True,
+    target_col="response",
+    predict=False,
+):
+    """
+    Copy of MIDC Decoder - Split by confidence and see if response can be decoded.
+
+    Copying this to not mess with the original midc decoder. Ugly.
+    """
+    meta = meta.set_index("hash")
+    # Map to nearest time point in data
+    times = data.columns.get_level_values("time").values
+    target_time_point = times[np.argmin(abs(times - latency))]
+    data = data.loc[:, target_time_point]
+
+    # Turn data into (trial X Frequency)
+    X = []
+    for a in ensure_iter(area):
+        x = pd.pivot_table(
+            data.query('cluster=="%s"' % a),
+            index="trial",
+            columns="freq",
+            values=target_time_point,
+        )
+        X.append(x)
+    data = pd.concat(X, 1)
+    meta = meta.loc[data.index, :]
+    scores = []
+
+    selector = []
+    splitter = []
+    if splitmc:
+        selector.append(meta.mc < 0.5)            
+        splitter.append('mc')
+    if split_confidence:
+        selector.append(meta.confidence == 1)            
+        splitter.append('conf')
+    for mc, sub_meta in meta.groupby(selector):
+        sub_data = data.loc[sub_meta.index, :]
+        sub_meta = sub_meta.loc[sub_data.index, :]
+        # Buld target vector
+        target = (sub_meta.loc[sub_data.index, target_col]).astype(int)
+        if not predict:
+            score = categorize(target, sub_data, target_time_point, predict=False)
+            score.loc[:, "split_label"] = str(splitter)+str(mc)
+            print(str(splitter)+str(mc))
+        else:
+            score = categorize(target, sub_data, target_time_point, predict=True)
+            # score = score["SCVlin"]
+            score = pd.DataFrame(score, index=sub_data.index)
+        scores.append(score)
+    scores = pd.concat(scores)
+   
     scores.loc[:, "area"] = str(area)
     scores.loc[:, "latency"] = latency
     return scores
@@ -1323,3 +1402,21 @@ def ensure_iter(input):
                 yield item
         except TypeError:
             yield input
+
+
+def combine_signals(signal, epoch):
+    print(',a;lsx,l;as,lx;,')
+    import glob
+    globstr = '/mnt/homes/home028/nwilming/conf_meg/sr_decoding/concat_S*-%s_*var*%s-decoding.hdf'%(signal, epoch)
+    print(globstr)
+    files = glob.glob(globstr)
+    frames = []
+    for f in files:
+        df = pd.read_hdf(f)
+        cluster = [x.replace('[','').replace(']', '').replace("'","") for x in df.cluster.values]
+        df.loc[:, cluster] = cluster
+        df.loc[:, 'signal'] = signal
+        df.loc[:, 'epoch'] = epoch
+        df.loc[:, 'subject'] = df.sub
+        frames.append(df)
+    return pd.concat(frames)
